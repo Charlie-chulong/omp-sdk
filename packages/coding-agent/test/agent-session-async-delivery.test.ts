@@ -29,7 +29,7 @@ import {
 	type AsyncResultEntry,
 } from "@oh-my-pi/pi-coding-agent/session/async-job-delivery";
 import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
-import { convertToLlm, type CustomMessage } from "@oh-my-pi/pi-coding-agent/session/messages";
+import { convertToLlm, type CustomMessage, USER_INTERRUPT_LABEL } from "@oh-my-pi/pi-coding-agent/session/messages";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import { formatTaskResultSummary, INLINE_OUTPUT_CHARS } from "@oh-my-pi/pi-coding-agent/task/result-summary";
 
@@ -1106,6 +1106,65 @@ describe("AgentSession owner-routed async delivery", () => {
 		});
 		return { manager, mock, targetSessionFile };
 	}
+
+	it("Stop waits for owned background cleanup, fences late work and resumes only for a new prompt", async () => {
+		using tempDir = TempDir.createSync("@pi-user-stop-jobs-");
+		const { manager, mock } = await startResumableSession(tempDir);
+		const aborted = Promise.withResolvers<void>();
+		const cleaned = Promise.withResolvers<void>();
+		const other = Promise.withResolvers<string>();
+		manager.register("bash", "unrelated root", () => other.promise, {
+			id: "unrelated-stop-job",
+			ownerId: "OtherRoot",
+		});
+		manager.register(
+			"bash",
+			"owned cleanup",
+			async ({ signal }) => {
+				const cancelled = Promise.withResolvers<void>();
+				signal.addEventListener("abort", () => cancelled.resolve(), { once: true });
+				await cancelled.promise;
+				aborted.resolve();
+				await cleaned.promise;
+				expect(() => manager.register("bash", "late replacement", async () => "late", { ownerId: "Main" })).toThrow(
+					/stopped/,
+				);
+				return "LATE OWNED RESULT";
+			},
+			{ id: "owned-stop-job", ownerId: "Main" },
+		);
+		let acknowledged = false;
+		const stopping = session.abort({ reason: USER_INTERRUPT_LABEL, stopOwnedWork: true }).then(() => {
+			acknowledged = true;
+		});
+		await aborted.promise;
+		expect(acknowledged).toBe(false);
+		expect(manager.getJob("unrelated-stop-job")?.status).toBe("running");
+		cleaned.resolve();
+		await stopping;
+		expect(manager.getJob("owned-stop-job")?.status).toBe("cancelled");
+		expect(mock.calls).toHaveLength(0);
+		await session.prompt("resume deliberately");
+		expect(mock.calls).toHaveLength(1);
+		expect(mock.calls.some(call => JSON.stringify(call.context.messages).includes("LATE OWNED RESULT"))).toBe(false);
+		other.resolve("other root finished");
+		await manager.waitForAll();
+		expect(() => manager.register("bash", "new user work", async () => "new", { ownerId: "Main" })).not.toThrow();
+		await manager.waitForOwnerJobs("Main");
+		await session.settleAsyncWork();
+	});
+
+	it("ordinary abort preserves owned background execution", async () => {
+		using tempDir = TempDir.createSync("@pi-ordinary-abort-jobs-");
+		const { manager } = await startResumableSession(tempDir);
+		const done = Promise.withResolvers<string>();
+		manager.register("bash", "background work", () => done.promise, { id: "ordinary-abort-job", ownerId: "Main" });
+		await session.abort();
+		expect(manager.getJob("ordinary-abort-job")?.status).toBe("running");
+		done.resolve("finished normally");
+		await manager.waitForOwnerJobs("Main");
+		await session.settleAsyncWork();
+	});
 
 	it("cancels the outgoing session's background jobs when resuming another session", async () => {
 		using tempDir = TempDir.createSync("@pi-resume-async-jobs-");

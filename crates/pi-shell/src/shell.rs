@@ -264,8 +264,46 @@ impl Shell {
 		.await
 	}
 
-	pub async fn abort(&self) {
+	pub async fn abort(&self) -> Result<()> {
+		let active_registry = self.active_spawns.lock().clone();
 		self.abort_state.abort().await;
+		// The active token belongs only to a foreground run. Retained `&`/`nohup`
+		// jobs have no token while idle, but still belong to this persistent
+		// shell. Waiting for its lock also outlasts the active run's native
+		// unwind.
+		let mut guard = self.session.lock().await;
+		let Some(core) = guard.as_mut() else {
+			return Ok(());
+		};
+		let registry = active_registry.unwrap_or_else(|| Arc::new(process::SpawnRegistry::new()));
+		register_background_jobs(&core.shell, &registry);
+		let internal = core
+			.shell
+			.jobs_mut()
+			.jobs
+			.iter_mut()
+			.map(|job| job.take_internal_tasks())
+			.collect::<Vec<_>>();
+		terminate_run(&registry).await;
+		let mut confirmed = true;
+		for unwind in internal {
+			confirmed &= unwind.await;
+		}
+		let deadline = time::Instant::now() + CANCEL_RUN_GRACE;
+		loop {
+			core.shell.jobs_mut().poll_preserving_completed()?;
+			if registry.build_targets().is_empty() && !core.shell.jobs().has_live_external_jobs() {
+				break;
+			}
+			if time::Instant::now() >= deadline {
+				return Err(Error::msg("Shell cancellation left owned processes alive"));
+			}
+			time::sleep(Duration::from_millis(25)).await;
+		}
+		if !confirmed {
+			return Err(Error::msg("Shell cancellation did not drain internal jobs"));
+		}
+		Ok(())
 	}
 
 	/// Pids of the processes spawned by the in-flight [`Shell::run`] that are
@@ -6941,8 +6979,19 @@ replace = [{ pattern = "hello", replacement = "HI" }]
 			.expect("run sleep");
 		assert_eq!(shell.live_background_job_count().await, 1);
 
-		// Dropping the shell at scope end reaps the child via kill-on-drop.
-		shell.abort().await;
+		// Explicit abort reaps idle children too; no drop/GC is needed to stop
+		// them.
+		shell.abort().await.expect("abort retained background job");
+		assert_eq!(shell.live_background_job_count().await, 0);
+		let resumed = shell
+			.run(
+				ShellRunOptions { command: "echo resumed".into(), ..Default::default() },
+				None,
+				CancelToken::default(),
+			)
+			.await
+			.expect("same shell remains resumable");
+		assert_eq!(resumed.exit_code, Some(0));
 	}
 
 	/// An exited `&` child must be waited on while the persistent shell is
@@ -7148,7 +7197,7 @@ replace = [{ pattern = "hello", replacement = "HI" }]
 		let child = process::Process::from_pid(pids[0]).expect("reported pid is alive");
 		assert_eq!(child.status(), process::ProcessStatus::Running);
 
-		shell.abort().await;
+		shell.abort().await.expect("abort active run");
 		let result = time::timeout(Duration::from_secs(5), run)
 			.await
 			.expect("aborted run returns")

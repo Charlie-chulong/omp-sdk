@@ -475,6 +475,8 @@ export class Agent {
 	#cwdResolver?: () => string | undefined;
 
 	#runningPrompt?: Promise<void>;
+	readonly #abortedProviderCleanups = new Set<Promise<void>>();
+	readonly #abortedProviderCleanupErrors: unknown[] = [];
 	#isPaused = false;
 
 	/** True while this unfinished turn is safely parked by the process pause gate. */
@@ -1589,6 +1591,16 @@ export class Agent {
 		return this.#runningPrompt ?? Promise.resolve();
 	}
 
+	/** Wait for transports abandoned by the loop's abort race, not merely its synthetic agent_end. */
+	async waitForAbortedProviderCleanup(): Promise<void> {
+		while (this.#abortedProviderCleanups.size > 0) {
+			await Promise.allSettled(this.#abortedProviderCleanups);
+		}
+		if (this.#abortedProviderCleanupErrors.length > 0) {
+			throw new AggregateError(this.#abortedProviderCleanupErrors.splice(0), "Provider cancellation failed");
+		}
+	}
+
 	/**
 	 * Wait for a steering message without consuming the steering queue.
 	 *
@@ -1918,6 +1930,16 @@ export class Agent {
 		};
 
 		const config: AgentLoopConfig = {
+			onAbortedProviderCleanup: cleanup => {
+				this.#abortedProviderCleanups.add(cleanup);
+				void cleanup.then(
+					() => this.#abortedProviderCleanups.delete(cleanup),
+					error => {
+						this.#abortedProviderCleanups.delete(cleanup);
+						this.#abortedProviderCleanupErrors.push(error);
+					},
+				);
+			},
 			model,
 			reasoning,
 			disableReasoning: this.#state.disableReasoning,

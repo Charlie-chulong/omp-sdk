@@ -66,6 +66,10 @@ describe("python executor owner cleanup", () => {
 
 		expect(startSpy).toHaveBeenCalledTimes(1);
 		expect(kernel.execute).toHaveBeenCalledTimes(2);
+		await expect(disposeKernelSessionsByOwner("owner-a", { requireStopped: true })).rejects.toThrow(
+			"owner shutdown failed",
+		);
+		expect(kernel.shutdown).not.toHaveBeenCalled();
 
 		await disposeKernelSessionsByOwner("owner-a");
 
@@ -365,7 +369,7 @@ describe("python executor owner cleanup", () => {
 			kernelOwnerId: "owner-a",
 		});
 
-		await disposeKernelSessionsByOwner("owner-a");
+		await expect(disposeKernelSessionsByOwner("owner-a")).rejects.toThrow("owner shutdown failed");
 		expect(unconfirmedShutdown).toHaveBeenCalledTimes(1);
 
 		const confirmedShutdown = vi.fn(async (): Promise<KernelShutdownResult> => ({ confirmed: true }));

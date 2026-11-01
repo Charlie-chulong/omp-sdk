@@ -145,7 +145,7 @@ import type { EvalPreludeDefinition } from "../eval/preludes";
 import type { PythonResult } from "../eval/py/executor";
 import { EVAL_STATE_CONTEXT_TYPE, formatEvalStateContext, isEvalStateContext } from "../eval/state";
 import { WorkPoolRegistry } from "../task/workpool";
-import { type BashPtyOptions, type BashResult, releaseShellSessions } from "../exec/bash-executor";
+import { type BashPtyOptions, type BashResult, releaseShellSessions, stopShellSessions } from "../exec/bash-executor";
 import type { TtsrManager } from "../export/ttsr";
 import type { LoadedCustomCommand } from "../extensibility/custom-commands";
 import type { CustomTool } from "../extensibility/custom-tools/types";
@@ -224,6 +224,7 @@ import {
 } from "../secrets/message-transform";
 import type { SecretObfuscator } from "../secrets/obfuscator";
 import { type AgentRef, AgentRegistry } from "../registry/agent-registry";
+import { sessionFileBelongsToRoot } from "../registry/persisted-agents";
 import { cfgSecretsEnabled } from "../secrets/settings";
 import { releaseSharpshooterSession } from "../sharpshooter/backend";
 import { flushSharpshooterExtraction } from "../sharpshooter/extract";
@@ -1238,6 +1239,10 @@ export class AgentSession implements SettingsScope {
 	#userWaitEndedTurn = false;
 	#inFlightEpoch = 0;
 	#abortInProgress = false;
+	/** Explicit host Stop holds autonomous starts until a deliberate user turn. */
+	#userStopped = false;
+	#userStopGeneration = 0;
+	readonly #ownedSideRequests = new Map<AbortController, Promise<unknown>>();
 	/** In-flight {@link abort} calls; each settles after scheduling its stranded-queue drain, which {@link waitForIdle} must observe. */
 	#abortUnwinds = new Set<Promise<void>>();
 	/** Submissions accepted by prompt()/promptCustomMessage()/sendCustomMessage() that have not
@@ -1424,6 +1429,7 @@ export class AgentSession implements SettingsScope {
 	 *  queue was consumed normally or a new turn already started. */
 	#drainStrandedQueuedMessages(): void {
 		if (this.#abortInProgress) return;
+		if (this.#userStopped) return;
 		// Session transitions (newSession/`/new`, compact, model-switch, session-switch,
 		// dispose) call #disconnectFromAgent() BEFORE `await abort()`, so abort's own
 		// finally lands here with no listener attached. Auto-resuming now would snapshot
@@ -1477,6 +1483,10 @@ export class AgentSession implements SettingsScope {
 		// Parked wake records resume alongside ordinary stranded asides; they were
 		// already decided wake-intended at deferral time.
 		const records = [...this.#irc.drainDeferredWakes(), ...this.#irc.drainPending()];
+		if (this.#userStopped) {
+			this.#recordWithoutTurn(records);
+			return;
+		}
 		if (this.#planModeState?.enabled) {
 			// Plan mode: fold stranded IRC asides into context without waking an
 			// autonomous turn. Convergence to ask/resolve stays user-driven.
@@ -1540,6 +1550,10 @@ export class AgentSession implements SettingsScope {
 	 *  because #canAutoContinueForFollowUp suppresses follow-up auto-resume while a user interrupt is
 	 *  in effect, even though the wake left a provider-valid tail. */
 	#wakeForIrc(wakeRecords: AgentMessage[]): void {
+		if (this.#userStopped || this.#abortInProgress) {
+			this.#irc.queueAside(wakeRecords);
+			return;
+		}
 		if (this.#modeExitDrainSuppressionDepth > 0) {
 			this.#irc.queueAside(wakeRecords);
 			return;
@@ -1552,6 +1566,7 @@ export class AgentSession implements SettingsScope {
 		if (idleCompaction) {
 			const promptGeneration = this.#promptGeneration;
 			const sessionGeneration = this.#sessionGeneration;
+			const userStopGeneration = this.#userStopGeneration;
 			this.#ircWakesAwaitingIdleCompaction++;
 			void idleCompaction
 				.then(async () => {
@@ -1566,6 +1581,10 @@ export class AgentSession implements SettingsScope {
 						return;
 					}
 					if (this.#isDisposed) return;
+					if (this.#userStopped || this.#userStopGeneration !== userStopGeneration) {
+						this.#irc.queueAside(wakeRecords);
+						return;
+					}
 					if (this.hasAdmittedSubmission) {
 						// Input admitted during the compaction goes first. Prompt setup folds pending IRC
 						// into its turn; whatever is still pending once it settles wakes as usual.
@@ -2294,7 +2313,7 @@ export class AgentSession implements SettingsScope {
 				// the run the user stopped. Fold them into context so the next deliberate
 				// prompt sees them — same policy as #resumeStrandedIrcAsides — until a later
 				// turn has ended on its own.
-				if (this.#advisors.autoResumeSuppressed && !this.#turnSettledSinceUserInterrupt) {
+				if (this.#userStopped || (this.#advisors.autoResumeSuppressed && !this.#turnSettledSinceUserInterrupt)) {
 					logger.debug("Background delivery folded into context without a turn", {
 						count: messages.length,
 						customTypes: messages.map(message => (message.role === "custom" ? message.customType : message.role)),
@@ -2674,7 +2693,7 @@ export class AgentSession implements SettingsScope {
 			model: () => this.model,
 			thinkingLevel: () => this.thinkingLevel,
 			isDisposed: () => this.#isDisposed,
-			isStreaming: () => this.isStreaming,
+			isStreaming: () => this.isStreaming || this.#userStopped,
 			isGeneratingHandoff: () => this.isGeneratingHandoff,
 			promptGeneration: () => this.#promptGeneration,
 			sessionId: () => this.sessionId,
@@ -5347,6 +5366,10 @@ export class AgentSession implements SettingsScope {
 	}
 
 	#scheduleAgentContinue(options: ScheduledAgentContinueOptions): void {
+		if (this.#userStopped) {
+			options.onSkip?.("session-unavailable");
+			return;
+		}
 		const request: ScheduledAgentContinueRequest = {
 			schedulerToken: ++this.#agentContinueSchedulerToken,
 			options,
@@ -8117,6 +8140,10 @@ export class AgentSession implements SettingsScope {
 	 * that a prior user interrupt suppressed and resets plan-mode reminder state.
 	 */
 	#noteUserTurn(): void {
+		if (this.#abortInProgress && this.#userStopped) throw new Error("User Stop is still settling");
+		this.#userStopped = false;
+		if (this.#agentId) this.#asyncJobManager?.resumeOwner(this.#agentId);
+		this.#advisors.resumeAfterUserStop();
 		this.#advisors.autoResumeSuppressed = false;
 		this.#planModeReminderCount = 0;
 		this.#planModeReminderAwaitingProgress = false;
@@ -9473,7 +9500,7 @@ export class AgentSession implements SettingsScope {
 		// user-driven (folds into context via #resumeStrandedIrcAsides's post-interrupt
 		// branch) until the next deliberate steer/follow-up/prompt, matching the
 		// sendCustomMessage aside path (queueAside), which never touches this flag.
-		if (mode !== "aside") this.#advisors.autoResumeSuppressed = false;
+		if (mode !== "aside" && attribution === "user") this.#noteUserTurn();
 		// The pre-dispatch re-check in prompt() arrives with normalization and the
 		// vision description already done — reuse them instead of paying a second
 		// vision-model request for the same attachment.
@@ -9766,6 +9793,7 @@ export class AgentSession implements SettingsScope {
 	 * Gate for idle-path queued-message auto-continue (see `#scheduleQueuedMessageDrain`).
 	 */
 	#canAutoContinueForFollowUp(): boolean {
+		if (this.#userStopped || this.#abortInProgress) return false;
 		if (this.isRetrying) return false;
 		// An ACP client that defers agent-initiated turns owns turn
 		// lifecycle, and a queued steer/follow-up may only resume while a
@@ -9856,6 +9884,7 @@ export class AgentSession implements SettingsScope {
 	}
 
 	async #promptQueuedHiddenNextTurnMessages(): Promise<void> {
+		if (this.#userStopped) return;
 		if (this.#pendingNextTurnMessages.length === 0) {
 			return;
 		}
@@ -9915,9 +9944,14 @@ export class AgentSession implements SettingsScope {
 		message: CustomMessage,
 		options?: { acceptTerminalEmptyStop?: boolean },
 	): Promise<boolean> {
+		if (this.#userStopped || this.#abortInProgress) {
+			this.#recordWithoutTurn([message]);
+			return false;
+		}
 		const inFlightEpoch = this.#beginInFlight();
 		try {
 			if (!(await this.#runUsageAwarePreflightForNextModelCall())) return false;
+			if (this.#userStopped || this.#abortInProgress) return false;
 			const acceptTerminalEmptyStop = options?.acceptTerminalEmptyStop === true;
 			if (acceptTerminalEmptyStop) {
 				this.#resetPromptMaintenanceState();
@@ -10086,6 +10120,7 @@ export class AgentSession implements SettingsScope {
 	): Promise<boolean> {
 		// Captured before the awaits below — see #sessionGeneration's doc comment.
 		const sessionGeneration = this.#sessionGeneration;
+		const userStopGeneration = this.#userStopGeneration;
 		// A message that may start a turn waits out idle compaction, as prompt() does; plain appends do not.
 		const idleCompaction =
 			options?.triggerTurn || options?.deliverAs === "aside" ? this.#maintenance.waitForIdleCompaction() : undefined;
@@ -10129,6 +10164,10 @@ export class AgentSession implements SettingsScope {
 			timestamp: Date.now(),
 		};
 		const normalizedAppMessage = await this.#normalizeAgentMessageImages(appMessage);
+		if (this.#userStopped || this.#userStopGeneration !== userStopGeneration) {
+			this.#recordWithoutTurn([normalizedAppMessage]);
+			return false;
+		}
 		if (this.isStreaming) {
 			// Queued into a turn the agent owns: that turn holds the session. Busy only
 			// from another prompt's setup claims nothing (that prompt decides).
@@ -10997,6 +11036,20 @@ export class AgentSession implements SettingsScope {
 		customSystemPrompt?: string,
 		signal?: AbortSignal,
 	): Promise<string | null> {
+		if (this.#userStopped) return null;
+		const controller = new AbortController();
+		const combinedSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+		return this.#trackOwnedSideRequest(
+			controller,
+			this.#generateTitle(firstMessage, customSystemPrompt, combinedSignal),
+		);
+	}
+
+	async #generateTitle(
+		firstMessage: string,
+		customSystemPrompt: string | undefined,
+		signal: AbortSignal,
+	): Promise<string | null> {
 		const parentSessionId = this.sessionId;
 		const sessionGeneration = this.#sessionGeneration;
 		const sessionId = this.#resolveTitleProviderSessionId(parentSessionId);
@@ -11118,6 +11171,74 @@ export class AgentSession implements SettingsScope {
 		this.#promptDropped = handler;
 	}
 
+	#stopOwnedExecution(reason?: string): Promise<void> {
+		this.#userStopped = true;
+		this.#userStopGeneration++;
+		this.#advisors.autoResumeSuppressed = true;
+		this.#turnSettledSinceUserInterrupt = false;
+		this.#asyncDeliveryEpoch++;
+		this.yieldQueue.clear("async-result");
+		const speculation = this.#maintenance.speculationCompletion;
+		this.#maintenance.cancelSpeculation();
+		const pending: Promise<unknown>[] = [
+			this.#bash.abortAndWait(),
+			this.#eval.abortAndWait(),
+			this.#advisors.stopForUser(),
+		];
+		if (speculation) pending.push(speculation);
+		const idleCompaction = this.#maintenance.waitForIdleCompaction();
+		if (idleCompaction) pending.push(idleCompaction);
+		for (const [controller, request] of this.#ownedSideRequests) {
+			controller.abort(reason);
+			pending.push(request.catch(() => {}));
+		}
+		const ownerId = this.#agentId;
+		if (ownerId) {
+			pending.push(releaseCompletionHandles(ownerId), releaseJudgmentBatches(ownerId));
+			WorkPoolRegistry.global().releaseOwner(ownerId);
+			const manager = this.#asyncJobManager;
+			const parents = this.#jobTreeParents();
+			const rootFile = this.sessionFile;
+			const refs = AgentRegistry.global().list();
+			const belongs = (ref: AgentRef): boolean =>
+				ref.session !== this &&
+				(!rootFile || !ref.sessionFile || sessionFileBelongsToRoot(ref.sessionFile, rootFile)) &&
+				(!ref.session || ref.session.asyncJobManager === manager);
+			const owners = new Set([ownerId]);
+			for (const job of [...(manager?.getRunningJobs() ?? []), ...(manager?.getRecentJobs(Infinity) ?? [])]) {
+				if (!job.ownerId || !this.#inJobTree(job, parents)) continue;
+				const ref = refs.find(ref => ref.id === job.ownerId);
+				if (!ref || ref.id === ownerId || belongs(ref)) owners.add(job.ownerId);
+			}
+			// Install every owner fence before cancelling a parent task: its abort listener can
+			// synchronously start child cleanup, which must not register replacement background work.
+			for (const id of owners) manager?.stopOwner(id, reason);
+			for (const ref of refs) {
+				if (ref.parentId !== ownerId || !ref.session || !belongs(ref)) continue;
+				ref.session.clearQueue({ forInterrupt: true });
+				pending.push(ref.session.abort({ reason, stopOwnedWork: true }));
+			}
+			if (manager) {
+				for (const id of owners) {
+					pending.push(manager.waitForOwnerJobs(id), manager.waitForOwnerDeliveries(id));
+				}
+			}
+		}
+		return Promise.allSettled(pending).then(results => {
+			const errors = results.flatMap(result => (result.status === "rejected" ? [result.reason] : []));
+			if (errors.length > 0) throw new AggregateError(errors, "Owned execution cancellation failed");
+		});
+	}
+
+	#trackOwnedSideRequest<T>(controller: AbortController, request: Promise<T>): Promise<T> {
+		this.#ownedSideRequests.set(controller, request);
+		void request.then(
+			() => this.#ownedSideRequests.delete(controller),
+			() => this.#ownedSideRequests.delete(controller),
+		);
+		return request;
+	}
+
 	/**
 	 * Abort current operation and wait for agent to become idle.
 	 *
@@ -11131,6 +11252,8 @@ export class AgentSession implements SettingsScope {
 		reason?: string;
 		/** Internal `/compact` startup keeps the manual-compaction marker alive while aborting the active turn. */
 		preserveCompaction?: boolean;
+		/** Explicit host Stop cancels owned background work too; ordinary aborts preserve it. */
+		stopOwnedWork?: boolean;
 	}): Promise<void> {
 		const userInterrupt = options?.reason === USER_INTERRUPT_LABEL;
 		this.#pendingAbortErrorId = userInterrupt ? AIError.create(AIError.Flag.UserInterrupt) : undefined;
@@ -11154,6 +11277,9 @@ export class AgentSession implements SettingsScope {
 		this.#abortInProgress = true;
 		const unwind = Promise.withResolvers<void>();
 		this.#abortUnwinds.add(unwind.promise);
+		const ownedStop = options?.stopOwnedWork ? this.#stopOwnedExecution(options.reason) : undefined;
+		// Attach now: a child cancellation may fail before the main agent reaches idle.
+		void ownedStop?.catch(() => {});
 		try {
 			this.#titleGenerationAbortController.abort();
 			if (!this.#isDisposed) this.#titleGenerationAbortController = new AbortController();
@@ -11202,6 +11328,26 @@ export class AgentSession implements SettingsScope {
 			// finishes, or the replacement turn's events are neither forwarded nor persisted.
 			await manualCompactionCleanup;
 			await this.#drainAutolearnCapture();
+			if (ownedStop) {
+				const stopped = await Promise.allSettled([
+					ownedStop,
+					this.agent.waitForAbortedProviderCleanup(),
+					stopShellSessions(this.sessionId),
+				]);
+				const failures = stopped.flatMap(result => (result.status === "rejected" ? [result.reason] : []));
+				await this.waitForAdmittedSubmissions();
+				await this.#drainInFlightEventHandlers();
+				await this.#cancelPostPromptTasks();
+				const resources = await Promise.allSettled([
+					this.#eval.disposeKernels({ requireStopped: true }),
+					releaseTabsForOwner(this.sessionManager.getSessionId(), { kill: false }),
+					releaseComputerSessionsForOwner(this.#eval.getKernelOwnerId()),
+				]);
+				for (const result of resources) if (result.status === "rejected") failures.push(result.reason);
+				if (failures.length > 0) throw new AggregateError(failures, "User Stop did not settle owned execution");
+				await this.#bash.flushPending();
+				this.#eval.flushPending();
+			}
 			await this.#goalRuntime.onTaskAborted({ reason: options?.goalReason ?? "interrupted" });
 			// Clear prompt-in-flight state: waitForIdle resolves when the agent loop's finally
 			// block runs, but nested prompt setup/finalizers may still be unwinding. Without this,
@@ -11238,9 +11384,9 @@ export class AgentSession implements SettingsScope {
 				} else this.#recordWithoutTurn([message]);
 			}
 		} finally {
-			this.#abortInProgress = false;
-			this.#drainStrandedQueuedMessages();
 			this.#abortUnwinds.delete(unwind.promise);
+			this.#abortInProgress = this.#abortUnwinds.size > 0;
+			this.#drainStrandedQueuedMessages();
 			unwind.resolve();
 		}
 	}
@@ -12454,6 +12600,7 @@ export class AgentSession implements SettingsScope {
 		onChunk?: (chunk: string) => void,
 		options?: { excludeFromContext?: boolean; useUserShell?: boolean; pty?: BashPtyOptions },
 	): Promise<BashResult> {
+		if (this.#userStopped) throw new Error("Bash execution is stopped; send a new prompt to resume");
 		return this.#bash.executeBash(command, onChunk, options);
 	}
 
@@ -12493,10 +12640,12 @@ export class AgentSession implements SettingsScope {
 		onChunk?: (chunk: string) => void,
 		options?: { excludeFromContext?: boolean },
 	): Promise<PythonResult> {
+		if (this.#userStopped) throw new Error("Python execution is stopped; send a new prompt to resume");
 		return this.#eval.executePython(code, onChunk, options);
 	}
 
 	assertEvalExecutionAllowed(): void {
+		if (this.#userStopped) throw new Error("Eval execution is stopped; send a new prompt to resume");
 		this.#eval.assertExecutionAllowed();
 	}
 
@@ -12640,6 +12789,13 @@ export class AgentSession implements SettingsScope {
 	 * rather than missing context.
 	 */
 	async runEphemeralTurn(args: EphemeralTurnOptions): Promise<EphemeralTurnResult> {
+		if (this.#userStopped) throw new Error("Side request is stopped; send a new prompt to resume");
+		const controller = new AbortController();
+		const signal = args.signal ? AbortSignal.any([args.signal, controller.signal]) : controller.signal;
+		return this.#trackOwnedSideRequest(controller, this.#runEphemeralTurn({ ...args, signal }));
+	}
+
+	async #runEphemeralTurn(args: EphemeralTurnOptions): Promise<EphemeralTurnResult> {
 		const model = this.model;
 		if (!model) {
 			throw new Error("No active model on session");
@@ -14344,6 +14500,12 @@ export class AgentSession implements SettingsScope {
 					description: `Do not auto-redeem saved ${providerLabel} resets.`,
 				},
 			]);
+			if (provider === "openai-codex") {
+				await this.settings.reloadFromDisk();
+				const current = cfgCodexResetsAutoRedeem.get(this.settings);
+				// A newer desktop/file choice wins over a dialog opened while unset.
+				if (current !== "unset") return current === "yes" ? actions : [];
+			}
 			if (choice === "Yes") {
 				if (provider === "anthropic") cfgClaudeResetsAutoRedeem.set(this.settings, "yes");
 				else cfgCodexResetsAutoRedeem.set(this.settings, "yes");
@@ -14366,6 +14528,11 @@ export class AgentSession implements SettingsScope {
 		actions: (CodexResetAction | ClaudeResetAction)[],
 		coordinator: CodexAutoRedeemCoordinator,
 	): Promise<{ restoredCredentialIds: number[]; poolLimited: boolean }> {
+		if (provider === "openai-codex") {
+			await this.settings.reloadFromDisk();
+			mode = cfgCodexResetsAutoRedeem.get(this.settings);
+			if (mode === "no") return { restoredCredentialIds: [], poolLimited: false };
+		}
 		const approved = shouldPromptCodexAutoRedeem(mode)
 			? await this.#confirmAutoRedeem(provider, actions, coordinator)
 			: actions;
@@ -14503,6 +14670,7 @@ export class AgentSession implements SettingsScope {
 			let outcome: ResetCreditRedeemOutcome | undefined;
 			let sharedReset = false;
 			let leftPool = false;
+			let policyDisabled = false;
 			try {
 				const redeemOptions = {
 					target: action.target,
@@ -14513,8 +14681,12 @@ export class AgentSession implements SettingsScope {
 				const lockKey = resetAccountLockKey(action.target);
 				if (!lockKey) {
 					// An account without an upstream identity cannot share a cross-process fence.
+					if (provider === "openai-codex") {
+						await this.settings.reloadFromDisk();
+						policyDisabled = cfgCodexResetsAutoRedeem.get(this.settings) === "no";
+					}
 					leftPool = outsidePool(action);
-					if (!leftPool) outcome = await authStorage.resets.redeem(redeemOptions);
+					if (!leftPool && !policyDisabled) outcome = await authStorage.resets.redeem(redeemOptions);
 				} else {
 					// The coordinator is process-local. Fence concurrent processes and
 					// remember a recent attempt so a late 429 cannot spend again.
@@ -14535,14 +14707,18 @@ export class AgentSession implements SettingsScope {
 								if (balance) return { ok: false, code: balance, provider } satisfies ResetCreditRedeemOutcome;
 							}
 							const { outcome: result, attemptedAt } = await markedRedeem(async () => {
+								if (provider === "openai-codex") {
+									await this.settings.reloadFromDisk();
+									policyDisabled = cfgCodexResetsAutoRedeem.get(this.settings) === "no";
+								}
 								// Checked after the pending marker is written, with no await before
 								// the redeem. A restore the pool no longer allows is never sent:
 								// report a no-op so the fence clears its marker, and drop it below.
 								leftPool = outsidePool(action);
-								if (leftPool) return { ok: false, code: "nothing_to_reset", provider };
+								if (leftPool || policyDisabled) return { ok: false, code: "nothing_to_reset", provider };
 								return authStorage.resets.redeem(redeemOptions);
 							});
-							if (leftPool) return undefined;
+							if (leftPool || policyDisabled) return undefined;
 							if (result.code === "reset") this.#adoptedResetMarkers.set(lockKey, attemptedAt);
 							return result;
 						},
@@ -14559,6 +14735,12 @@ export class AgentSession implements SettingsScope {
 			}
 			if (!outcome) {
 				if (sharedReset) restored.push(action.target.credentialId);
+				if (policyDisabled) {
+					coordinator.attemptedKeys.delete(action.attemptKey);
+					if (previousAttemptAt === undefined) coordinator.lastAttemptAtByAccount.delete(action.accountKey);
+					else coordinator.lastAttemptAtByAccount.set(action.accountKey, previousAttemptAt);
+					break;
+				}
 				if (leftPool) {
 					// Never attempted: the episode and cooldown stay free if the pool allows it again.
 					poolLimited = true;

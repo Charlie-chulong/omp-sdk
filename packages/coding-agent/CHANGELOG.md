@@ -19,6 +19,8 @@
 
 ### Fixed
 
+- Explicit user Stop now waits for owned background jobs, child agents, host calls, retained shell processes, JS/Python kernels, and browser/computer workers to stop; independent owners remain alive and subsequent prompts resume the same conversation with fresh eval kernels.
+- Stop fences delayed continuations and new owned jobs during cleanup, and reports shared-kernel or unconfirmed-shutdown failures instead of acknowledging live execution.
 - Tool approval can now change during a running session through `/permissions`, `/settings`, or SDK/RPC controls, including sessions started with approval flags.
 - Fixed packaged Node SDK startup when no source checkout is present.
 - Fixed Node SDK sessions losing image generation and failing Desktop conversation creation when unrelated built-in tools are disabled.

@@ -559,7 +559,7 @@ export class ComputerSupervisor implements ComputerController {
 		await this.#terminate(error);
 	}
 
-	async #terminate(reason: unknown): Promise<void> {
+	async #terminate(reason: unknown, requireTerminated = false): Promise<void> {
 		const worker = this.#worker;
 		this.#worker = undefined;
 		this.#startPromise = undefined;
@@ -579,7 +579,9 @@ export class ComputerSupervisor implements ComputerController {
 		this.#pendingCapabilities.clear();
 		for (const resolve of this.#revocations.values()) resolve();
 		this.#revocations.clear();
-		await worker?.terminate().catch(() => undefined);
+		await worker?.terminate().catch(error => {
+			if (requireTerminated) throw error;
+		});
 	}
 
 	async close(): Promise<void> {
@@ -605,7 +607,7 @@ export class ComputerSupervisor implements ComputerController {
 			// Forced termination below is the bounded close fallback.
 		} finally {
 			unsubscribe();
-			await this.#terminate(new ToolError("Computer session closed"));
+			await this.#terminate(new ToolError("Computer session closed"), true);
 		}
 	}
 }
@@ -691,7 +693,9 @@ export async function releaseComputerSessionsForOwner(ownerId: string | undefine
 	const controllers = ownedSupervisors.get(ownerId);
 	if (!controllers) return;
 	ownedSupervisors.delete(ownerId);
-	await Promise.allSettled(Array.from(controllers, controller => controller.close()));
+	const results = await Promise.allSettled(Array.from(controllers, controller => controller.close()));
+	const failures = results.flatMap(result => (result.status === "rejected" ? [result.reason] : []));
+	if (failures.length > 0) throw new AggregateError(failures, "Owned computer workers did not stop");
 }
 
 /** Verifies computer worker startup, messaging, and bounded shutdown. */

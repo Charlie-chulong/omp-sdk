@@ -173,6 +173,24 @@ export class RpcSubagentRegistry {
 		return [...this.#subagents.values()].sort((a, b) => a.index - b.index || a.id.localeCompare(b.id));
 	}
 
+	/** Publish a terminal registry transition that beat its task's final lifecycle frame. */
+	publishTerminalStatus(id: string): void {
+		const snapshot = this.#subagents.get(id);
+		const ref = AgentRegistry.global().get(id);
+		if (!snapshot || !ref || ref.sessionFile !== snapshot.sessionFile || ref.status === "running") return;
+		const status = ref.status === "aborted" ? "aborted" : "completed";
+		this.handleLifecycle({
+			id,
+			index: snapshot.index,
+			agent: snapshot.agent,
+			agentSource: snapshot.agentSource,
+			description: snapshot.description,
+			parentToolCallId: snapshot.parentToolCallId,
+			sessionFile: snapshot.sessionFile,
+			status,
+		});
+	}
+
 	#rememberTranscriptSession(subagentId: string, sessionFile: string | undefined): void {
 		if (!sessionFile) return;
 		this.#transcriptSessionFilesBySubagentId.delete(subagentId);

@@ -8,6 +8,7 @@ import { Settings } from "../../src/config/settings";
 import { CursorExecHandlers } from "../../src/cursor";
 import { prepareEvalSource } from "../../src/eval/input";
 import { disposeVmContextsByOwner } from "../../src/eval/js/context-manager";
+import { executeJs } from "../../src/eval/js/executor";
 import type { ToolSession } from "../../src/tools";
 import { EvalTool, type EvalToolParams } from "../../src/tools/eval";
 
@@ -154,4 +155,46 @@ describe("eval percent commands", () => {
 			prepareEvalSource({ language: "js", code: "%load https://example.com/setup.ts" }, context),
 		).rejects.toThrow(/local/);
 	});
+});
+
+describe("retained JS owner Stop", () => {
+	it.skipIf(process.platform === "win32")(
+		"awaits idle kernel and descendant exit, cancels timers and preserves another owner",
+		async () => {
+			using tmp = TempDir.createSync("@eval-owner-stop-");
+			const ownerId = crypto.randomUUID();
+			const otherId = crypto.randomUUID();
+			const marker = tmp.join("late-js-effect");
+			const options = { sessionId: ownerId, kernelOwnerId: ownerId, cwd: tmp.path(), session: session(tmp.path()) };
+			const otherOptions = { ...options, sessionId: otherId, kernelOwnerId: otherId };
+			try {
+				const result = await executeJs(
+					[
+						"import * as fs from 'node:fs'; import * as cp from 'node:child_process';",
+						"var child = cp.spawn('sleep', ['600'], { stdio: 'ignore' });",
+						`setTimeout(() => fs.writeFileSync(${JSON.stringify(marker)}, 'late'), 600_000);`,
+						"JSON.stringify([process.pid, child.pid]);",
+					].join("\n"),
+					options,
+				);
+				expect(result.exitCode).toBe(0);
+				const pids = JSON.parse(result.output.trim()) as number[];
+				expect(pids).toHaveLength(2);
+				await executeJs("var kept = 42;", otherOptions);
+				await disposeVmContextsByOwner(ownerId, { requireStopped: true });
+				for (const pid of pids) expect(() => process.kill(pid, 0)).toThrow();
+				expect(
+					await fs.stat(marker).then(
+						() => true,
+						() => false,
+					),
+				).toBe(false);
+				expect((await executeJs("kept", otherOptions)).output.trim()).toBe("42");
+				expect((await executeJs("typeof child", options)).output.trim()).toBe("undefined");
+			} finally {
+				await Promise.all([disposeVmContextsByOwner(ownerId), disposeVmContextsByOwner(otherId)]);
+			}
+		},
+		30_000,
+	);
 });

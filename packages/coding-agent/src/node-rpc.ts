@@ -155,13 +155,18 @@ export async function startNodeRpcHost(options: NodeRpcHostOptions): Promise<nev
 			`Node SDK extensions failed: ${result.extensionsResult.errors.map(error => `${error.path}: ${error.error}`).join("; ")}`,
 		);
 	}
-	return runRpcMode(result.session, {
-		input,
-		setToolUIContext: options.protocolMode === "rpc-ui" ? result.setToolUIContext : undefined,
-		headless: parsed.noUi,
-		mcpManager: result.mcpManager,
-		subagentEventBus: result.subagentEventBus,
-	});
+	settings.startWatching();
+	try {
+		return await runRpcMode(result.session, {
+			input,
+			setToolUIContext: options.protocolMode === "rpc-ui" ? result.setToolUIContext : undefined,
+			headless: parsed.noUi,
+			mcpManager: result.mcpManager,
+			subagentEventBus: result.subagentEventBus,
+		});
+	} finally {
+		settings.stopWatching();
+	}
 }
 
 /** Stop a persisted project daemon through its existing broker protocol. */

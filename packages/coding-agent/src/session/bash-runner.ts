@@ -60,6 +60,8 @@ export interface BashRunnerHost {
 export class BashRunner {
 	readonly #host: BashRunnerHost;
 	#abortControllers = new Set<AbortController>();
+	#stopGeneration = 0;
+	readonly #activeExecutions = new Set<Promise<unknown>>();
 	#pendingMessages: PendingBashMessage[] = [];
 	#sessionTarget: BashSessionTarget;
 
@@ -78,6 +80,21 @@ export class BashRunner {
 		onChunk?: (chunk: string) => void,
 		options?: { excludeFromContext?: boolean; useUserShell?: boolean; pty?: BashPtyOptions },
 	): Promise<BashResult> {
+		const execution = this.#executeBash(command, onChunk, options, this.#stopGeneration);
+		this.#activeExecutions.add(execution);
+		void execution.then(
+			() => this.#activeExecutions.delete(execution),
+			() => this.#activeExecutions.delete(execution),
+		);
+		return await execution;
+	}
+
+	async #executeBash(
+		command: string,
+		onChunk: ((chunk: string) => void) | undefined,
+		options: { excludeFromContext?: boolean; useUserShell?: boolean; pty?: BashPtyOptions } | undefined,
+		generation: number,
+	): Promise<BashResult> {
 		const target = this.#captureSessionTarget();
 		let targetTransferred = false;
 		const excludeFromContext = options?.excludeFromContext === true;
@@ -91,6 +108,7 @@ export class BashRunner {
 					excludeFromContext,
 					cwd,
 				});
+				if (generation !== this.#stopGeneration) throw new Error("Bash execution aborted during setup");
 				if (hookResult?.result) {
 					targetTransferred = true;
 					await this.#recordResultForTarget(target, command, hookResult.result, options);
@@ -141,6 +159,13 @@ export class BashRunner {
 		} finally {
 			if (!targetTransferred) await this.#releaseSessionTarget(target);
 		}
+	}
+
+	/** Cancel setup as well as live shells, and retain the receipt until every execution exits. */
+	async abortAndWait(): Promise<void> {
+		this.#stopGeneration++;
+		this.abort();
+		while (this.#activeExecutions.size > 0) await Promise.allSettled(this.#activeExecutions);
 	}
 
 	/** Records a bash result supplied outside executeBash in the current ownership scope. */

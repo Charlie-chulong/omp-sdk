@@ -227,7 +227,9 @@ const shellSessionsInUse = new Set<string>();
  * background job exits (reaped by the poll loop below). Children stay
  * kill-on-drop, so they still die when the harness tears the Shell down on exit.
  */
-const retainedShells = new Set<Shell>();
+const retainedShells = new Map<Shell, { owner: string | undefined; timer: NodeJS.Timeout }>();
+const nativeShellRuns = new Map<Shell, { owner: string | undefined; completion: Promise<unknown> }>();
+const nativeShellCleanupErrors = new Map<string, unknown[]>();
 const RETAIN_REAP_INTERVAL_MS = 5_000;
 // Native cancellation may spend two seconds unwinding the shell before its
 // N-API chunk bridge drains. The JS watchdog must not race that teardown.
@@ -240,7 +242,7 @@ const NATIVE_TIMEOUT_FALLBACK_GRACE_MS = 5_000;
 // (#10308). The backing timer is unref'd so it never keeps the process alive.
 const QUARANTINE_CLEANUP_TIMEOUT_MS = 30_000;
 
-async function retainShellWithLiveBackgroundJobs(shell: Shell): Promise<void> {
+async function retainShellWithLiveBackgroundJobs(shell: Shell, owner: string | undefined): Promise<void> {
 	let live: number;
 	try {
 		live = await shell.liveBackgroundJobCount();
@@ -248,7 +250,6 @@ async function retainShellWithLiveBackgroundJobs(shell: Shell): Promise<void> {
 		return;
 	}
 	if (live <= 0) return;
-	retainedShells.add(shell);
 	const interval = setInterval(() => {
 		void shell
 			.liveBackgroundJobCount()
@@ -263,6 +264,7 @@ async function retainShellWithLiveBackgroundJobs(shell: Shell): Promise<void> {
 			});
 	}, RETAIN_REAP_INTERVAL_MS);
 	interval.unref?.();
+	retainedShells.set(shell, { owner, timer: interval });
 }
 
 /**
@@ -314,8 +316,41 @@ export function releaseShellSessions(agentSessionKey: string | undefined): void 
 	for (const [key, shell] of shellSessions) {
 		if (!key.startsWith(prefix)) continue;
 		shellSessions.delete(key);
-		if (!shellSessionsInUse.has(key)) void retainShellWithLiveBackgroundJobs(shell);
+		if (!shellSessionsInUse.has(key)) void retainShellWithLiveBackgroundJobs(shell, agentSessionKey);
 	}
+}
+
+/** Stop only this session's live and retained native shells and await actual native teardown. */
+export async function stopShellSessions(owner: string): Promise<void> {
+	const shells = new Set<Shell>();
+	const pending: Promise<unknown>[] = [];
+	for (const [key, shell] of shellSessions) {
+		if (!key.startsWith(`${owner}\n`) && !key.startsWith(`${owner}:async:`)) continue;
+		shellSessions.delete(key);
+		shells.add(shell);
+	}
+	for (const [shell, retained] of retainedShells) {
+		if (retained.owner !== owner && !retained.owner?.startsWith(`${owner}:async:`)) continue;
+		clearInterval(retained.timer);
+		retainedShells.delete(shell);
+		shells.add(shell);
+	}
+	for (const [shell, run] of nativeShellRuns) {
+		if (run.owner !== owner && !run.owner?.startsWith(`${owner}:async:`)) continue;
+		shells.add(shell);
+		pending.push(run.completion);
+	}
+	for (const shell of shells) pending.push(shell.abort());
+	const results = await Promise.allSettled(pending);
+	const errors = nativeShellCleanupErrors.get(owner) ?? [];
+	nativeShellCleanupErrors.delete(owner);
+	for (const [key, failures] of nativeShellCleanupErrors) {
+		if (!key.startsWith(`${owner}:async:`)) continue;
+		errors.push(...failures);
+		nativeShellCleanupErrors.delete(key);
+	}
+	for (const result of results) if (result.status === "rejected") errors.push(result.reason);
+	if (errors.length > 0) throw new AggregateError(errors, "Native shell cancellation failed");
 }
 
 function resolveShellCwd(cwd: string | undefined): string | undefined {
@@ -713,14 +748,19 @@ export async function executeBash(command: string, options?: BashExecutorOptions
 	const runAbortController = new AbortController();
 	let abortCleanupPromise: Promise<void> | undefined;
 	const abortShell = (): Promise<void> => {
-		abortCleanupPromise ??= executionShell.abort().catch(() => undefined);
+		abortCleanupPromise ??= executionShell.abort();
 		return abortCleanupPromise;
 	};
 	const abortCurrentExecution = () => {
 		if (!runAbortController.signal.aborted) {
 			runAbortController.abort();
 		}
-		void abortShell();
+		void abortShell().catch(error => {
+			if (!options?.sessionKey) return;
+			const errors = nativeShellCleanupErrors.get(options.sessionKey) ?? [];
+			errors.push(error);
+			nativeShellCleanupErrors.set(options.sessionKey, errors);
+		});
 	};
 	const abortDeferred = Promise.withResolvers<"abort">();
 	const abortHandler = () => {
@@ -771,6 +811,15 @@ export async function executeBash(command: string, options?: BashExecutorOptions
 				}
 			},
 		);
+		const nativeCompletion = runPromise.finally(async () => {
+			try {
+				await abortCleanupPromise;
+			} finally {
+				nativeShellRuns.delete(executionShell);
+			}
+		});
+		nativeShellRuns.set(executionShell, { owner: options?.sessionKey, completion: nativeCompletion });
+		void nativeCompletion.catch(() => {});
 		options?.onStart?.(() => executionShell.pids());
 
 		const winner = await Promise.race<
@@ -902,7 +951,7 @@ export async function executeBash(command: string, options?: BashExecutorOptions
 				// turns; it is reaped once its last job exits and still dies with the
 				// harness. Skip on resetSession (cancel/error) — those tear down.
 				if (!resetSession && shellSession) {
-					await retainShellWithLiveBackgroundJobs(shellSession);
+					await retainShellWithLiveBackgroundJobs(shellSession, options?.sessionKey);
 				}
 			}
 		}

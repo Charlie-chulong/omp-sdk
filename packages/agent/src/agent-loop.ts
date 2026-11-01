@@ -2176,6 +2176,7 @@ async function streamAssistantResponse(
 				cursorOnToolResult: collectCursorToolResult,
 				liveSteering: providerCall.liveSteering,
 			});
+			const providerResponse = response;
 			if (promptToolWireTools && ownedDialect) {
 				// Re-materialize in-band tool-call text as native toolCall content blocks
 				// so the rest of the loop executes them unchanged. When the model starts
@@ -2228,12 +2229,17 @@ async function streamAssistantResponse(
 			let speculationSettled = false;
 			const responseIterator = response[Symbol.asyncIterator]();
 			const finishAbortedStream = async (): Promise<AssistantMessage> => {
-				try {
-					const cleanup = responseIterator.return?.();
-					if (cleanup) void cleanup.catch(() => {});
-				} catch {
-					// Provider cancellation failures cannot change the committed aborted message.
-				}
+				const cleanup = (async () => {
+					try {
+						await responseIterator.return?.();
+					} finally {
+						// Iterator return only stops consumption. The provider's result settles when its
+						// request body has actually exited, even if the synthetic abort was emitted first.
+						await providerResponse.result();
+					}
+				})();
+				if (config.onAbortedProviderCleanup) config.onAbortedProviderCleanup(cleanup);
+				else void cleanup.catch(() => {});
 				await speculationCoordinator?.discardAll("run aborted", "aborted");
 				speculationSettled = true;
 				const aborted = emitAbortedAssistantMessage(

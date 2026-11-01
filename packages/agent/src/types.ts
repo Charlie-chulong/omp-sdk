@@ -635,6 +635,9 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 */
 	transformAssistantMessagePreservesToolCalls?: boolean;
 
+	/** Retain the real provider shutdown when an abort race releases the agent loop early. */
+	onAbortedProviderCleanup?: (cleanup: Promise<void>) => void;
+
 	/**
 	 * Called after a tool finishes executing, before `tool_execution_end` and the
 	 * tool-result message are emitted.

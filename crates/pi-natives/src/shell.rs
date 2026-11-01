@@ -376,8 +376,11 @@ impl Shell {
 	/// Returns `Ok(())` even when no commands are running.
 	#[napi]
 	pub async fn abort(&self) -> Result<()> {
-		self.inner.abort().await;
-		Ok(())
+		self
+			.inner
+			.abort()
+			.await
+			.map_err(|err| Error::from_reason(err.to_string()))
 	}
 
 	/// Count live background jobs (`&`/`nohup` children still running) on this

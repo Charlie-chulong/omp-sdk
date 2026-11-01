@@ -16,6 +16,7 @@ import { EVAL_TIMEOUT_PAUSE_OP, EVAL_TIMEOUT_RESUME_OP } from "../bridge-timeout
 import { getEnabledEvalPreludes } from "../preludes";
 import { attachSessionOwner, EvalKernelNotRunningError, type SessionOwners } from "../executor-base";
 import { shouldDetachKernel } from "../py/spawn-options";
+import { killProcessGroup, waitForKernelProcessGroupExit } from "../kernel-base";
 import { updateEvalState } from "../state";
 import type { EvalShadowCellSession } from "../speculation/cell-session";
 import { getActiveEvalShadowCell } from "../speculation/runtime-context";
@@ -106,6 +107,8 @@ interface JsSession {
 	ownerIds: Set<string>;
 	hasFallbackOwner: boolean;
 }
+
+const stoppingSessions = new Map<JsSession, Promise<void>>();
 
 interface StartingJsSession extends SessionOwners {
 	promise: Promise<JsSession>;
@@ -404,18 +407,21 @@ export async function disposeAllVmContexts(): Promise<void> {
 }
 
 /**
- * Shut down retained JS contexts owned solely by `ownerId`; contexts with other
- * owners (e.g. an in-memory session keyed only by cwd) just drop the registration.
+ * Shut down retained JS contexts owned solely by `ownerId`; normal disposal of
+ * shared contexts drops the registration, while strict Stop rejects instead.
  */
-export async function disposeVmContextsByOwner(ownerId: string): Promise<void> {
+export async function disposeVmContextsByOwner(ownerId: string, options?: { requireStopped?: boolean }): Promise<void> {
 	const toKill: JsSession[] = [];
-	for (const session of Array.from(sessions.values())) {
+	const failures: unknown[] = [];
+	for (const session of new Set([...sessions.values(), ...stoppingSessions.keys()])) {
 		if (!session.ownerIds.has(ownerId)) continue;
 		if (session.ownerIds.size === 1) {
 			toKill.push(session);
 			continue;
 		}
-		session.ownerIds.delete(ownerId);
+		if (options?.requireStopped)
+			failures.push(new Error("JS kernel is shared with another owner; cannot stop it safely"));
+		else session.ownerIds.delete(ownerId);
 	}
 	const startingToKill: StartingJsSession[] = [];
 	for (const [sessionKey, starting] of Array.from(startingSessions.entries())) {
@@ -425,7 +431,9 @@ export async function disposeVmContextsByOwner(ownerId: string): Promise<void> {
 			startingToKill.push(starting);
 			continue;
 		}
-		starting.ownerIds.delete(ownerId);
+		if (options?.requireStopped)
+			failures.push(new Error("JS kernel startup is shared with another owner; cannot stop it safely"));
+		else starting.ownerIds.delete(ownerId);
 	}
 	for (const session of toKill) {
 		if (sessions.get(session.sessionKey) === session) sessions.delete(session.sessionKey);
@@ -440,6 +448,7 @@ export async function disposeVmContextsByOwner(ownerId: string): Promise<void> {
 	await Promise.all(
 		toKill.map(session => killSession(session, new ToolError("JS context disposed"), { force: false })),
 	);
+	if (failures.length > 0) throw new AggregateError(failures, "JS owner shutdown failed");
 }
 
 /**
@@ -532,10 +541,10 @@ async function runOnce(
 		// code, hence it stays the terminal step either way.
 		const drained = pending.deferDepth > 0 ? pending.deferDrained?.promise : undefined;
 		if (drained) {
-			void drained.then(() => killSessionFor(session, abortError, { force: true }));
+			void drained.then(() => killSessionFor(session, abortError, { force: true })).catch(() => {});
 			return;
 		}
-		void killSessionFor(session, abortError, { force: true });
+		void killSessionFor(session, abortError, { force: true }).catch(() => {});
 	};
 
 	if (options.runState.signal?.aborted) {
@@ -716,7 +725,7 @@ async function initWorker(session: JsSession, snapshot: SessionSnapshot, timeout
 		// Worker died after a successful handshake: tear the session down so the
 		// in-flight run (and the next acquire) fail fast instead of hanging on a
 		// worker that will never reply.
-		void killSessionFor(session, error, { force: true });
+		void killSessionFor(session, error, { force: true }).catch(() => {});
 	});
 	try {
 		// Attach listeners and send init before awaiting ready. The worker now
@@ -870,8 +879,19 @@ async function killSessionFor(session: JsSession, error: Error, options: { force
 	await killSession(session, error, options);
 }
 
-async function killSession(session: JsSession, error: Error, options: { force: boolean }): Promise<void> {
-	if (session.state === "dead") return;
+function killSession(session: JsSession, error: Error, options: { force: boolean }): Promise<void> {
+	const stopping = stoppingSessions.get(session);
+	if (stopping) return stopping;
+	const shutdown = stopSession(session, error, options);
+	stoppingSessions.set(session, shutdown);
+	void shutdown.then(
+		() => stoppingSessions.delete(session),
+		() => {},
+	);
+	return shutdown;
+}
+
+async function stopSession(session: JsSession, error: Error, options: { force: boolean }): Promise<void> {
 	session.state = "dead";
 	for (const toolSession of session.stateSessions) {
 		updateEvalState(toolSession, { language: "js", kernelId: session.kernelId, alive: false });
@@ -888,11 +908,11 @@ async function killSession(session: JsSession, error: Error, options: { force: b
 	for (const pending of session.pendingShadowRuns.values()) pending.reject(error);
 	session.pendingShadowRuns.clear();
 	if (options.force) {
-		await session.worker.terminate().catch(() => undefined);
+		await session.worker.terminate();
 		return;
 	}
 	if (await session.worker.close().catch(() => false)) return;
-	await session.worker.terminate().catch(() => undefined);
+	await session.worker.terminate();
 }
 
 function markJsSessionAlive(session: JsSession, toolSession: ToolSession, environment: string | undefined): void {
@@ -1060,6 +1080,14 @@ function spawnJsProcess(): JsEvalWorkerHandle {
 	const base = createWorkerHandle<WorkerInbound, WorkerOutbound>(spawned, message =>
 		safeSendIpc(spawned.proc, message, "js-eval"),
 	);
+	const terminate = async (): Promise<void> => {
+		killProcessGroup(spawned.proc.pid, "SIGKILL");
+		await base.terminate();
+		await spawned.proc.exited;
+		if (!(await waitForKernelProcessGroupExit(spawned.proc.pid, WORKER_CLOSE_TIMEOUT_MS))) {
+			throw new Error("JS eval kernel descendants did not confirm exit");
+		}
+	};
 	return {
 		mode: "process",
 		send: message => base.send(message),
@@ -1078,13 +1106,16 @@ function spawnJsProcess(): JsEvalWorkerHandle {
 			};
 			unsubscribe = base.onMessage(message => {
 				if (message.type !== "closed") return;
-				void base.terminate().finally(() => finish(true));
+				void terminate().then(
+					() => finish(true),
+					() => finish(false),
+				);
 			});
 			const timeout = setTimeout(() => finish(false), WORKER_CLOSE_TIMEOUT_MS);
 			base.send({ type: "close" });
 			return await promise;
 		},
-		terminate: () => base.terminate(),
+		terminate,
 	};
 }
 

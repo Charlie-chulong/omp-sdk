@@ -577,6 +577,7 @@ export class SessionAdvisors {
 	/** Holds recorder writes behind the active resume-cost byte snapshot. */
 	#advisorCostSnapshotBarrier: Promise<void> | undefined;
 	#advisorAutoResumeSuppressed = false;
+	#userStopped = false;
 	#preserveAdvisorAdvice = false;
 	#preserveTerminalYieldAdvice = false;
 	/** Routes late advice against a finished run through the boundary-flush continuation policy during unwind. */
@@ -778,6 +779,19 @@ export class SessionAdvisors {
 	/** Stops every advisor runtime and starts recorder shutdown. */
 	stopRuntime(): void {
 		this.#stopAdvisorRuntime();
+	}
+
+	/** Cancel active review and keep its backlog paused until the next deliberate user turn. */
+	async stopForUser(): Promise<void> {
+		this.#userStopped = true;
+		await Promise.all(this.#advisors.map(advisor => advisor.runtime.pauseForSessionTransition()));
+	}
+
+	resumeAfterUserStop(): void {
+		if (!this.#userStopped) return;
+		this.#userStopped = false;
+		for (const advisor of this.#advisors) advisor.runtime.resumeAfterSessionTransition();
+		this.#buildAdvisorRuntime();
 	}
 
 	/**
@@ -1288,6 +1302,7 @@ export class SessionAdvisors {
 	): boolean {
 		if (this.#host.isDisposed()) return false;
 		if (this.#advisors.length > 0) return true;
+		if (this.#userStopped) return false;
 		if (!this.#advisorEnabled) return false;
 
 		// Rebuild the status map from scratch so removed/renamed advisors don't

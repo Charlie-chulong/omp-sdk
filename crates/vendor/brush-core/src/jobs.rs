@@ -692,11 +692,10 @@ impl Job {
 	}
 
 	/// Aborts shell-internal background tasks and returns a future that
-	/// resolves once they have unwound and dropped what they held, or after
-	/// [`INTERNAL_TASK_UNWIND_LIMIT`]. `kill %N` awaits it, as a killed
-	/// process is gone once it is reaped: a FIFO open the job was waiting in is
-	/// then released before the next command opens that FIFO.
-	pub fn take_internal_tasks(&mut self) -> impl Future<Output = ()> + Send + 'static {
+	/// confirms they have unwound and dropped what they held. Returns `false`
+	/// if any task outlasts [`INTERNAL_TASK_UNWIND_LIMIT`]. `kill %N` awaits it,
+	/// so a FIFO open is released before the next command opens that FIFO.
+	pub fn take_internal_tasks(&mut self) -> impl Future<Output = bool> + Send + 'static {
 		// Flag the execution first: aborting the handle below only lands where the
 		// task yields, and a loop of synchronous builtins may run for a long time
 		// before that.
@@ -719,9 +718,11 @@ impl Job {
 			self.state = JobState::Done;
 		}
 		async move {
+			let mut confirmed = true;
 			for handle in aborted {
-				let _ = tokio::time::timeout(INTERNAL_TASK_UNWIND_LIMIT, handle).await;
+				confirmed &= tokio::time::timeout(INTERNAL_TASK_UNWIND_LIMIT, handle).await.is_ok();
 			}
+			confirmed
 		}
 	}
 

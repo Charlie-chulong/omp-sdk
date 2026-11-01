@@ -37,6 +37,7 @@ export class EvalRunner {
 	#pendingMessages: PythonExecutionMessage[] = [];
 	#activeExecutions = new Set<Promise<unknown>>();
 	#disposing = false;
+	#stopGeneration = 0;
 
 	constructor(host: EvalRunnerHost, options: { kernelOwnerId: string }) {
 		this.#host = host;
@@ -53,6 +54,7 @@ export class EvalRunner {
 		const cwd = this.#host.sessionManager.getCwd();
 		this.assertExecutionAllowed();
 		const abortController = new AbortController();
+		const generation = this.#stopGeneration;
 		const execution = (async (): Promise<PythonResult> => {
 			const extensionRunner = this.#host.extensionRunner();
 			if (extensionRunner?.hasHandlers("user_python")) {
@@ -63,6 +65,7 @@ export class EvalRunner {
 					cwd,
 				});
 				this.assertExecutionAllowed();
+				if (generation !== this.#stopGeneration) throw new Error("Python execution aborted during setup");
 				if (hookResult?.result) {
 					this.recordPythonResult(code, hookResult.result, options);
 					return hookResult.result;
@@ -132,6 +135,13 @@ export class EvalRunner {
 		for (const abortController of this.#abortControllers) abortController.abort();
 	}
 
+	/** Wait for actual execution settlement; retained kernels stay reusable by a later prompt. */
+	async abortAndWait(): Promise<void> {
+		this.#stopGeneration++;
+		this.abort();
+		while (this.#activeExecutions.size > 0) await Promise.allSettled(this.#activeExecutions);
+	}
+
 	/** Whether a Python execution is currently running. */
 	get isRunning(): boolean {
 		return this.#abortControllers.size > 0;
@@ -168,14 +178,14 @@ export class EvalRunner {
 	}
 
 	/** Waits for active work and disposes every retained eval kernel owned by the session. */
-	async disposeKernels(): Promise<void> {
+	async disposeKernels(options?: { requireStopped?: boolean }): Promise<void> {
 		const settled = await this.#prepareExecutionsForDispose();
 		if (!settled) {
 			logger.warn("Detaching retained eval-kernel ownership during dispose while eval execution is still active");
 		}
 		const results = await Promise.allSettled([
-			disposeKernelSessionsByOwner(this.#kernelOwnerId),
-			disposeVmContextsByOwner(this.#kernelOwnerId),
+			disposeKernelSessionsByOwner(this.#kernelOwnerId, options),
+			disposeVmContextsByOwner(this.#kernelOwnerId, options),
 		]);
 		const errors: unknown[] = [];
 		for (const result of results) if (result.status === "rejected") errors.push(result.reason);

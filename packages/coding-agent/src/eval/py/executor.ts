@@ -572,8 +572,11 @@ export async function disposeAllKernelSessions(): Promise<void> {
 	await sessionRegistry.disposeAll();
 }
 
-export async function disposeKernelSessionsByOwner(ownerId: string): Promise<void> {
-	await sessionRegistry.disposeByOwner(ownerId);
+export async function disposeKernelSessionsByOwner(
+	ownerId: string,
+	options?: { requireStopped?: boolean },
+): Promise<void> {
+	await sessionRegistry.disposeByOwner(ownerId, options);
 }
 
 /** Projects against an already-retained, idle Python session without starting a kernel. */

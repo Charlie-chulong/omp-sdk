@@ -310,6 +310,10 @@ export class JudgmentBatch {
 		return true;
 	}
 
+	waitForIdle(): Promise<void> {
+		return this.#finished.promise;
+	}
+
 	/**
 	 * Resolve on `timeoutMs`, run completion, or — with `untilSettle` — the next
 	 * settled item. Rejects when `signal` aborts.
@@ -507,13 +511,16 @@ export function getJudgmentBatch(id: string, session: ToolSession): JudgmentBatc
 	return batch && batch.ownerId === ownerOf(session) ? batch : undefined;
 }
 
-/** Cancel and forget every batch owned by an agent session. */
-export function releaseJudgmentBatches(ownerId: string): void {
+/** Cancel and forget every batch, retaining settlement even when no async job could be registered. */
+export function releaseJudgmentBatches(ownerId: string): Promise<void> {
+	const pending: Promise<void>[] = [];
 	for (const [id, batch] of batches) {
 		if (batch.ownerId !== ownerId) continue;
 		batch.cancel();
+		pending.push(batch.waitForIdle());
 		batches.delete(id);
 	}
+	return Promise.all(pending).then(() => {});
 }
 
 function requireBatch(args: Record<string, unknown>, session: ToolSession): JudgmentBatch {

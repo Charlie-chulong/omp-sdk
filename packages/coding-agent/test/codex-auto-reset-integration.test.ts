@@ -16,6 +16,7 @@ import {
 	createCodexAutoRedeemCoordinator,
 } from "@oh-my-pi/pi-coding-agent/session/codex-auto-reset";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
+import { cfgCodexResetsAutoRedeem } from "@oh-my-pi/pi-coding-agent/session/settings";
 import { TempDir } from "@oh-my-pi/pi-utils";
 import type { AgentSideConnection, CreateElicitationRequest } from "@oh-my-pi/pi-utils/acp";
 import { mockSchedulerWaitWithClock } from "./helpers/mock-scheduler-clock";
@@ -323,5 +324,48 @@ describe("Codex saved-reset consent without a prompt UI", () => {
 		expect(elicitations).toEqual([expect.stringContaining("Spend a saved Codex rate-limit reset?")]);
 		expect(targets).toEqual([]);
 		expect(session.agent.state.messages.at(-1)).toMatchObject({ role: "assistant", stopReason: "error" });
+	});
+
+	it("does not let a pending Yes dialog overwrite a newer disabled policy", async () => {
+		const account = {
+			accountId: "acct-a",
+			credentialId: 1,
+			weeklyUsed: 0.8,
+			limitReached: false,
+			creditExpiresInMs: 2 * HOUR,
+		};
+		const { session, coordinator, targets } = buildSession({ accounts: [account], acpForm: true });
+		await attachAcpClient(session, true);
+		const select = vi.spyOn(session.extensionRunner!.getUIContext(), "select").mockImplementation(async () => {
+			cfgCodexResetsAutoRedeem.override(session.settings, "no");
+			return "Yes";
+		});
+		await session.fetchUsageReports();
+		await coordinator.sweepPromise;
+		expect(select).toHaveBeenCalledTimes(1);
+		expect(cfgCodexResetsAutoRedeem.get(session.settings)).toBe("no");
+		expect(targets).toEqual([]);
+	});
+
+	it("rechecks disabled policy after the fenced live balance listing", async () => {
+		const account = {
+			accountId: "acct-a",
+			credentialId: 1,
+			weeklyUsed: 0.8,
+			limitReached: false,
+			creditExpiresInMs: 2 * HOUR,
+		};
+		const { session, coordinator, targets } = buildSession({ accounts: [account] });
+		cfgCodexResetsAutoRedeem.override(session.settings, "yes");
+		let listings = 0;
+		vi.spyOn(authStorage.resets, "list").mockImplementation(async () => {
+			if (++listings === 2) cfgCodexResetsAutoRedeem.override(session.settings, "no");
+			return [liveCreditStatus(account, true)];
+		});
+		await session.fetchUsageReports();
+		await coordinator.sweepPromise;
+		expect(listings).toBe(2);
+		expect(targets).toEqual([]);
+		expect([...coordinator.attemptedKeys]).toEqual([]);
 	});
 });

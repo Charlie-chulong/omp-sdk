@@ -93,7 +93,7 @@ interface KernelSessionRegistry<
 	TSession extends KernelSession<TKernel>,
 > {
 	disposeAll(): Promise<void>;
-	disposeByOwner(ownerId: string): Promise<void>;
+	disposeByOwner(ownerId: string, options?: { requireStopped?: boolean }): Promise<void>;
 	executeOnSession(code: string, cwd: string, options: TOptions): Promise<R>;
 	peekLiveKernel(cwd: string, options: TOptions): TKernel | undefined;
 	getPresentSession(cwd: string, options: TOptions): TSession | undefined;
@@ -359,16 +359,21 @@ export function createKernelSessionRegistry<
 		}
 	}
 
-	async function disposeByOwner(ownerId: string): Promise<void> {
+	async function disposeByOwner(ownerId: string, options?: { requireStopped?: boolean }): Promise<void> {
 		const toShutdown: TSession[] = [];
 		const startingToShutdown: StartingKernelSession<TSession>[] = [];
+		const failures: unknown[] = [];
 		for (const session of Array.from(sessions.values())) {
 			if (!session.ownerIds.has(ownerId)) continue;
 			if (session.ownerIds.size === 1) {
 				toShutdown.push(session);
 				continue;
 			}
-			session.ownerIds.delete(ownerId);
+			if (options?.requireStopped)
+				failures.push(
+					new Error(`${descriptor.languageLabel} kernel is shared with another owner; cannot stop it safely`),
+				);
+			else session.ownerIds.delete(ownerId);
 		}
 		for (const [sessionKey, starting] of Array.from(startingSessions.entries())) {
 			if (sessions.has(sessionKey) || !starting.ownerIds.has(ownerId)) continue;
@@ -377,7 +382,13 @@ export function createKernelSessionRegistry<
 				startingToShutdown.push(starting);
 				continue;
 			}
-			starting.ownerIds.delete(ownerId);
+			if (options?.requireStopped)
+				failures.push(
+					new Error(
+						`${descriptor.languageLabel} kernel startup is shared with another owner; cannot stop it safely`,
+					),
+				);
+			else starting.ownerIds.delete(ownerId);
 		}
 		for (const session of toShutdown) {
 			descriptor.invalidateSession?.(session);
@@ -409,7 +420,13 @@ export function createKernelSessionRegistry<
 				reason,
 			});
 			if (!sessions.has(session.sessionKey)) sessions.set(session.sessionKey, session);
+			failures.push(
+				result.status === "rejected"
+					? result.reason
+					: new Error(`${descriptor.languageLabel} kernel shutdown not confirmed`),
+			);
 		}
+		if (failures.length > 0) throw new AggregateError(failures, `${descriptor.languageLabel} owner shutdown failed`);
 	}
 
 	function peekLiveKernel(cwd: string, options: TOptions): TKernel | undefined {

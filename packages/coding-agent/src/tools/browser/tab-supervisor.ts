@@ -1366,7 +1366,9 @@ async function releaseTabInner(tab: TabSession, name: string, opts: ReleaseTabOp
 			// The close by id below confirms an owned page is gone either way.
 		}
 	}
-	await tab.worker.terminate().catch(() => undefined);
+	await tab.worker.terminate().catch(error => {
+		cleanupError ??= error;
+	});
 	// omp closes the pages it owns, and with them goes the last reader of their staged uploads.
 	if (tab.ownsPage) await removeUploadStaging(tab.uploadDir);
 	// Close a live tab's owned page by id as well, which confirms it is gone: a worker's own
@@ -1421,6 +1423,8 @@ async function releaseTabInner(tab: TabSession, name: string, opts: ReleaseTabOp
 			});
 		}
 	}
+	if (targetCloseFailed)
+		cleanupError ??= new ToolError(`Could not confirm owned browser tab ${JSON.stringify(name)} closed`);
 	if (cleanupError) throw cleanupError;
 	return true;
 }
@@ -1455,11 +1459,10 @@ export async function dropHeadlessTabs(): Promise<void> {
 export async function releaseTabsForOwner(ownerId: string, opts: ReleaseTabOptions = {}): Promise<number> {
 	if (!ownerId) return 0;
 	const names = [...tabs.values()].filter(tab => tab.ownerSessionId === ownerId).map(tab => tab.name);
-	let count = 0;
-	for (const name of names) {
-		if (await releaseTab(name, opts)) count++;
-	}
-	return count;
+	const results = await Promise.allSettled(names.map(name => releaseTab(name, opts)));
+	const failures = results.flatMap(result => (result.status === "rejected" ? [result.reason] : []));
+	if (failures.length > 0) throw new AggregateError(failures, "Owned browser tabs did not close");
+	return results.filter(result => result.status === "fulfilled" && result.value).length;
 }
 
 /**

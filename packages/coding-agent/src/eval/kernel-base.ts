@@ -1,5 +1,6 @@
 import type { EvalStatusEvent, EvalView } from "@oh-my-pi/pi-tui/tools/eval";
 import { isRecord, logger, readLines, Snowflake } from "@oh-my-pi/pi-utils";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { Subprocess } from "bun";
 import type { ShadowBarrier, ShadowControlNode, ShadowOperation } from "./speculation/types";
 import { type EvalDisplayOutput, evalImageMetadata } from "./types";
@@ -188,6 +189,25 @@ export function killProcessGroup(pid: number | undefined, signal: NodeJS.Signals
 		// ESRCH: the group is already gone, which is the outcome we wanted anyway.
 		// EPERM: not ours to signal. Neither is worth failing a shutdown over.
 		return false;
+	}
+}
+
+/** Await only the dedicated kernel group; a signal acknowledgement is not an exit receipt. */
+export async function waitForKernelProcessGroupExit(pid: number | undefined, timeoutMs: number): Promise<boolean> {
+	if (process.platform === "win32" || !isSignalableProcessGroup(pid)) return true;
+	const deadline = Date.now() + timeoutMs;
+	for (;;) {
+		try {
+			process.kill(-pid, 0);
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException).code;
+			if (code === "ESRCH") return true;
+			// macOS can briefly report EPERM while a killed group is being reaped.
+			// It is not an exit receipt: keep waiting for ESRCH within the same deadline.
+			if (code !== "EPERM") return false;
+		}
+		if (Date.now() >= deadline) return false;
+		await runtime.sleep(25);
 	}
 }
 
@@ -515,7 +535,7 @@ export abstract class BaseKernel<TExecuteOptions extends KernelExecuteOptions = 
 		killProcessGroup(proc.pid, "SIGKILL");
 		if (result === null) result = await this.#waitForExitWithTimeout(timeoutMs);
 
-		const confirmed = result !== null;
+		const confirmed = result !== null && (await waitForKernelProcessGroupExit(proc.pid, timeoutMs));
 		if (!confirmed) {
 			// Nothing acknowledged the exit. Record the pid so an operator can find
 			// the survivor; the group SIGKILL above is our last automatic recourse.

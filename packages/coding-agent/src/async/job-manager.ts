@@ -302,6 +302,8 @@ export class AsyncJobManager {
 	readonly #consumedJobResults = new Set<string>();
 	readonly #evictionTimers = new Map<string, NodeJS.Timeout>();
 	readonly #releasedForegroundJobs = new Set<string>();
+	readonly #stoppedOwners = new Map<string, unknown>();
+	readonly #ownerParents = new Map<string, string>();
 	#nextAutoId = 1;
 	readonly #deliverySinks = new Map<string, AsyncJobDeliverySink>();
 	readonly #onJobComplete: AsyncJobManagerOptions["onJobComplete"];
@@ -393,6 +395,7 @@ export class AsyncJobManager {
 		if (this.#disposed) {
 			throw new Error("Async job manager is disposed");
 		}
+		this.#assertOwnerRunning(options?.ownerId);
 		// Queued jobs hold no execution slot yet — only count jobs that are
 		// actually running so a large parked batch cannot starve registration.
 		let activeCount = 0;
@@ -407,6 +410,7 @@ export class AsyncJobManager {
 		}
 
 		const id = this.#claimJobId(options?.id);
+		if (options?.agentId && options.ownerId) this.#ownerParents.set(options.agentId, options.ownerId);
 		if (options?.foreground) this.#suppressedDeliveries.add(id);
 		const abortController = new AbortController();
 		const startTime = Date.now();
@@ -505,6 +509,7 @@ export class AsyncJobManager {
 		options: { id?: string; ownerId?: string; agentId?: string },
 	): string {
 		if (this.#disposed) throw new Error("Async job manager is disposed");
+		this.#assertOwnerRunning(options.ownerId);
 		const id = this.#claimJobId(options.id);
 		const now = Date.now();
 		const job: AsyncJob = {
@@ -707,6 +712,37 @@ export class AsyncJobManager {
 	 */
 	cancelAll(filter?: AsyncJobFilter, reason?: unknown): void {
 		this.#cancelJobs(filter, reason);
+	}
+
+	/** Fence new work and cancel existing jobs until this owner is explicitly resumed. */
+	stopOwner(ownerId: string, reason?: unknown): void {
+		this.#stoppedOwners.set(ownerId, reason);
+		this.acknowledgeDeliveries(this.#filterJobs(this.#jobs.values(), { ownerId }).map(job => job.id));
+		this.cancelAll({ ownerId }, reason);
+	}
+
+	resumeOwner(ownerId: string): void {
+		this.#stoppedOwners.delete(ownerId);
+	}
+
+	#assertOwnerRunning(ownerId: string | undefined): void {
+		const seen = new Set<string>();
+		for (let id = ownerId; id !== undefined && !seen.has(id); id = this.#ownerParents.get(id)) {
+			seen.add(id);
+			if (!this.#stoppedOwners.has(id)) continue;
+			throw new Error(`Async work for ${ownerId} is stopped; send a new prompt to resume`, {
+				cause: this.#stoppedOwners.get(id),
+			});
+		}
+	}
+
+	/** Include suppressed deliveries whose sink already began: suppression is not settlement. */
+	async waitForOwnerDeliveries(ownerId: string): Promise<void> {
+		for (;;) {
+			const pending = this.#inFlightDeliveries.filter(delivery => delivery.ownerId === ownerId);
+			if (pending.length === 0) return;
+			await Promise.all(pending.map(delivery => delivery.promise));
+		}
 	}
 
 	#cancelJobs(filter?: AsyncJobFilter, reason?: unknown): void {

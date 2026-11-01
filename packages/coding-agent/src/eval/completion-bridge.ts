@@ -121,14 +121,17 @@ export function getCompletionHandle(id: string): CompletionHandleEntry | undefin
 	return completionHandles.get(id);
 }
 
-/** Cancel and remove every completion handle owned by an agent session. */
-export function releaseCompletionHandles(ownerId: string): void {
+/** Cancel and remove every completion handle, retaining actual request settlement for its owner. */
+export function releaseCompletionHandles(ownerId: string): Promise<void> {
+	const pending: Promise<void>[] = [];
 	for (const [id, entry] of completionHandles) {
 		if (entry.ownerId !== ownerId) continue;
 		entry.controller.abort(new ToolError("Completion handle owner released"));
+		pending.push(entry.promise);
 		clearTimeout(entry.evictionTimer);
 		completionHandles.delete(id);
 	}
+	return Promise.all(pending).then(() => {});
 }
 
 interface CompletionCandidate {
@@ -500,6 +503,7 @@ export function retainCompletionHandle(
 		)
 		.finally(() => {
 			entry.settled = true;
+			if (completionHandles.get(id) !== entry) return;
 			const timer = setTimeout(() => {
 				if (completionHandles.get(id) === entry) completionHandles.delete(id);
 			}, COMPLETION_HANDLE_RETENTION_MS);

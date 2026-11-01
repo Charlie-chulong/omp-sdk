@@ -795,22 +795,33 @@ export type RpcSubagentResetRegistry = Pick<RpcSubagentRegistry, "clear">;
  * or the abort fails; the subagent is still detached and disposed.
  */
 export async function handleRpcCancelSubagent(
-	subagentRegistry: Pick<RpcSubagentRegistry, "getSubagents">,
+	subagentRegistry: Pick<RpcSubagentRegistry, "getSubagents"> &
+		Partial<Pick<RpcSubagentRegistry, "publishTerminalStatus">>,
 	subagentId: string,
 ): Promise<boolean> {
 	const owned = resolveOwnedLiveSubagent(subagentRegistry, subagentId);
-	if (!owned) return false;
+	if (!owned) {
+		subagentRegistry.publishTerminalStatus?.(subagentId);
+		return false;
+	}
 	// Start the release first: it publishes the `aborted` tombstone synchronously,
 	// so the executor cannot accept the run's result (flipping the ref to idle)
 	// while the abort below is still settling. Settle both together so a failed
 	// tombstone write is reported here instead of escaping as an unhandled
 	// rejection while the abort is pending.
-	const [released, aborted] = await Promise.allSettled([
-		AgentLifecycleManager.global().release(subagentId, owned.ref, { tombstone: true }),
-		owned.session.abort({ reason: USER_INTERRUPT_LABEL }),
+	const release = AgentLifecycleManager.global().release(subagentId, owned.ref, { tombstone: true });
+	const manager = owned.session.asyncJobManager;
+	const jobs = manager?.getRunningJobs().filter(job => job.agentId === subagentId) ?? [];
+	for (const job of jobs) manager?.cancel(job.id, { ownerId: job.ownerId });
+	const [released, aborted, jobsSettled] = await Promise.allSettled([
+		release,
+		owned.session.abort({ reason: USER_INTERRUPT_LABEL, stopOwnedWork: true }),
+		Promise.all(jobs.map(job => job.promise)),
 	]);
 	if (released.status === "rejected") throw released.reason;
 	if (aborted.status === "rejected") throw aborted.reason;
+	if (jobsSettled.status === "rejected") throw jobsSettled.reason;
+	subagentRegistry.publishTerminalStatus?.(subagentId);
 	return released.value;
 }
 
@@ -1964,7 +1975,12 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 					signal: builtinAbort.signal,
 					runCommandInBackground: task => {
 						backgroundedBuiltin = true;
-						shutdownCoordinator.track(task().finally(() => builtinCommandAborts.delete(builtinAbort)));
+						const execution = task().finally(() => {
+							builtinCommandAborts.delete(builtinAbort);
+							builtinCommandTasks.delete(execution);
+						});
+						builtinCommandTasks.add(execution);
+						shutdownCoordinator.track(execution);
 					},
 					notifyTitleChanged: async () => {
 						output({ type: "session_info_update", title: session.sessionName, sessionId: session.sessionId });
@@ -2014,6 +2030,7 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 	// down, or a tracked task parks the shutdown drain for up to five minutes
 	// and can persist credentials after the client asked to abort.
 	const builtinCommandAborts = new Set<AbortController>();
+	const builtinCommandTasks = new Set<Promise<void>>();
 	const abortBuiltinCommands = (reason: string): void => {
 		for (const controller of builtinCommandAborts) controller.abort(reason);
 		builtinCommandAborts.clear();
@@ -2099,7 +2116,11 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 				const restored = session.clearQueue({ forInterrupt: true });
 				goalController.stopForHostAbort();
 				abortBuiltinCommands("RPC command aborted by host");
-				await session.abort({ reason: USER_INTERRUPT_LABEL });
+				const stopped = await Promise.allSettled([
+					session.abort({ reason: USER_INTERRUPT_LABEL, stopOwnedWork: true }),
+					...builtinCommandTasks,
+				]);
+				for (const result of stopped) if (result.status === "rejected") throw result.reason;
 				return fitAbortAndRestoreQueueResponse(id, restored, frameEncoder.maxResponseBytes);
 			}
 

@@ -11,6 +11,7 @@ import { createAgentSession, type ExtensionFactory, type WorkspaceTree } from "@
 import { AgentStorage } from "@oh-my-pi/pi-coding-agent/session/agent-storage";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import { Snowflake, TempDir } from "@oh-my-pi/pi-utils";
+import { USER_INTERRUPT_LABEL } from "@oh-my-pi/pi-coding-agent/session/messages";
 import { createInMemoryAuthStorage } from "./helpers/agent-session-setup";
 
 const OK_EXECUTION = { status: "ok", cancelled: false, timedOut: false, stdinRequested: false } as const;
@@ -761,4 +762,45 @@ describe("AgentSession python cleanup", () => {
 		expect(kernel.executeCalls).toEqual(["print('blocked')", "print('blocked')"]);
 		expect(kernel.shutdownCalls).toBe(1);
 	});
+
+	it.skipIf(process.platform === "win32")(
+		"explicit Stop destroys retained Python effects without stopping unrelated owners and can resume",
+		async () => {
+			const { tempDir, cwd } = createTempProject();
+			tempDirs.push(tempDir);
+			const unrelatedCwd = tempDir.join("unrelated-stop");
+			fs.mkdirSync(unrelatedCwd, { recursive: true });
+			const session = await createSession(tempDir, cwd);
+			const unrelated = await createSession(tempDir, unrelatedCwd);
+			const marker = tempDir.join("late-python-effect");
+			try {
+				const retained = await session.executePython(
+					[
+						"import os, subprocess, threading",
+						"child = subprocess.Popen(['sleep', '600'])",
+						`timer = threading.Timer(600, lambda: open(${JSON.stringify(marker)}, 'w').write('late'))`,
+						"timer.daemon = True; timer.start()",
+						"print(os.getpid(), child.pid)",
+					].join("\n"),
+				);
+				expect(retained.exitCode).toBe(0);
+				const pids = retained.output.trim().split(/\s+/).map(Number);
+				expect(pids).toHaveLength(2);
+				const other = await unrelated.executePython("import os; print(os.getpid())");
+				const otherPid = Number(other.output.trim());
+				await session.abort({ reason: USER_INTERRUPT_LABEL, stopOwnedWork: true });
+				for (const pid of pids) expect(() => process.kill(pid, 0)).toThrow();
+				expect(() => process.kill(otherPid, 0)).not.toThrow();
+				expect(fs.existsSync(marker)).toBe(false);
+				vi.spyOn(modelRegistry, "getApiKey").mockResolvedValue("python-stop-test-key");
+				await session.prompt("resume after Stop");
+				const resumed = await session.executePython("print('resumed')");
+				expect(resumed.exitCode).toBe(0);
+				expect(resumed.output.trim()).toBe("resumed");
+			} finally {
+				await Promise.all([session.dispose(), unrelated.dispose()]);
+			}
+		},
+		30_000,
+	);
 });

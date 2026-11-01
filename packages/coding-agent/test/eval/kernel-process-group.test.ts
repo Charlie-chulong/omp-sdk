@@ -1,5 +1,10 @@
-import { describe, expect, test } from "bun:test";
-import { BaseKernel, isSignalableProcessGroup, killProcessGroup } from "../../src/eval/kernel-base";
+import { describe, expect, test, vi } from "bun:test";
+import {
+	BaseKernel,
+	isSignalableProcessGroup,
+	killProcessGroup,
+	waitForKernelProcessGroupExit,
+} from "../../src/eval/kernel-base";
 
 class TestKernel extends BaseKernel {
 	constructor() {
@@ -45,6 +50,32 @@ describe("isSignalableProcessGroup", () => {
 		expect(isSignalableProcessGroup(2)).toBe(true);
 		expect(isSignalableProcessGroup(57944)).toBe(true);
 	});
+});
+test.skipIf(!POSIX)("waits through protected-group teardown until absence is confirmed", async () => {
+	const signal = vi
+		.spyOn(process, "kill")
+		.mockImplementationOnce(() => {
+			throw Object.assign(new Error("group teardown"), { code: "EPERM" });
+		})
+		.mockImplementationOnce(() => {
+			throw Object.assign(new Error("group absent"), { code: "ESRCH" });
+		});
+	try {
+		expect(await waitForKernelProcessGroupExit(42, 1_000)).toBe(true);
+	} finally {
+		signal.mockRestore();
+	}
+});
+
+test.skipIf(!POSIX)("does not acknowledge an inaccessible group at the shutdown deadline", async () => {
+	const signal = vi.spyOn(process, "kill").mockImplementation(() => {
+		throw Object.assign(new Error("inaccessible group"), { code: "EPERM" });
+	});
+	try {
+		expect(await waitForKernelProcessGroupExit(42, 0)).toBe(false);
+	} finally {
+		signal.mockRestore();
+	}
 });
 
 describe("BaseKernel stdin failures", () => {

@@ -189,7 +189,10 @@ impl builtins::Command for KillCommand {
 					// Like a killed process that is reaped, the job has let go of what it
 					// held (a FIFO open it waited in) before the next command runs.
 					if let Some(unwound) = unwound {
-						unwound.await;
+						if !unwound.await {
+							writeln!(context.stderr(), "{}: {}: cancellation did not finish", context.command_name, operand)?;
+							had_failure = true;
+						}
 					}
 					continue;
 				}
