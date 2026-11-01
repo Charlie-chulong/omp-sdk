@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { isEnoent } from "@oh-my-pi/pi-utils";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { InternalUrlRouter, type LocalProtocolOptions, resolveLocalRoot } from "../internal-urls";
 import { resolveToCwd } from "../tools/path-utils";
 
@@ -29,7 +30,7 @@ export async function readPlanFile(
 ): Promise<string | null> {
 	const resolvedPath = resolvePlanFilePath(planFilePath, options);
 	try {
-		return await Bun.file(resolvedPath).text();
+		return await runtime.file(resolvedPath).text();
 	} catch (error) {
 		if (isEnoent(error)) return null;
 		throw error;

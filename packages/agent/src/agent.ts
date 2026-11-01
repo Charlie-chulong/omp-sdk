@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /** Agent class that uses the agent-loop directly.
  * No transport abstraction - calls streamSimple via the loop.
  */
@@ -26,7 +27,7 @@ import type { Dialect } from "@oh-my-pi/pi-ai/dialect";
 import { openAIResponsesReplaysNativeHistory } from "@oh-my-pi/pi-ai/providers/openai-responses-state";
 import type { HarmonyAuditEvent } from "@oh-my-pi/pi-ai/utils/harmony-leak";
 import { getBundledModel } from "@oh-my-pi/pi-catalog/models";
-import { logger } from "@oh-my-pi/pi-utils";
+import * as logger from "@oh-my-pi/pi-utils/logger";
 import {
 	abortReasonText,
 	agentLoop,
@@ -837,7 +838,7 @@ export class Agent {
 	#ownedDialect(model: Model): Dialect | undefined {
 		return (
 			(this.#dialectResolver ? this.#dialectResolver(model) : this.#dialect) ??
-			resolveOwnedDialectFromEnv(Bun.env.PI_DIALECT)
+			resolveOwnedDialectFromEnv(process.env.PI_DIALECT)
 		);
 	}
 
@@ -1951,7 +1952,7 @@ export class Agent {
 			syncContextBeforeModelCall: async (context, signal) => {
 				await this.#runBeforeModelCallHooks(signal, context);
 				if (this.#listeners.size > 0) {
-					await Bun.sleep(0);
+					await runtime.sleep(0);
 				}
 				context.systemPrompt = this.#state.systemPrompt;
 				this.#onModelCallSystemPrompt?.(context.systemPrompt);

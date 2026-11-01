@@ -508,11 +508,11 @@ export class CollapsedSyntheticMessageComponent implements Component {
 
 /** Truncate a plain summary label to `maxWidth` display columns, appending `…`. */
 function truncateSummary(text: string, maxWidth: number): string {
-	if (Bun.stringWidth(text, { countAnsiEscapeCodes: false }) <= maxWidth) return text;
+	if (visibleWidth(text) <= maxWidth) return text;
 	let out = "";
 	let w = 0;
 	for (const ch of text) {
-		const cw = Bun.stringWidth(ch, { countAnsiEscapeCodes: false });
+		const cw = visibleWidth(ch);
 		if (w + cw > maxWidth - 1) break;
 		out += ch;
 		w += cw;

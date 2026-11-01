@@ -1,7 +1,8 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { $which, isRecord, logger, pathIsWithin, type WhichOptions } from "@oh-my-pi/pi-utils";
-import { YAML } from "bun";
+import { YAML } from "@oh-my-pi/pi-utils/runtime";
 import type { ClaudePluginRoot } from "../discovery/helpers";
 import {
 	type ConfigFileAdapter,
@@ -186,7 +187,7 @@ export function hasRootMarkers(cwd: string, markers: string[]): boolean {
 					logger.warn("Failed to list directory for glob root marker.", { marker, cwd });
 				}
 			}
-			const glob = new Bun.Glob(marker);
+			const glob = new runtime.Glob(marker);
 			for (const entry of entries) {
 				if (glob.match(entry)) {
 					return true;

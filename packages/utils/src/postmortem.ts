@@ -7,6 +7,7 @@
  */
 
 import * as fs from "node:fs";
+import { runtime } from "./runtime";
 import { APP_NAME } from "./dirs";
 import * as logger from "./logger";
 import { restoreTerminalStderr } from "./stderr-guard";
@@ -449,7 +450,7 @@ function onStdoutDisconnect(err: Error): void {
  */
 export function registerStdioDisconnectHandling(): () => void {
 	let registered = true;
-	if (Bun.isMainThread && stdioDisconnectRegistrations === 0) {
+	if (runtime.isMainThread && stdioDisconnectRegistrations === 0) {
 		process.stdout.on("error", onStdoutDisconnect);
 	}
 	stdioDisconnectRegistrations++;
@@ -457,7 +458,7 @@ export function registerStdioDisconnectHandling(): () => void {
 		if (!registered) return;
 		registered = false;
 		stdioDisconnectRegistrations--;
-		if (Bun.isMainThread && stdioDisconnectRegistrations === 0) {
+		if (runtime.isMainThread && stdioDisconnectRegistrations === 0) {
 			process.stdout.removeListener("error", onStdoutDisconnect);
 		}
 	};
@@ -677,15 +678,15 @@ function handleWorkerSendEpipe(err: Error): boolean {
  */
 export async function fatal(error: unknown): Promise<never> {
 	const err = error instanceof Error ? error : new Error(String(error));
-	const report = `${Bun.inspect(error, { colors: process.stderr.isTTY === true })}\n`;
-	if (!Bun.isMainThread) {
+	const report = `${runtime.inspect(error, { colors: process.stderr.isTTY === true })}\n`;
+	if (!runtime.isMainThread) {
 		process.stderr.write(`${report}${formatFatalRecoveryHints(fatalRecoveryHintProviders)}`);
 		process.exit(1);
 	}
 	return exitAfterFatal(report, "Fatal error", err, Reason.UNHANDLED_REJECTION);
 }
 
-if (Bun.isMainThread) {
+if (runtime.isMainThread) {
 	process
 		.on("SIGINT", async () => {
 			await runCleanup(Reason.SIGINT);
@@ -909,13 +910,13 @@ export async function drainStdout(): Promise<void> {
 	if (process.stdout.writableLength === 0) return;
 	const { promise, resolve } = Promise.withResolvers<void>();
 	process.stdout.once("drain", resolve);
-	await Promise.race([promise, Bun.sleep(5000)]);
+	await Promise.race([promise, runtime.sleep(5000)]);
 }
 
 async function runQuit(code: number, exitMode: "guarded" | "native", options: QuitOptions = {}): Promise<void> {
 	await runCleanup(Reason.MANUAL);
 
-	if (!Bun.isMainThread) {
+	if (!runtime.isMainThread) {
 		return; // Workers: cleanup done, let worker exit naturally
 	}
 

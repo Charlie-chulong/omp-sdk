@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /** Session memory backend lifecycle and transcript resets. */
 
 import type { Agent, AgentTool } from "@oh-my-pi/pi-agent-core";
@@ -106,7 +107,7 @@ export class SessionMemory {
 		if (!previous || this.#host.isDisposed()) return;
 		const next = memorySettingsValue().get(this.#host.settings);
 		const changed: string[] = [];
-		for (const id in next) if (!Bun.deepEquals(next[id], previous[id])) changed.push(id);
+		for (const id in next) if (!runtime.deepEquals(next[id], previous[id])) changed.push(id);
 		if (changed.length === 0) return;
 		this.#observedSettings = next;
 		const handling = this.#applySettingsChange(changed);

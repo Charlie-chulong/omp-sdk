@@ -6,6 +6,7 @@ import {
 	sliceWithWidth as nativeSliceWithWidth,
 	truncateToWidth as nativeTruncateToWidth,
 	wrapTextWithAnsi as nativeWrapTextWithAnsi,
+	visibleWidth as nativeVisibleWidth,
 	type SliceResult,
 } from "@oh-my-pi/pi-natives";
 import { DEFAULT_TAB_WIDTH } from "@oh-my-pi/pi-utils";
@@ -359,6 +360,14 @@ export function visibleWidth(str: string): number {
 			visibleWidthCache.set(str, str.length);
 		}
 		return str.length;
+	}
+	if (typeof Bun === "undefined") {
+		const width = nativeVisibleWidth(str, DEFAULT_TAB_WIDTH);
+		if (cacheable) {
+			if (visibleWidthCache.size >= VISIBLE_WIDTH_CACHE_MAX) visibleWidthCache.clear();
+			visibleWidthCache.set(str, width);
+		}
+		return width;
 	}
 
 	// The extra gate pays for itself on long uncached lines, not short cache

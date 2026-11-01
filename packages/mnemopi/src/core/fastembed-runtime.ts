@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -115,7 +116,7 @@ export async function prepareWindowsFastembedRuntime({
 	if (!ortEntry) {
 		throw new Error(`Cannot find module onnxruntime-node beside ${fastembedEntry}`);
 	}
-	const dllGlob = new Bun.Glob(`bin/napi-*/win32/${arch}/onnxruntime.dll`);
+	const dllGlob = new runtime.Glob(`bin/napi-*/win32/${arch}/onnxruntime.dll`);
 	let dllDir: string | undefined;
 	for await (const dll of dllGlob.scan({ cwd: ortPackageDir, absolute: true, onlyFiles: true })) {
 		dllDir = path.dirname(dll);

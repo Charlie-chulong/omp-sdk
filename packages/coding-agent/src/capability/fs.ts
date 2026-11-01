@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -25,7 +26,7 @@ export async function readFile(filePath: string): Promise<string | null> {
 			contentCache.set(abs, null);
 			return null;
 		}
-		const content = await Bun.file(abs).text();
+		const content = await runtime.file(abs).text();
 		contentCache.set(abs, content);
 		return content;
 	} catch {

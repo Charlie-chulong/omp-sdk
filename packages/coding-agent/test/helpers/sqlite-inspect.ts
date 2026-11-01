@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 
 export function readTableSql(dbPath: string, tableName: string): string | null {
 	const db = new Database(dbPath, { readonly: true });

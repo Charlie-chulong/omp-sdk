@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as path from "node:path";
 import { type SummaryResult, summarizeCodeAsync } from "@oh-my-pi/pi-natives";
 import { LRUCache } from "@oh-my-pi/pi-utils/lru";
@@ -83,7 +84,7 @@ export async function trySummarize(
 	try {
 		throwIfAborted(signal);
 		const bridgePromise = routeReadThroughBridge(session, absolutePath);
-		const readDisk = async () => diskText ?? (await Bun.file(absolutePath).text());
+		const readDisk = async () => diskText ?? (await runtime.file(absolutePath).text());
 		const code = bridgePromise !== undefined ? await bridgePromise.catch(readDisk) : await readDisk();
 		throwIfAborted(signal);
 		const lineCount = countTextLines(code);
@@ -95,7 +96,7 @@ export async function trySummarize(
 		const unfoldUntilLines = cfgReadSummarizeUnfoldUntil.get(session.settings);
 		const unfoldLimitLines = cfgReadSummarizeUnfoldLimit.get(session.settings);
 		const cache = getSummaryParseCache(session);
-		const cacheKey = `${absolutePath}\0${languagePath ?? ""}\0${Bun.hash(code)}\0${minBodyLines},${minCommentLines},${unfoldUntilLines},${unfoldLimitLines}`;
+		const cacheKey = `${absolutePath}\0${languagePath ?? ""}\0${runtime.hash(code)}\0${minBodyLines},${minCommentLines},${unfoldUntilLines},${unfoldLimitLines}`;
 		const memoized = cache.get(cacheKey);
 		if (memoized !== undefined) return memoized || null;
 		const summaryPath = languagePath ?? absolutePath;

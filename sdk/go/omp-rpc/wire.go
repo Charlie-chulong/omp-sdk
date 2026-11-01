@@ -1952,6 +1952,28 @@ func (v *CacheWarmingMode) UnmarshalJSON(data []byte) error {
 	return unknownValue("CacheWarmingMode", s)
 }
 
+type ApprovalMode string
+
+const (
+	ApprovalModeAlwaysAsk       ApprovalMode = "always-ask"
+	ApprovalModeAlwaysAskCached ApprovalMode = "always-ask-cached"
+	ApprovalModeWrite           ApprovalMode = "write"
+	ApprovalModeYolo            ApprovalMode = "yolo"
+)
+
+func (v *ApprovalMode) UnmarshalJSON(data []byte) error {
+	s, err := decodeString(data, "ApprovalMode")
+	if err != nil {
+		return err
+	}
+	switch value := ApprovalMode(s); value {
+	case ApprovalModeAlwaysAsk, ApprovalModeAlwaysAskCached, ApprovalModeWrite, ApprovalModeYolo:
+		*v = value
+		return nil
+	}
+	return unknownValue("ApprovalMode", s)
+}
+
 // `set_event_filter` projection: `delta` replaces the accumulated snapshots with the block a start/end event touches.
 type MessageUpdates string
 
@@ -2503,6 +2525,7 @@ type SessionState struct {
 	SessionID             string         `json:"sessionId"`
 	Model                 *ModelInfo     `json:"model,omitempty"`
 	ThinkingLevel         *ThinkingLevel `json:"thinkingLevel,omitempty"`
+	ApprovalMode          ApprovalMode   `json:"approvalMode"`
 	IsStreaming           bool           `json:"isStreaming"`
 	IsCompacting          bool           `json:"isCompacting"`
 	SteeringMode          QueueMode      `json:"steeringMode"`
@@ -2548,6 +2571,7 @@ func (v *SessionState) decodeFrom(raw map[string]json.RawMessage) error {
 	d.required("sessionId", &out.SessionID)
 	d.optional("model", &out.Model)
 	d.optional("thinkingLevel", &out.ThinkingLevel)
+	d.defaulted("approvalMode", &out.ApprovalMode, `"always-ask"`)
 	d.defaulted("isStreaming", &out.IsStreaming, `false`)
 	d.defaulted("isCompacting", &out.IsCompacting, `false`)
 	d.defaulted("steeringMode", &out.SteeringMode, `"one-at-a-time"`)
@@ -7095,6 +7119,25 @@ func (v *NegotiateProtocolResult) decodeFrom(raw map[string]json.RawMessage) err
 	return nil
 }
 
+type SetApprovalModeResult struct {
+	Mode ApprovalMode `json:"mode"`
+}
+
+func (v *SetApprovalModeResult) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "SetApprovalModeResult", v.decodeFrom)
+}
+
+func (v *SetApprovalModeResult) decodeFrom(raw map[string]json.RawMessage) error {
+	var out SetApprovalModeResult
+	d := fieldDecoder{raw: raw, owner: "SetApprovalModeResult"}
+	d.required("mode", &out.Mode)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
 type SetSlowModeResult struct {
 	Enabled bool `json:"enabled"`
 }
@@ -7783,6 +7826,18 @@ func (c Commands) GetState(ctx context.Context) (SessionState, error) {
 	var out SessionState
 	err := c.call(ctx, "get_state", nil, 0, &out)
 	return out, err
+}
+
+// SetApprovalModeCommand holds the parameters of "set_approval_mode".
+type SetApprovalModeCommand struct {
+	Mode ApprovalMode `json:"mode"`
+}
+
+// SetApprovalMode sends "set_approval_mode": Change session-only tool approval mode immediately, without interrupting an active turn.
+func (c Commands) SetApprovalMode(ctx context.Context, p SetApprovalModeCommand) (ApprovalMode, error) {
+	var out SetApprovalModeResult
+	err := c.call(ctx, "set_approval_mode", p, 0, &out)
+	return out.Mode, err
 }
 
 // SetFastModeCommand holds the parameters of "set_fast_mode".

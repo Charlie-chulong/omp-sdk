@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * How TTSR rules see assistant output: tool-call match contexts (candidate file
  * paths, stream keys), the tools' reconstructed source digests, and completed
@@ -39,14 +40,15 @@ const FINGERPRINT_MAX_DEPTH = 32;
  * changes it.
  */
 function argumentsFingerprint(value: unknown, seed: number | bigint = 0, depth = 0): number | bigint {
-	if (typeof value === "string") return Bun.hash(value, Bun.hash("s", seed));
-	if (value === null || typeof value !== "object") return Bun.hash(String(value), Bun.hash(typeof value, seed));
-	if (depth >= FINGERPRINT_MAX_DEPTH) return Bun.hash("…", seed);
-	let hash = Bun.hash(Array.isArray(value) ? "[" : "{", seed);
+	if (typeof value === "string") return runtime.hash(value, runtime.hash("s", seed));
+	if (value === null || typeof value !== "object")
+		return runtime.hash(String(value), runtime.hash(typeof value, seed));
+	if (depth >= FINGERPRINT_MAX_DEPTH) return runtime.hash("…", seed);
+	let hash = runtime.hash(Array.isArray(value) ? "[" : "{", seed);
 	for (const [key, child] of Object.entries(value)) {
-		hash = argumentsFingerprint(child, Bun.hash(key, hash), depth + 1);
+		hash = argumentsFingerprint(child, runtime.hash(key, hash), depth + 1);
 	}
-	return Bun.hash(Array.isArray(value) ? "]" : "}", hash);
+	return runtime.hash(Array.isArray(value) ? "]" : "}", hash);
 }
 
 /** Resolves tool calls against live tool definitions and the session cwd. */

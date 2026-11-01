@@ -1,3 +1,4 @@
+import { runtime as platformRuntime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { Model } from "@oh-my-pi/pi-ai";
@@ -160,7 +161,7 @@ function securityConfigSnapshot(settings: Settings): Record<string, boolean> {
 }
 
 function createOperationId(): string {
-	return `secop_${Bun.randomUUIDv7().replaceAll("-", "")}`;
+	return `secop_${platformRuntime.randomUUIDv7().replaceAll("-", "")}`;
 }
 
 function mapCoverageMode(targetKind: SecurityTargetKind): SecurityCoverage["mode"] {
@@ -446,7 +447,7 @@ export class SecurityCoordinator {
 				cwd: this.#host.cwd,
 				target: input.target ?? { kind: "repository" },
 				knowledgeBasePaths: input.knowledgeBasePaths,
-				outputRoot: input.outputRoot ?? path.join(workRoot, Bun.randomUUIDv7()),
+				outputRoot: input.outputRoot ?? path.join(workRoot, platformRuntime.randomUUIDv7()),
 				archiveExisting: input.archiveExisting,
 				model: modelRef,
 				account,

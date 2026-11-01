@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Server half of the machine-global text-prediction daemon (worker selector
  * `__omp_worker_text_predict`, started through the `text-predict` global broker).
@@ -12,9 +13,10 @@
  */
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import type { Database } from "bun:sqlite";
+import type { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { type PredictedWord, TextPredictor } from "@oh-my-pi/pi-natives";
 import { getHistoryDbPath, getPredictStateDir, isEnoent, logger, VERSION } from "@oh-my-pi/pi-utils";
+import { assertNativeCapability } from "../native-capabilities";
 import { JsonLineServer } from "../subprocess/jsonl-server";
 import { openSqliteReadConnection } from "../tools/sqlite-reader";
 import { blendPredictions } from "./blend";
@@ -53,7 +55,7 @@ const CURSOR_FILE = "cursor.json";
 /** Persisted history cursor, or `undefined` when the engine has no persisted state yet. */
 async function readCursor(stateDir: string): Promise<number | undefined> {
 	try {
-		const raw: unknown = await Bun.file(path.join(stateDir, CURSOR_FILE)).json();
+		const raw: unknown = await runtime.file(path.join(stateDir, CURSOR_FILE)).json();
 		if (typeof raw === "object" && raw !== null && "historyId" in raw && typeof raw.historyId === "number") {
 			return raw.historyId;
 		}
@@ -162,7 +164,7 @@ class Engine {
 		this.#dirty = false;
 		try {
 			await this.predictor.persist();
-			await Bun.write(path.join(this.stateDir, CURSOR_FILE), JSON.stringify({ historyId: cursor }));
+			await runtime.write(path.join(this.stateDir, CURSOR_FILE), JSON.stringify({ historyId: cursor }));
 			this.#persistedCursor = cursor;
 		} catch (error) {
 			this.#dirty = true;
@@ -292,6 +294,7 @@ class TextPredictDaemon {
 	 * downloading) or while it cannot, ngram answers alone through the blend.
 	 */
 	async #blend(before: string, prefix: string): Promise<PredictedWord | null> {
+		assertNativeCapability("smollm", "SmolLM word completion (choose ngram or apple instead)");
 		const [ngram, smollm] = await Promise.all([
 			this.#engine("ngram").then(engine => engine.predictor.complete(before, prefix)),
 			this.#engine("smollm").then(
@@ -334,6 +337,7 @@ class TextPredictDaemon {
 	async #open(method: TextPredictMethod): Promise<Engine> {
 		let modelDir: string | undefined;
 		if (method === "smollm") {
+			assertNativeCapability("smollm", "SmolLM word completion (choose ngram or apple instead)");
 			if (!(await smolLmWeightsReady())) throw new SmolLmWeightsMissingError();
 			modelDir = getSmolLmModelDir();
 		}
@@ -383,8 +387,8 @@ class TextPredictDaemon {
 
 /** Worker entry: serve the endpoint and agent directory named by the broker spec environment. */
 export async function startTextPredictDaemonFromEnvironment(): Promise<void> {
-	const endpoint = Bun.env[TEXT_PREDICT_SOCKET_ENV];
-	const agentDir = Bun.env[TEXT_PREDICT_AGENT_DIR_ENV];
+	const endpoint = runtime.env[TEXT_PREDICT_SOCKET_ENV];
+	const agentDir = runtime.env[TEXT_PREDICT_AGENT_DIR_ENV];
 	if (!endpoint || !agentDir) {
 		throw new Error(`${TEXT_PREDICT_SOCKET_ENV} and ${TEXT_PREDICT_AGENT_DIR_ENV} must be set`);
 	}

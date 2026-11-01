@@ -1,4 +1,5 @@
-import { Database, type SQLQueryBindings, type Statement } from "bun:sqlite";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
+import { Database, type SQLQueryBindings, type Statement } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { formatBytes, replaceTabs, truncateToWidth } from "@oh-my-pi/pi-tui/render/render-utils";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 
@@ -19,11 +20,11 @@ function isSqliteCantOpen(error: unknown): boolean {
 }
 
 async function requiresWalSidecarInitialization(filePath: string): Promise<boolean> {
-	const formatVersions = await Bun.file(filePath).slice(18, 20).bytes();
+	const formatVersions = await runtime.file(filePath).slice(18, 20).bytes();
 	if (formatVersions[0] !== 2 && formatVersions[1] !== 2) return false;
 	const [walExists, shmExists] = await Promise.all([
-		Bun.file(`${filePath}-wal`).exists(),
-		Bun.file(`${filePath}-shm`).exists(),
+		runtime.file(`${filePath}-wal`).exists(),
+		runtime.file(`${filePath}-shm`).exists(),
 	]);
 	return !walExists || !shmExists;
 }
@@ -195,7 +196,7 @@ function stringifySqliteValue(value: unknown): string {
 
 function padCell(value: string, width: number): string {
 	const truncated = truncateToWidth(sanitizeCell(value), Math.max(width, MIN_COLUMN_WIDTH));
-	const visibleWidth = Bun.stringWidth(truncated);
+	const visibleWidth = runtime.stringWidth(truncated);
 	if (visibleWidth >= width) {
 		return truncated;
 	}
@@ -226,7 +227,7 @@ function buildVerticalBlocks(columns: string[], rows: SqliteRow[]): string {
 	}
 	let nameWidth = MIN_COLUMN_WIDTH;
 	for (const column of columns) {
-		nameWidth = Math.max(nameWidth, Bun.stringWidth(sanitizeCell(column)));
+		nameWidth = Math.max(nameWidth, runtime.stringWidth(sanitizeCell(column)));
 	}
 	nameWidth = Math.min(MAX_COLUMN_WIDTH, nameWidth);
 	return rows
@@ -251,11 +252,11 @@ function buildAsciiTable(columns: string[], rows: SqliteRow[]): string {
 	}
 
 	const widths = columns.map(column =>
-		Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, Bun.stringWidth(sanitizeCell(column)))),
+		Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, runtime.stringWidth(sanitizeCell(column)))),
 	);
 	for (const row of rows) {
 		for (const [index, column] of columns.entries()) {
-			const cellWidth = Bun.stringWidth(sanitizeCell(stringifySqliteValue(row[column])));
+			const cellWidth = runtime.stringWidth(sanitizeCell(stringifySqliteValue(row[column])));
 			widths[index] = Math.max(widths[index] ?? MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, cellWidth));
 		}
 	}
@@ -571,7 +572,7 @@ export function parseSqlitePathCandidates(filePath: string): SqlitePathCandidate
 
 export async function isSqliteFile(absolutePath: string): Promise<boolean> {
 	try {
-		return looksLikeSqlite(await Bun.file(absolutePath).slice(0, SQLITE_MAGIC.byteLength).bytes());
+		return looksLikeSqlite(await runtime.file(absolutePath).slice(0, SQLITE_MAGIC.byteLength).bytes());
 	} catch {
 		return false;
 	}

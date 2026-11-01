@@ -93,7 +93,7 @@ async function boot(respond: (init: RequestInit | undefined) => Response): Promi
 		upstream.push({ url: String(input), init });
 		return respond(init);
 	};
-	const handle = startAuthGateway({
+	const handle = await startAuthGateway({
 		bind: "127.0.0.1:0",
 		bearerTokens: ["gw-token"],
 		storage,

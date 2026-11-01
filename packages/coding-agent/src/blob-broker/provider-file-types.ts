@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { OmpErrors, type } from "@oh-my-pi/omptype";
@@ -135,12 +136,12 @@ const PersistedIndexSchema = type({
 
 /** Return a lowercase SHA-256 digest without retaining the supplied credential. */
 export function hashProviderFileCredential(credential: string): string {
-	return Bun.SHA256.hash(credential, "hex");
+	return runtime.SHA256.hash(credential, "hex");
 }
 
 /** Return the content digest used to deduplicate provider-native uploads. */
 export function hashProviderFileContent(bytes: Uint8Array): string {
-	return Bun.SHA256.hash(bytes, "hex");
+	return runtime.SHA256.hash(bytes, "hex");
 }
 
 /** Convert a durable cache handle to the provider reference carried by AI image content. */

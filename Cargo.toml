@@ -252,8 +252,8 @@ pi-diff = { path = "crates/pi-diff" }
 pi-edit = { path = "crates/pi-edit" }
 pi-iso = { path = "crates/pi-iso" }
 pi-shell = { path = "crates/pi-shell" }
-pi-predict = { path = "crates/pi-predict" }
-pi-voice = { path = "crates/pi-voice" }
+pi-predict = { path = "crates/pi-predict", default-features = false }
+pi-voice = { path = "crates/pi-voice", default-features = false }
 pi-walker = { path = "crates/pi-walker" }
 pi-vcs = { path = "crates/pi-vcs" }
 pi-vfs = { path = "crates/pi-vfs" }

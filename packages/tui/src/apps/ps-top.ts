@@ -1,3 +1,5 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
+import { visibleWidth } from "../utils";
 /**
  * Interactive alt-screen monitor for `omp ps` (btop idiom): a live process
  * table over every selected broker scope with in-place actions.
@@ -633,7 +635,7 @@ export class PsTopComponent implements Component {
 		const age = this.#lastRefresh ? `updated ${formatDuration(Date.now() - this.#lastRefresh)} ago` : "updating…";
 		const left = ` ${chalk.bold("omp ps")} ${chalk.dim("·")} ${title}`;
 		const right = chalk.dim(age);
-		const pad = Math.max(1, width - Bun.stringWidth(left) - Bun.stringWidth(right) - 1);
+		const pad = Math.max(1, width - visibleWidth(left) - visibleWidth(right) - 1);
 		return truncateToWidth(`${left}${" ".repeat(pad)}${right}`, width);
 	}
 
@@ -658,7 +660,7 @@ export class PsTopComponent implements Component {
 
 		const cells = this.#flat.map(entry => tableCells(entry.row));
 		const widths = TABLE_HEADER.map((title, column) =>
-			Math.max(title.length, ...cells.map(row => Bun.stringWidth(row[column]))),
+			Math.max(title.length, ...cells.map(row => visibleWidth(row[column]))),
 		);
 		const columns: TableColumn[] = widths.map((columnWidth): TableColumn => ({
 			width: columnWidth,
@@ -699,7 +701,7 @@ export class PsTopComponent implements Component {
 		const selectedLine = body.findIndex(line => line.flat === this.#selected);
 		const display = body.map(entry => {
 			if (entry.flat === this.#selected) {
-				const plain = ` ❯${Bun.stripANSI(entry.text).slice(2)}`;
+				const plain = ` ❯${runtime.stripANSI(entry.text).slice(2)}`;
 				return truncateToWidth(chalk.inverse(plain.padEnd(width)), width);
 			}
 			return truncateToWidth(entry.text, width);

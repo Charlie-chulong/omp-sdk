@@ -87,6 +87,11 @@ _CACHE_WARMING_MODE_VALUES: Final[frozenset[str]] = frozenset({"off", "streaming
 _decode_cache_warming_mode = cast("Decoder[CacheWarmingMode]", literal(_CACHE_WARMING_MODE_VALUES))
 
 
+ApprovalMode: TypeAlias = Literal["always-ask", "always-ask-cached", "write", "yolo"]
+_APPROVAL_MODE_VALUES: Final[frozenset[str]] = frozenset({"always-ask", "always-ask-cached", "write", "yolo"})
+_decode_approval_mode = cast("Decoder[ApprovalMode]", literal(_APPROVAL_MODE_VALUES))
+
+
 MessageUpdates: TypeAlias = Literal["full", "delta"]
 """`set_event_filter` projection: `delta` replaces the accumulated snapshots with the block a start/end event touches."""
 _MESSAGE_UPDATES_VALUES: Final[frozenset[str]] = frozenset({"full", "delta"})
@@ -642,6 +647,7 @@ class SessionState:
     session_id: str
     model: ModelInfo | None = None
     thinking_level: ThinkingLevel | None = None
+    approval_mode: ApprovalMode = "always-ask"
     is_streaming: bool = False
     is_compacting: bool = False
     steering_mode: QueueMode = "one-at-a-time"
@@ -1997,6 +2003,7 @@ def parse_session_state(value: object, path: str = "SessionState") -> SessionSta
         session_id=required(payload, "sessionId", decode_str, path),
         model=optional(payload, "model", parse_model_info, path),
         thinking_level=optional(payload, "thinkingLevel", _decode_thinking_level, path),
+        approval_mode=defaulted(payload, "approvalMode", _decode_approval_mode, path, "always-ask"),
         is_streaming=defaulted(payload, "isStreaming", decode_bool, path, False),
         is_compacting=defaulted(payload, "isCompacting", decode_bool, path, False),
         steering_mode=defaulted(payload, "steeringMode", _decode_queue_mode, path, "one-at-a-time"),
@@ -3334,6 +3341,12 @@ class WireClient:
         params: dict[str, object] = {}
         return parse_session_state(self._command("get_state", params), "get_state")
 
+    def set_approval_mode(self, mode: ApprovalMode) -> ApprovalMode:
+        """Change session-only tool approval mode immediately, without interrupting an active turn."""
+        params: dict[str, object] = {}
+        params["mode"] = mode
+        return required(expect_object(self._command("set_approval_mode", params), "set_approval_mode"), "mode", _decode_approval_mode, "set_approval_mode")
+
     def set_fast_mode(self, enabled: bool) -> FastModeResult:
         """Enable or disable fast mode for the session."""
         params: dict[str, object] = {}
@@ -3937,6 +3950,7 @@ __all__ = [
     "AgentSource",
     "AgentStartEvent",
     "AnthropicServerToolContent",
+    "ApprovalMode",
     "AskAnswer",
     "AskOption",
     "AskQuestion",

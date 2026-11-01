@@ -7,6 +7,7 @@
  */
 import { ipcEndpoint } from "@oh-my-pi/pi-natives";
 import { type } from "@oh-my-pi/omptype";
+import { runtime as platformRuntime } from "@oh-my-pi/pi-utils/runtime";
 export { IDA_HOST_WORKER_ARG } from "../cli/worker-selectors";
 
 /** Environment key carrying the JSON {@link IdaHostConfig} for the daemon. */
@@ -32,7 +33,7 @@ export function errorMessage(error: unknown): string {
 }
 
 function hash16(text: string): string {
-	return Bun.hash.wyhash(text).toString(16).padStart(16, "0");
+	return platformRuntime.hash.wyhash(text).toString(16).padStart(16, "0");
 }
 
 /** Broker daemon name for the database registered under `id` (a `locateIdb` id). */

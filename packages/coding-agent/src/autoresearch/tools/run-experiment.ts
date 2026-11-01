@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { runExperimentToolRenderer } from "@oh-my-pi/pi-tui/tools/autoresearch";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -294,7 +295,7 @@ async function executeProcess(opts: {
 			}, 1000)
 		: undefined;
 
-	const logSink = Bun.file(opts.logPath).writer();
+	const logSink = runtime.file(opts.logPath).writer();
 	let logSinkClosed = false;
 	const closeLogSink = async (): Promise<void> => {
 		if (logSinkClosed) return;

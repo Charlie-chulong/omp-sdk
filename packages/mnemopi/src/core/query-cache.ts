@@ -1,4 +1,4 @@
-import type { Database } from "bun:sqlite";
+import type { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { type Env, enhancedRecallEnabled } from "../config";
 import { openDatabase } from "../db";
 import { cosineSimilarity } from "./vector-math";

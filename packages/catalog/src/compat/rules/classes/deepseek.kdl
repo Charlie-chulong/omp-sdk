@@ -3,14 +3,14 @@
 class "deepseek" {
 	on "aiand" "aimlapi" "alibaba-token-plan" "baseten" "coreweave" "deepseek" "fireworks" \
 		"huggingface" "kilo" "nanogpt" "novita" "nvidia" "opencode-go" "opencode-zen" "together" \
-		"venice" "wafer-serverless" "zenmux" {
+		"venice" "wafer-serverless"  {
 		family "pro" {
 			thinking-efforts "low" "high" "max"
 		}
 	}
 	on "aiand" "aimlapi" "coreweave" "deepseek" "fireworks" "gmi-cloud" "huggingface" "kilo" \
 		"nanogpt" "novita" "nvidia" "ollama-cloud" "opencode-go" "opencode-zen" "openrouter" \
-		"together" "venice" "wafer-serverless" "zenmux" {
+		"together" "venice" "wafer-serverless"  {
 		family "flash" {
 			thinking-efforts "low" "high" "max"
 		}

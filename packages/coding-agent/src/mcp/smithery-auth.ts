@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { isEnoent, logger } from "@oh-my-pi/pi-utils";
@@ -71,7 +72,7 @@ export async function getSmitheryApiKey(): Promise<string | undefined> {
 
 	const authPath = getSmitheryAuthPath();
 	try {
-		const payload = (await Bun.file(authPath).json()) as SmitheryAuthPayload;
+		const payload = (await runtime.file(authPath).json()) as SmitheryAuthPayload;
 		return normalizeApiKey(payload.apiKey);
 	} catch (error) {
 		if (isEnoent(error)) return undefined;
@@ -88,7 +89,7 @@ export async function saveSmitheryApiKey(apiKey: string): Promise<void> {
 
 	const authPath = getSmitheryAuthPath();
 	const payload: SmitheryAuthPayload = { apiKey: normalized };
-	await Bun.write(authPath, `${JSON.stringify(payload, null, 2)}\n`);
+	await runtime.write(authPath, `${JSON.stringify(payload, null, 2)}\n`);
 	try {
 		await fs.chmod(authPath, 0o600);
 	} catch (error) {

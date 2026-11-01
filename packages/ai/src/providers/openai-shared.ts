@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { toClinePassWireModelId } from "@oh-my-pi/pi-catalog/cline-pass-model-id";
 import type { Effort } from "@oh-my-pi/pi-catalog/effort";
 import { toFirepassWireModelId, toFireworksWireModelId } from "@oh-my-pi/pi-catalog/fireworks-model-id";
@@ -1485,7 +1486,7 @@ function normalizeOpenAIStableId(value: string | undefined, maxLength: number, h
 	if (!value || value.length === 0) return undefined;
 	const wellFormed = value.toWellFormed();
 	if (wellFormed.length <= maxLength) return wellFormed;
-	return `${hashPrefix}${Bun.hash(wellFormed).toString(36)}`;
+	return `${hashPrefix}${runtime.hash(wellFormed).toString(36)}`;
 }
 
 export const OPENAI_RESPONSES_PROGRESS_EVENT_TYPES: ReadonlySet<string> = new Set([
@@ -1543,7 +1544,7 @@ export function parseTextSignature(
 }
 
 export function encodeResponsesToolCallId(callId: string, itemId: string | null | undefined): string {
-	const stableItemId = itemId && itemId.length > 0 ? itemId : `fc_${Bun.hash(callId).toString(36)}`;
+	const stableItemId = itemId && itemId.length > 0 ? itemId : `fc_${runtime.hash(callId).toString(36)}`;
 	return `${callId}|${stableItemId}`;
 }
 
@@ -1559,7 +1560,7 @@ export function normalizeResponsesToolCallIdForTransform(
 	if (isForeignToolCall || sep >= 0 || id.length > 64) {
 		const [callId, itemId] = sep > 0 ? [id.slice(0, sep), id.slice(sep + 1)] : [id, undefined];
 		const normalizedCallId = sanitizeCodexCallId(callId);
-		let normalizedItemId = itemId ? `fc_${Bun.hash(itemId).toString(36)}` : `fc_${Bun.hash(id).toString(36)}`;
+		let normalizedItemId = itemId ? `fc_${runtime.hash(itemId).toString(36)}` : `fc_${runtime.hash(id).toString(36)}`;
 		if (normalizedItemId.length > 64) normalizedItemId = normalizedItemId.slice(0, 64);
 		return `${normalizedCallId}|${normalizedItemId}`;
 	}
@@ -4361,14 +4362,14 @@ function deepEqualsWithout(
 	omitKeys?: Readonly<Record<string, boolean>>,
 	additionalOmitKeys?: Readonly<Record<string, boolean>>,
 ): boolean {
-	if (!a || !b || typeof a !== "object" || typeof b !== "object") return Bun.deepEquals(a, b);
+	if (!a || !b || typeof a !== "object" || typeof b !== "object") return runtime.deepEquals(a, b);
 	const ao = a as Record<string, unknown>;
 	const bo = b as Record<string, unknown>;
 	for (const key in ao) {
 		if (omitKeys?.[key] || additionalOmitKeys?.[key]) continue;
 		const av = ao[key];
 		const bv = bo[key];
-		if (av !== bv && !Bun.deepEquals(av, bv)) return false;
+		if (av !== bv && !runtime.deepEquals(av, bv)) return false;
 	}
 	for (const key in bo) {
 		if (omitKeys?.[key] || additionalOmitKeys?.[key]) continue;

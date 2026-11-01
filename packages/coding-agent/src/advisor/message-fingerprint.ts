@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 
 /**
@@ -48,7 +49,7 @@ export function fingerprintMessage(message: AgentMessage): bigint | undefined {
 			files: m.files ?? null,
 		});
 		if (payload === undefined) return undefined;
-		return Bun.hash.wyhash(payload);
+		return runtime.hash.wyhash(payload);
 	} catch {
 		return undefined;
 	}

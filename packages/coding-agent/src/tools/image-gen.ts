@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -95,11 +96,11 @@ async function loadImageFromPath(imagePath: string, cwd: string): Promise<{ data
 		const kind = specialFileKind(stat);
 		if (kind) throw new Error(`Cannot load '${imagePath}': it is a ${kind}, not a regular file or directory.`);
 		if (stat.size > MAX_IMAGE_SIZE) throw new Error(`Image file too large: ${imagePath}`);
-		const buffer = await Bun.file(resolved).bytes();
+		const buffer = await runtime.file(resolved).bytes();
 		if (buffer.length > MAX_IMAGE_SIZE) throw new Error(`Image file too large: ${imagePath}`);
 		const mimeType = parseImageMetadata(buffer)?.mimeType;
 		if (!mimeType) throw new Error(`Unsupported image type: ${imagePath}`);
-		return { data: buffer.toBase64(), mimeType };
+		return { data: Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength).toString("base64"), mimeType };
 	} catch (error) {
 		if (isEnoent(error)) throw new Error(`Image file not found: ${imagePath}`);
 		throw error;
@@ -132,7 +133,7 @@ async function saveImagesToTemp(images: ImageGenerationResult["images"]): Promis
 	return Promise.all(
 		images.map(async image => {
 			const filepath = path.join(os.tmpdir(), `omp-image-${Snowflake.next()}.${imageExtension(image.mimeType)}`);
-			await Bun.write(filepath, Buffer.from(image.data, "base64"));
+			await runtime.write(filepath, Buffer.from(image.data, "base64"));
 			return filepath;
 		}),
 	);

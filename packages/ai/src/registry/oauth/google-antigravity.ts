@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Google Antigravity OAuth flow (Gemini, Claude, GPT-OSS via Google Cloud)
  * Uses different OAuth credentials than google-gemini-cli for access to additional models.
@@ -233,7 +234,7 @@ async function onboardUser(context: CloudCodeContext): Promise<void> {
 		}
 
 		await raceWithSignal(
-			Bun.sleep(Math.min(ONBOARD_POLL_INTERVAL_MS, remainingOnboardTime(deadline))),
+			runtime.sleep(Math.min(ONBOARD_POLL_INTERVAL_MS, remainingOnboardTime(deadline))),
 			context.signal,
 		);
 		throwIfLoginCancelled(context.signal);

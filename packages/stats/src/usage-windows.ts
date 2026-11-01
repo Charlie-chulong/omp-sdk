@@ -12,7 +12,7 @@
  * A missing agent DB or `usage_history` table yields empty results — the
  * dashboard must keep working for API-key-only setups that never record usage.
  */
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { AuthBrokerClient, resolveAuthBrokerConfig } from "@oh-my-pi/pi-ai/auth-broker";
 import type { ClientUsageClientSummary } from "@oh-my-pi/pi-ai/usage";
 import { getAgentDbPath, logger } from "@oh-my-pi/pi-utils";

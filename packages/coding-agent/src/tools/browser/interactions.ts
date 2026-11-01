@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { Protocol } from "devtools-protocol";
 import { untilAborted } from "@oh-my-pi/pi-utils";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
@@ -312,7 +313,7 @@ async function actionableClickPoint(
 	try {
 		while (true) {
 			throwIfAborted(signal);
-			await untilAborted(signal, () => Bun.sleep(16));
+			await untilAborted(signal, () => runtime.sleep(16));
 			const current = await untilAborted(signal, () => handle.boundingBox());
 			const stable =
 				previous !== null &&
@@ -329,7 +330,7 @@ async function actionableClickPoint(
 			}
 			refusal = result.ok ? "still moving" : result.coveredBy ? `covered by ${result.coveredBy}` : result.reason;
 			previous = current;
-			await untilAborted(signal, () => Bun.sleep(34));
+			await untilAborted(signal, () => runtime.sleep(34));
 		}
 	} catch (error) {
 		if (signal?.aborted && refusal !== undefined) throw new ClickRefusedError(refusal, { cause: signal.reason });
@@ -852,7 +853,7 @@ export async function clickQueryHandlerText(
 		try {
 			target = await resolveActionableQueryHandlerClickTarget(handles, clickSignal);
 			if (!target) {
-				await untilAborted(clickSignal, () => Bun.sleep(50));
+				await untilAborted(clickSignal, () => runtime.sleep(50));
 				continue;
 			}
 			await clickElement(target, label, clickSignal);
@@ -953,7 +954,7 @@ export async function highlightElement(
 		}, id),
 	);
 	try {
-		await untilAborted(signal, () => Bun.sleep(duration));
+		await untilAborted(signal, () => runtime.sleep(duration));
 	} finally {
 		await handle.frame
 			.page()

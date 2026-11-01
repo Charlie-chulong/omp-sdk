@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Settings registry: typed handles for every setting.
  *
@@ -339,7 +340,7 @@ export function settingValuesEqual(a: unknown, b: unknown): boolean {
 		for (let i = 0; i < a.length; i++) if (!settingValuesEqual(a[i], b[i])) return false;
 		return true;
 	}
-	if (!isPlainObject(a) || !isPlainObject(b)) return Bun.deepEquals(a, b);
+	if (!isPlainObject(a) || !isPlainObject(b)) return runtime.deepEquals(a, b);
 	// Positional key comparison needs `b`'s keys materialized; `a` streams.
 	const otherKeys = Object.keys(b);
 	let index = 0;
@@ -515,7 +516,7 @@ export class Setting<T, Id extends string = string> extends Derived<T> {
 	/** Value supplied by the environment variable, or `undefined` when unset or unparseable. */
 	envValue(): T | undefined {
 		if (!this.envName || !this.#parseEnv) return undefined;
-		const raw = Bun.env[this.envName];
+		const raw = process.env[this.envName];
 		if (raw === undefined) return undefined;
 		if (raw !== this.#envRaw) {
 			this.#envParsed = this.#parseEnv(raw) as T | undefined;
@@ -645,7 +646,7 @@ export class Setting<T, Id extends string = string> extends Derived<T> {
 			return raw === undefined ? this.default : (raw as T);
 		}
 		const warned = settings.warnState.invalid;
-		if (!warned.has(this.id) || !Bun.deepEquals(warned.get(this.id), raw)) {
+		if (!warned.has(this.id) || !runtime.deepEquals(warned.get(this.id), raw)) {
 			warned.set(this.id, raw);
 			logger.warn("Settings: ignoring invalid value, using the default", { setting: this.id, value: raw });
 		}
@@ -668,7 +669,7 @@ export class Setting<T, Id extends string = string> extends Derived<T> {
 		this.definition.validate?.(value);
 		if (!this.accepts(value)) {
 			const expected = this.enumValues ? `one of ${this.enumValues.join(", ")}` : `a ${this.definition.type}`;
-			throw new Error(`Invalid value for ${this.id}: ${Bun.inspect(value)} (expected ${expected})`);
+			throw new Error(`Invalid value for ${this.id}: ${runtime.inspect(value)} (expected ${expected})`);
 		}
 	}
 

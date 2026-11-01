@@ -35,11 +35,11 @@ export class CliError extends Error {
 type CommandHandler = (args: readonly string[], context?: CliContext) => number | Promise<number>;
 
 function out(context: CliContext | undefined, text = ""): void {
-	(context?.stdout ?? Bun.stdout).write(`${text}\n`);
+	(context?.stdout ?? process.stdout).write(`${text}\n`);
 }
 
 function err(context: CliContext | undefined, text = ""): void {
-	(context?.stderr ?? Bun.stderr).write(`${text}\n`);
+	(context?.stderr ?? process.stderr).write(`${text}\n`);
 }
 
 function fail(message: string, exitCode = 2): never {
@@ -374,7 +374,7 @@ export function printHelp(context?: CliContext): void {
 	out(context, "  mcp [args]                             Run MCP server");
 }
 
-export async function runCli(args: readonly string[] = Bun.argv.slice(2), context?: CliContext): Promise<number> {
+export async function runCli(args: readonly string[] = process.argv.slice(2), context?: CliContext): Promise<number> {
 	if (args.length === 0 || args[0] === "--help" || args[0] === "-h" || args[0] === "help") {
 		printHelp(context);
 		return 0;

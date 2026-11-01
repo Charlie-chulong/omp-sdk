@@ -1,3 +1,4 @@
+import { encodeBase64 } from "@oh-my-pi/pi-utils";
 import { describe, expect, test } from "bun:test";
 import * as vm from "node:vm";
 import { type Element, parseHTML } from "@oh-my-pi/pi-utils/dom";
@@ -37,7 +38,7 @@ function renderSession(session: MinimalSession) {
 	const { document, window } = parseHTML(templateHtml.replace("</body>", `${shellHtml}</body>`));
 	const sessionData = document.getElementById("session-data");
 	if (!sessionData) throw new Error("Export template is missing session data");
-	sessionData.textContent = Buffer.from(JSON.stringify(session)).toBase64();
+	sessionData.textContent = encodeBase64(Buffer.from(JSON.stringify(session)));
 	Object.defineProperty(window, "location", {
 		value: new URL("https://example.test/export.html"),
 		configurable: true,

@@ -1,6 +1,7 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import { isEnoent, isRecord, logger, untilAborted } from "@oh-my-pi/pi-utils";
-import type { BunFile } from "bun";
+import type { RuntimeFile } from "@oh-my-pi/pi-utils/runtime";
 import { isPermissionDeniedError, writeFileWithFallback } from "../tools/file-write-fallback";
 import {
 	beginPendingDiskWrite,
@@ -126,7 +127,7 @@ export type WritethroughCallback = (
 	dst: string,
 	content: string,
 	signal?: AbortSignal,
-	file?: BunFile,
+	file?: RuntimeFile,
 	batch?: LspWritethroughBatchRequest,
 	getDeferred?: (dst: string) => WritethroughDeferredHandle | undefined,
 ) => Promise<WritethroughResult>;
@@ -136,7 +137,7 @@ export async function writethroughNoop(
 	dst: string,
 	content: string,
 	_signal?: AbortSignal,
-	file?: BunFile,
+	file?: RuntimeFile,
 	_batch?: LspWritethroughBatchRequest,
 	_getDeferred?: (dst: string) => WritethroughDeferredHandle | undefined,
 ): Promise<WritethroughResult> {
@@ -146,7 +147,7 @@ export async function writethroughNoop(
 
 interface PendingWritethrough {
 	dst: string;
-	file?: BunFile;
+	file?: RuntimeFile;
 	changeType: FileChangeType;
 	/**
 	 * The bytes this entry committed. The flush prefers a fresh read of `dst` so
@@ -371,7 +372,7 @@ async function fetchDiagnosticsWithDeferral(args: {
 	const INLINE_TIMEOUT = Symbol("inline-diagnostics-timeout");
 	const raced = await Promise.race([
 		fetchPromise,
-		Bun.sleep(INLINE_DIAGNOSTICS_WAIT_TIMEOUT_MS).then(() => INLINE_TIMEOUT),
+		runtime.sleep(INLINE_DIAGNOSTICS_WAIT_TIMEOUT_MS).then(() => INLINE_TIMEOUT),
 	]);
 	if (raced !== INLINE_TIMEOUT) {
 		return apply(raced as FileDiagnosticsResult | undefined);
@@ -395,7 +396,7 @@ async function runLspWritethrough(
 	options: ResolvedWritethroughOptions,
 	changeType: FileChangeType,
 	signal?: AbortSignal,
-	file?: BunFile,
+	file?: RuntimeFile,
 	deferred?: {
 		onDeferredDiagnostics: (diagnostics: FileDiagnosticsResult) => void;
 		signal: AbortSignal;
@@ -687,11 +688,11 @@ export function createLspWritethrough(cwd: string, options?: WritethroughOptions
 		dst: string,
 		content: string,
 		signal?: AbortSignal,
-		file?: BunFile,
+		file?: RuntimeFile,
 		batch?: LspWritethroughBatchRequest,
 		getDeferred?: (dst: string) => WritethroughDeferredHandle | undefined,
 	) => {
-		const changeType = (await Bun.file(dst).exists()) ? FileChangeType.Changed : FileChangeType.Created;
+		const changeType = (await runtime.file(dst).exists()) ? FileChangeType.Changed : FileChangeType.Created;
 		if (!batch) {
 			const bundle = getDeferred?.(dst);
 			const deferredInner =

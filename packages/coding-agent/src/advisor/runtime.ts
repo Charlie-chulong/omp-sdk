@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import type { AssistantMessage, ImageContent, TextContent } from "@oh-my-pi/pi-ai";
 import * as AIError from "@oh-my-pi/pi-ai/error";
@@ -1658,10 +1659,10 @@ export class AdvisorRuntime {
 								overflowRecovery: recoveringOverflow || undefined,
 							});
 							if (this.retryDelayMs <= 0) {
-								await Bun.sleep(0);
+								await runtime.sleep(0);
 							} else {
 								try {
-									await raceWithSignal(Bun.sleep(this.retryDelayMs), iterationAbort.signal);
+									await raceWithSignal(runtime.sleep(this.retryDelayMs), iterationAbort.signal);
 								} catch (sleepError) {
 									if (!iterationAbort.signal.aborted) throw sleepError;
 								}

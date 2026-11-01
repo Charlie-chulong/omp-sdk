@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -547,7 +548,7 @@ export async function scanSkillsFromDir(
  */
 function lookupEnvValue(varName: string, extraEnv?: Record<string, string>): string | undefined {
 	if (extraEnv !== undefined && Object.hasOwn(extraEnv, varName)) return extraEnv[varName];
-	const ambient = Bun.env[varName];
+	const ambient = process.env[varName];
 	return typeof ambient === "string" ? ambient : undefined;
 }
 
@@ -1633,8 +1634,14 @@ export async function injectPluginDirRoots(home: string, dirs: string[], cwd?: s
 				const contained = await resolveContainedPath(realRoot, manifestPath);
 				if (contained.status !== "ok") continue;
 				try {
-					const manifest = await Bun.file(contained.realPath).json();
-					if (typeof manifest?.name === "string" && manifest.name) {
+					const manifest = await runtime.file(contained.realPath).json();
+					if (
+						manifest &&
+						typeof manifest === "object" &&
+						"name" in manifest &&
+						typeof manifest.name === "string" &&
+						manifest.name
+					) {
 						pluginName = manifest.name;
 						break;
 					}

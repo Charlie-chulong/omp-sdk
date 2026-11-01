@@ -5,7 +5,7 @@ export const zellijMultiplexer = {
 	precedence: "session",
 	sessionEnvKeys: ["ZELLIJ"],
 	ownsScreenGrid: true,
-	isInside(env: NodeJS.ProcessEnv = Bun.env): boolean {
+	isInside(env: NodeJS.ProcessEnv = process.env): boolean {
 		return Boolean(env.ZELLIJ);
 	},
 	notifier: {

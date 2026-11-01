@@ -1,3 +1,4 @@
+import { inspect } from "node:util";
 import { type DebugToolDetails, formatLocation, formatSessionSnapshot } from "@oh-my-pi/pi-tui/tools/debug";
 import * as fs from "node:fs/promises";
 import { type } from "@oh-my-pi/omptype";
@@ -402,7 +403,7 @@ function formatCustomResponse(command: string, body: unknown): string {
 	try {
 		serialized = JSON.stringify(body, null, 2) ?? "null";
 	} catch {
-		serialized = Bun.inspect(body);
+		serialized = inspect(body);
 	}
 	return `${command} response:\n${serialized}`;
 }

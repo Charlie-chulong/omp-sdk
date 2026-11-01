@@ -263,6 +263,38 @@ await runRpcMode(session);
 		expect(seen).toContain("askDialog:function");
 	}, 30_000);
 
+	it("changes approval mode while an extension startup question is waiting", async () => {
+		await using temp = await TempDir.create("@rpc-startup-permissions-");
+		const child = await spawnStartupDialogRuntime(temp);
+		const stderr = new Response(child.stderr).text();
+		const seen: string[] = [];
+		let confirmId: unknown;
+		for await (const frame of readJsonl<unknown>(child.stdout)) {
+			if (!isRecord(frame)) continue;
+			if (frame.type === "extension_ui_request" && frame.method === "confirm") {
+				confirmId = frame.id;
+				child.stdin.write(`${JSON.stringify({ id: "state", type: "get_state" })}\n`);
+				child.stdin.write(
+					`${JSON.stringify({ id: "permissions", type: "set_approval_mode", mode: "always-ask" })}\n`,
+				);
+				await child.stdin.flush();
+			} else if (frame.type === "response" && frame.id === "permissions") {
+				expect(frame).toMatchObject({ success: true, data: { mode: "always-ask" } });
+				seen.push("permissions");
+				child.stdin.write(`${JSON.stringify({ type: "extension_ui_response", id: confirmId, confirmed: true })}\n`);
+				await child.stdin.flush();
+			} else if (frame.type === "extension_ui_request" && frame.method === "notify") {
+				seen.push(`confirmed:${String(frame.message)}`);
+			} else if (frame.type === "response" && frame.id === "state") {
+				expect(frame.data).toMatchObject({ approvalMode: "always-ask" });
+				seen.push("state");
+				child.stdin.end();
+			}
+		}
+		await child.exited;
+		expect(seen, await stderr).toEqual(["permissions", "confirmed:true", "state"]);
+	}, 30_000);
+
 	it("rejects a dialog session_start awaits when stdin closes, so the process still exits", async () => {
 		await using temp = await TempDir.create("@rpc-startup-dialog-eof-");
 		const child = await spawnStartupDialogRuntime(temp);

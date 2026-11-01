@@ -1,3 +1,4 @@
+import { encodeBase64 } from "@oh-my-pi/pi-utils";
 import { describe, expect, test } from "bun:test";
 import { normalizeModelContextImages } from "@oh-my-pi/pi-coding-agent/utils/image-loading";
 import { ensureSupportedImageInput } from "@oh-my-pi/pi-tui/chat/image-loading";
@@ -11,7 +12,7 @@ const RED_1X1_PNG_BASE64 =
 async function makeRedPng(width: number, height: number): Promise<string> {
 	const seed = Buffer.from(RED_1X1_PNG_BASE64, "base64");
 	const upscaled = await new Bun.Image(seed).resize(width, height, { filter: "nearest" }).png().bytes();
-	return Buffer.from(upscaled).toBase64();
+	return encodeBase64(Buffer.from(upscaled));
 }
 
 async function dimensions(image: { data: string }): Promise<{ width: number; height: number }> {

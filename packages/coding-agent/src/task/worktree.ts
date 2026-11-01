@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { type NestedRepoPatch } from "@oh-my-pi/pi-tui/tools/task";
 import type { Dirent } from "node:fs";
 import * as fs from "node:fs/promises";
@@ -603,7 +604,7 @@ function errorMessage(err: unknown): string {
 
 function getTaskIsolationSegment(repoRoot: string, id: string): string {
 	const key = `${path.resolve(repoRoot)}\0${id}`;
-	const digest = Bun.hash(key).toString(16).padStart(16, "0").slice(-TASK_ISOLATION_DIR_DIGEST_CHARS);
+	const digest = runtime.hash(key).toString(16).padStart(16, "0").slice(-TASK_ISOLATION_DIR_DIGEST_CHARS);
 	return `${TASK_ISOLATION_DIR_PREFIX}${digest}`;
 }
 

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Custom message types and transformers for the coding agent.
  *
@@ -210,7 +211,7 @@ export function didSessionMessagesChange(previousMessages: AgentMessage[], nextM
 	if (previousMessages.length !== nextMessages.length) return true;
 	return previousMessages.some(
 		(message, i) =>
-			!Bun.deepEquals(
+			!runtime.deepEquals(
 				normalizeSessionMessageForProviderReplay(message),
 				normalizeSessionMessageForProviderReplay(nextMessages[i]),
 			),

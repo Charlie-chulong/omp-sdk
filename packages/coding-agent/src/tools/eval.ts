@@ -76,7 +76,7 @@ export type EvalLanguageToken = "py" | "js";
 const EVAL_LANGUAGE_ORDER: readonly EvalLanguageToken[] = ["py", "js"];
 const EVAL_LANGUAGE_RUNTIME: Record<EvalLanguageToken, string> = {
 	py: '"py": Python with IPython-style magics (not IPython)',
-	js: '"js": Bun',
+	js: process.versions.bun ? '"js": Bun' : '"js": Node.js',
 };
 const EVAL_LANGUAGE_NAME: Record<EvalLanguageToken, string> = {
 	py: "Python",
@@ -209,6 +209,7 @@ function evalTemplateContext(options: EvalToolDescriptionOptions) {
 	return {
 		py: options.py ?? true,
 		js: options.js ?? true,
+		jsBun: process.versions.bun !== undefined,
 		evalTools: options.evalTools ?? true,
 		eagerDelegation: options.eagerDelegation ?? true,
 		waitTool: options.waitTool ?? true,

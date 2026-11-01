@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { VcsNumstatEntry } from "@oh-my-pi/pi-natives";
@@ -155,7 +156,7 @@ async function projectNames(cwd: string): Promise<string[]> {
 		const packages: string[] = [];
 		for (const entry of entries) {
 			if (!entry.isDirectory()) continue;
-			if (await Bun.file(path.join(root, entry.name, "__init__.py")).exists()) packages.push(entry.name);
+			if (await runtime.file(path.join(root, entry.name, "__init__.py")).exists()) packages.push(entry.name);
 		}
 		if (packages.length === 1 && packages[0]) names.push(packages[0]);
 	} catch {}

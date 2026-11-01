@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as path from "node:path";
 import { untilAborted } from "@oh-my-pi/pi-utils";
 import type { ConversionResult, Markit, StreamInfo } from "../markit";
@@ -156,7 +157,7 @@ export async function convertFileWithMarkit(
 	throwIfAborted(signal);
 	let bytes: Uint8Array;
 	try {
-		bytes = await untilAborted(signal, () => Bun.file(filePath).bytes());
+		bytes = await untilAborted(signal, () => runtime.file(filePath).bytes());
 	} catch (error) {
 		if (error instanceof ToolAbortError) throw error;
 		if (error instanceof Error && error.name === "AbortError") throw new ToolAbortError();

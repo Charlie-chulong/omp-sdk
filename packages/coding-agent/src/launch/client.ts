@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -93,7 +94,7 @@ async function readOrCreateToken(runtimeDir: string): Promise<string> {
 		} catch (error) {
 			if (!isEexist(error)) throw error;
 		}
-		await Bun.sleep(10);
+		await runtime.sleep(10);
 	}
 	throw new Error(`Timed out initializing daemon broker token in ${runtimeDir}`);
 }
@@ -293,7 +294,7 @@ class SocketDaemonClient implements DaemonBrokerClient {
 				return;
 			} catch (error) {
 				lastError = error instanceof Error ? error : new Error(String(error));
-				await Bun.sleep(CONNECT_RETRY_MS);
+				await runtime.sleep(CONNECT_RETRY_MS);
 			}
 		}
 		throw new Error(
@@ -310,7 +311,7 @@ class SocketDaemonClient implements DaemonBrokerClient {
 			[DAEMON_RUNTIME_DIR_ENV]: this.#runtimeDir,
 		};
 		if (this.#idleGraceMs !== undefined) overlay[DAEMON_IDLE_GRACE_ENV] = String(this.#idleGraceMs);
-		const child = Bun.spawn(spawn.cmd, {
+		const child = runtime.spawn(spawn.cmd, {
 			cwd: spawn.cwd,
 			env: workerEnvFromParent(overlay),
 			stdin: "ignore",

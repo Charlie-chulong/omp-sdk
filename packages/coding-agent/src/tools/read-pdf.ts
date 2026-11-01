@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { pathToFileURL } from "node:url";
 import { untilAborted } from "@oh-my-pi/pi-utils";
 import type { ToolSession } from "../sdk";
@@ -109,7 +110,7 @@ export async function renderPdfPageScreenshot(
 	const deadlineStart = performance.now();
 	const timeoutSignal = AbortSignal.timeout(PDF_RENDER_TIMEOUT_MS);
 	const renderSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
-	const tabName = `read-pdf-${Bun.randomUUIDv7()}`;
+	const tabName = `read-pdf-${runtime.randomUUIDv7()}`;
 	const url = pathToFileURL(absolutePdfPath);
 	url.hash = `page=${page}&toolbar=0&navpanes=0&view=Fit`;
 

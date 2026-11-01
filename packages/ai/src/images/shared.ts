@@ -1,5 +1,5 @@
 import type { FetchImpl, Model, Usage } from "@oh-my-pi/pi-catalog/types";
-import { base64ImageDataFailureReason, isRecord, parseImageMetadata, USER_AGENT } from "@oh-my-pi/pi-utils";
+import { encodeBase64, base64ImageDataFailureReason, isRecord, parseImageMetadata, USER_AGENT } from "@oh-my-pi/pi-utils";
 import type { ApiKey } from "../auth-retry";
 import { withAuth } from "../auth-retry";
 import * as AIError from "../error";
@@ -145,7 +145,7 @@ async function imageFromUrl(url: string, fetch: FetchImpl, signal?: AbortSignal)
 		});
 	}
 	const bytes = new Uint8Array(await response.arrayBuffer());
-	return { data: bytes.toBase64(), mimeType };
+	return { data: encodeBase64(bytes), mimeType };
 }
 
 export async function decodeImageResponse(

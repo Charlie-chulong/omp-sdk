@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Cross-process contract for the broker-owned LSP mux daemon.
  *
@@ -118,5 +119,5 @@ export function muxServerKey(params: MuxConnectParams): string {
 		params.env ?? {},
 		params.initializationOptions ?? {},
 	]);
-	return `sha256:${Bun.SHA256.hash(identity, "hex")}`;
+	return `sha256:${runtime.SHA256.hash(identity, "hex")}`;
 }

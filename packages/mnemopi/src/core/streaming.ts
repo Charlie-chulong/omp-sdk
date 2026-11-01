@@ -1,4 +1,4 @@
-import type { Database, SQLQueryBindings } from "bun:sqlite";
+import type { Database, SQLQueryBindings } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 

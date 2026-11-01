@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { type ElidedRange, formatSingleLine } from "@oh-my-pi/pi-tui/tools/read";
 import * as path from "node:path";
 import type { AgentToolResult } from "@oh-my-pi/pi-agent-core";
@@ -110,7 +111,13 @@ export async function readHashlineHeaderContext(
 	cwd: string,
 	displayPath?: string,
 ): Promise<HashlineHeaderContext> {
-	return hashlineHeaderContextForText(session, absolutePath, cwd, await Bun.file(absolutePath).text(), displayPath);
+	return hashlineHeaderContextForText(
+		session,
+		absolutePath,
+		cwd,
+		await runtime.file(absolutePath).text(),
+		displayPath,
+	);
 }
 
 /**

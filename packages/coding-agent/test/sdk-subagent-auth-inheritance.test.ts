@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { afterEach, describe, expect, it, vi } from "bun:test";
 import type { OAuthCredential, UsageReport } from "@oh-my-pi/pi-ai";
 import { resolveApiKeyOnce } from "@oh-my-pi/pi-ai/auth-retry";

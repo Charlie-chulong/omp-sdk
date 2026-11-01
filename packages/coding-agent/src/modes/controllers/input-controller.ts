@@ -15,7 +15,7 @@ import {
 	type PasteOptions,
 	type SlashCommand,
 } from "@oh-my-pi/pi-tui";
-import { isEnoent, logger, postmortem, sanitizeText } from "@oh-my-pi/pi-utils";
+import { encodeBase64, isEnoent, logger, postmortem, sanitizeText } from "@oh-my-pi/pi-utils";
 import { formatDoubleTap } from "@oh-my-pi/pi-tui/app-keybindings";
 import { appKey, editorKey } from "@oh-my-pi/pi-tui/chrome/keybinding-hints";
 import { formatModelRoleAlias, roleCandidatePool } from "../../config/model-roles";
@@ -2616,7 +2616,7 @@ export class InputController {
 			const image = await this.clipboard.readImage();
 			if (!image) return false;
 			await sink.attach(
-				{ type: "image", data: image.data.toBase64(), mimeType: image.mimeType },
+				{ type: "image", data: encodeBase64(image.data), mimeType: image.mimeType },
 				`Unsupported clipboard image format: ${image.mimeType}`,
 			);
 			return true;
@@ -2772,7 +2772,7 @@ export class InputController {
 				return await sink.attach(
 					{
 						type: "image",
-						data: image.data.toBase64(),
+						data: encodeBase64(image.data),
 						mimeType: image.mimeType,
 					},
 					`Unsupported clipboard image format: ${image.mimeType}`,

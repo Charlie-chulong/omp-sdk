@@ -165,7 +165,6 @@ The variables below supply credentials after runtime/config overrides and stored
 | `litellm`                        | `LITELLM_API_KEY`; optional `LITELLM_BASE_URL` for the proxy endpoint               |
 | `kilo`                           | `KILO_API_KEY`                                                                      |
 | `zai`                            | `ZAI_API_KEY`                                                                       |
-| `zenmux`                         | `ZENMUX_API_KEY`                                                                    |
 | `zhipu-coding-plan`              | `ZHIPU_API_KEY`                                                                     |
 | `umans`                          | `UMANS_AI_CODING_PLAN_API_KEY`                                                      |
 | `qianfan`                        | `QIANFAN_API_KEY`                                                                   |
@@ -195,8 +194,6 @@ The variables below supply credentials after runtime/config overrides and stored
 | `vllm`                           | `VLLM_API_KEY` (optional for an unauthenticated local server)                       |
 | `yolo-auto`                      | `YOLO_AUTO_API_KEY`                                                                 |
 | `charm-hyper`                    | `CHARM_HYPER_API_KEY`, then `HYPER_API_KEY`                                         |
-| `singularityapi-dev`             | `SINGULARITYAPI_DEV_API_KEY`                                                        |
-| `singularityapi-tech`            | `SINGULARITYAPI_TECH_API_KEY`                                                       |
 
 Vertex ADC availability accepts project aliases `GOOGLE_CLOUD_PROJECT`, `GCP_PROJECT`, or `GCLOUD_PROJECT`, and location aliases `GOOGLE_VERTEX_LOCATION`, `GOOGLE_CLOUD_LOCATION`, or `VERTEX_LOCATION`.
 
@@ -212,13 +209,7 @@ For `xai-oauth`, `XAI_API_KEY` is accepted for an explicit request but does not 
 
 `inception` is Inception's native Mercury API. Set `INCEPTION_API_KEY` or run `/login inception` with a key from `https://platform.inceptionlabs.ai/dashboard/api-keys`, then select `inception/mercury-3`. OMP discovers chat models from `/v1/models`, including Mercury 3, Mercury 2.5, and Mercury 2; FIM/edit and Decisions-only models are excluded. Mercury 3 supports a 1,000,000-token context and up to 131,072 output tokens. Thinking levels are `minimal`, `low`, `medium`, and `high`; `minimal` maps to Inception's `instant`, and `off` requests that lowest effort rather than disabling reasoning entirely. Mercury does not stream its reasoning, so no thinking text appears and a `high` turn can be silent for minutes before its first output; OMP waits up to 10 minutes for Mercury 3's first chunk (`providers.streamFirstEventTimeoutSeconds` overrides this). While `/v1/models` reports Mercury 3 at $0, OMP prices it at the published launch rate ($0.10 input / $0.35 output per million tokens); a tariff reported by `/v1/models` takes precedence.
 
-SingularityAPI sells two unrelated products behind one brand, so OMP models them as two providers: they share no key, no billing model, and no effort ladder, and neither key is accepted by the other host.
-
-`singularityapi-dev` is the pay-as-you-go universal inference gateway (300+ models: DeepSeek, Kimi, GLM, frontier flagships). Create a key at `https://app.singularityapi.dev` (or run `/login singularityapi-dev`) and set `SINGULARITYAPI_DEV_API_KEY`; the roster, limits, and tariffs are discovered live from `https://api.singularityapi.dev/v1/models`.
-
-`singularityapi-tech` is the reserved DeepSeek lanes gateway. Usage bills against a booked reservation slot rather than prepaid credit, so a valid key with no active slot answers 403 until you book one at `https://app.singularityapi.tech`. Create an `sk-...` key there (or run `/login singularityapi-tech`), set `SINGULARITYAPI_TECH_API_KEY`, and the lane roster is discovered live from `https://api.singularityapi.tech/v1/models`.
-
-OAuth-backed providers such as `anthropic`, `openai-codex`, `github-copilot`, `cursor`, `muse-code`, `ollama-cloud`, `qwen-portal`, `kimi-code`, `xai-oauth`, `wafer-serverless`, `google-gemini-cli`, `google-antigravity`, `devin`, and the GitLab providers (`gitlab-duo`, `gitlab-duo-agent`) are normally reached through `/login` rather than an environment variable. Interactive API-key logins exist too: `/login baseten`, `/login coreweave`, `/login sakana`, `/login singularityapi-dev`, and `/login singularityapi-tech` prompt for a dashboard/API key (`coreweave` additionally requires `COREWEAVE_PROJECT` for the `OpenAI-Project` header). See [Environment variables](./environment-variables.md) for search-tool and configuration variables not listed here.
+OAuth-backed providers such as `anthropic`, `openai-codex`, `github-copilot`, `cursor`, `muse-code`, `ollama-cloud`, `qwen-portal`, `kimi-code`, `xai-oauth`, `wafer-serverless`, `google-gemini-cli`, `google-antigravity`, `devin`, and the GitLab providers (`gitlab-duo`, `gitlab-duo-agent`) are normally reached through `/login` rather than an environment variable. Interactive API-key logins exist too: `/login baseten`, `/login coreweave`, and `/login sakana` prompt for a dashboard/API key (`coreweave` additionally requires `COREWEAVE_PROJECT` for the `OpenAI-Project` header). See [Environment variables](./environment-variables.md) for search-tool and configuration variables not listed here.
 
 ### `.env` discovery and precedence
 

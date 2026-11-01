@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { untilAborted, withTimeout } from "@oh-my-pi/pi-utils";
 import type { Page, WaitForOptions } from "puppeteer-core";
 import { puppeteerTimeoutError } from "./launch";
@@ -92,7 +93,7 @@ export async function waitForMainFrameDocument(
 		let remaining = deadline - Date.now();
 		if (navigating()) {
 			if (remaining <= 0) return false;
-			await untilAborted(signal, () => Bun.sleep(Math.min(MAIN_FRAME_POLL_MS, remaining)));
+			await untilAborted(signal, () => runtime.sleep(Math.min(MAIN_FRAME_POLL_MS, remaining)));
 			continue;
 		}
 		if (remaining <= 0) return true;
@@ -112,7 +113,7 @@ export async function waitForMainFrameDocument(
 		remaining = deadline - Date.now();
 		if (state !== "loading" && !navigating()) return true;
 		if (remaining <= 0) return !navigating();
-		await untilAborted(signal, () => Bun.sleep(Math.min(MAIN_FRAME_POLL_MS, remaining)));
+		await untilAborted(signal, () => runtime.sleep(Math.min(MAIN_FRAME_POLL_MS, remaining)));
 	}
 }
 
@@ -162,7 +163,7 @@ export async function navigateMainFrame(
 		const remaining = deadline - Date.now();
 		if (remaining <= 0) throw puppeteerTimeoutError(`Navigation timeout of ${timeout} ms exceeded`);
 		// The last read lands on the deadline, so an event that arrives after it is a timeout.
-		await untilAborted(signal, () => Bun.sleep(Math.min(MAIN_FRAME_POLL_MS, remaining)));
+		await untilAborted(signal, () => runtime.sleep(Math.min(MAIN_FRAME_POLL_MS, remaining)));
 	}
 }
 

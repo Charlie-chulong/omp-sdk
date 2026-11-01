@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * SQLite-backed cache for rendered `github` issue/PR view output, plus a
  * generic cache-aware wrapper that the tool ops and the `issue://`/`pr://`
@@ -21,7 +22,7 @@
  *     snapshot, and honor the cache kill switch.
  */
 
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -203,7 +204,7 @@ function getGhConfigDir(): string {
 }
 
 function hashCacheIdentity(parts: string[]): string {
-	return Bun.hash(parts.map(part => `${part.length}:${part}`).join("|")).toString(36);
+	return runtime.hash(parts.map(part => `${part.length}:${part}`).join("|")).toString(36);
 }
 
 /**

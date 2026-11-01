@@ -1,4 +1,5 @@
 import { type MermaidRenderOptions, renderMermaidAscii } from "@oh-my-pi/pi-natives";
+import { runtime } from "./runtime";
 
 /**
  * Native Mermaid → ASCII/Unicode renderer (flowchart, state, sequence, class,
@@ -29,7 +30,7 @@ export function extractMermaidBlocks(markdown: string): { source: string; hash: 
 
 	for (let match = regex.exec(markdown); match !== null; match = regex.exec(markdown)) {
 		const source = match[1].trim();
-		const hash = Bun.hash(source);
+		const hash = runtime.hash(source);
 		blocks.push({ source, hash });
 	}
 

@@ -18,10 +18,14 @@
  * variadic, and the arm64-darwin ABI passes variadic arguments on the stack,
  * so a fixed-arity FFI signature would read garbage for the third argument.
  */
-import { dlopen, FFIType } from "bun:ffi";
+import type * as BunFfi from "bun:ffi";
+import type * as Koffi from "koffi";
+import { createRequire } from "node:module";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { getLogPath } from "./dirs";
+
+const require = createRequire(import.meta.url);
 
 const STDOUT_FILENO = 1;
 const STDERR_FILENO = 2;
@@ -43,11 +47,23 @@ function libcFdOps(): LibcFdOps | null {
 		process.platform === "darwin" ? ["libSystem.B.dylib", "/usr/lib/libSystem.B.dylib"] : ["libc.so.6", "libc.so"];
 	for (const candidate of candidates) {
 		try {
-			const libc = dlopen(candidate, {
-				dup: { args: [FFIType.i32], returns: FFIType.i32 },
-				dup2: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
-			});
-			libcFdOpsCache = libc.symbols;
+			if (typeof Bun !== "undefined") {
+				const { dlopen, FFIType } = require("bun:ffi") as typeof BunFfi;
+				const libc = dlopen(candidate, {
+					dup: { args: [FFIType.i32], returns: FFIType.i32 },
+					dup2: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
+				});
+				libcFdOpsCache = libc.symbols;
+			} else {
+				const koffi = require("koffi") as typeof Koffi;
+				const libc = koffi.load(candidate);
+				const dup = libc.func("int dup(int fd)");
+				const dup2 = libc.func("int dup2(int oldFd, int newFd)");
+				libcFdOpsCache = {
+					dup: fd => dup(fd) as number,
+					dup2: (oldFd, newFd) => dup2(oldFd, newFd) as number,
+				};
+			}
 			return libcFdOpsCache;
 		} catch {
 			// Try the next candidate; the guard stays inert if none load.

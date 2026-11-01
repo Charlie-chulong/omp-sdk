@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -24,7 +25,7 @@ export function blobRoot(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 export function computeSha256(data: Uint8Array | string): string {
-	return Bun.SHA256.hash(data, "hex");
+	return runtime.SHA256.hash(data, "hex");
 }
 
 export function isDataUri(content: string): boolean {

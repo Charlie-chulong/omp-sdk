@@ -119,6 +119,7 @@ export const matchesKey = nativeBindings.matchesKey ?? missingNativeExport("matc
 export const matchesKittySequence = nativeBindings.matchesKittySequence ?? missingNativeExport("matchesKittySequence");
 export const matchesLegacySequence = nativeBindings.matchesLegacySequence ?? missingNativeExport("matchesLegacySequence");
 export const mmrRerankIndices = nativeBindings.mmrRerankIndices ?? missingNativeExport("mmrRerankIndices");
+export const nativeCapabilities = nativeBindings.nativeCapabilities ?? missingNativeExport("nativeCapabilities");
 export const nodeChainAt = nativeBindings.nodeChainAt ?? missingNativeExport("nodeChainAt");
 export const normalizePtyDimensions = nativeBindings.normalizePtyDimensions ?? missingNativeExport("normalizePtyDimensions");
 export const notebookToEditableText = nativeBindings.notebookToEditableText ?? missingNativeExport("notebookToEditableText");

@@ -1,3 +1,4 @@
+import { runtime as platformRuntime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type {
@@ -101,7 +102,7 @@ export interface CodexSecurityImportOptions {
 }
 
 async function readJson<T>(filePath: string): Promise<T> {
-	return JSON.parse(await Bun.file(filePath).text()) as T;
+	return JSON.parse(await platformRuntime.file(filePath).text()) as T;
 }
 
 function stringArray(value: unknown): string[] {
@@ -331,10 +332,12 @@ export async function importCodexSecurityBundle(
 		sourceKind === "git_diff" ? "ref_diff" : sourceKind === "git_worktree" ? "working_tree" : "imported";
 	const reportPath = path.join(root, "report.md");
 	const sarifPath = path.join(root, "exports", "results.sarif");
-	const report = await Bun.file(reportPath)
+	const report = await platformRuntime
+		.file(reportPath)
 		.text()
 		.catch(() => undefined);
-	const sarifText = await Bun.file(sarifPath)
+	const sarifText = await platformRuntime
+		.file(sarifPath)
 		.text()
 		.catch(() => undefined);
 	const scanProvenance: SecurityProvenance = {
@@ -354,7 +357,7 @@ export async function importCodexSecurityBundle(
 		treeDigest:
 			typeof target.snapshotDigest === "string"
 				? target.snapshotDigest
-				: Bun.SHA256.hash(JSON.stringify({ manifest, findingsDocument, coverageDocument }), "hex"),
+				: platformRuntime.SHA256.hash(JSON.stringify({ manifest, findingsDocument, coverageDocument }), "hex"),
 	};
 	if (typeof target.revision === "string") canonicalTarget.revision = target.revision;
 	if (typeof target.baseRevision === "string") canonicalTarget.baseRevision = target.baseRevision;

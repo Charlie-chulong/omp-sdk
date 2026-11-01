@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import {
 	formatMCPProgress,
 	MCP_TOOL_NAME_PREFIX,
@@ -269,7 +270,7 @@ function structuredContentAlreadyInText(structured: Record<string, unknown>, con
 		} catch {
 			continue;
 		}
-		if (Bun.deepEquals(parsed, structured)) return true;
+		if (runtime.deepEquals(parsed, structured)) return true;
 	}
 	return false;
 }
@@ -525,7 +526,7 @@ const MCP_TOOL_NAME_HASH_LENGTH = 8;
  */
 function capMCPToolNameLength(name: string): string {
 	if (name.length <= MAX_MCP_TOOL_NAME_LENGTH) return name;
-	const hash = Bun.hash(name).toString(36).slice(0, MCP_TOOL_NAME_HASH_LENGTH);
+	const hash = runtime.hash(name).toString(36).slice(0, MCP_TOOL_NAME_HASH_LENGTH);
 	const keep = MAX_MCP_TOOL_NAME_LENGTH - hash.length - 1;
 	return `${name.slice(0, keep)}_${hash}`;
 }

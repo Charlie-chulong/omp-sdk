@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Date/cwd reminder injection.
  *
@@ -222,7 +223,7 @@ export class DateCwdReminderInjector {
 			predecessor !== undefined &&
 			previousFirst !== undefined &&
 			previousFirst.source.attribution === firstUser.attribution &&
-			Bun.deepEquals(previousFirst.source.content, firstUser.content);
+			runtime.deepEquals(previousFirst.source.content, firstUser.content);
 		const state: RootState = {
 			reminder: recreated ? predecessor.state.reminder : reminder,
 			injections: new Map(previous?.injections),

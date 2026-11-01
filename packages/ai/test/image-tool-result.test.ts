@@ -1,3 +1,4 @@
+import { encodeBase64 } from "@oh-my-pi/pi-utils";
 import { describe, expect, it } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -35,7 +36,7 @@ async function handleToolWithImageResult<TApi extends Api>(model: Model<TApi>, o
 	// Read the test image
 	const imagePath = path.join(import.meta.dir, "data", "red-circle.png");
 	const imageBuffer = await fs.readFile(imagePath);
-	const base64Image = imageBuffer.toBase64();
+	const base64Image = encodeBase64(imageBuffer);
 
 	// Define a tool that returns only an image (no text)
 	const getImageSchema = type({});
@@ -123,7 +124,7 @@ async function handleToolWithTextAndImageResult<TApi extends Api>(model: Model<T
 	// Read the test image
 	const imagePath = path.join(import.meta.dir, "data", "red-circle.png");
 	const imageBuffer = await fs.readFile(imagePath);
-	const base64Image = imageBuffer.toBase64();
+	const base64Image = encodeBase64(imageBuffer);
 
 	// Define a tool that returns both text and an image
 	const getImageSchema = type({});

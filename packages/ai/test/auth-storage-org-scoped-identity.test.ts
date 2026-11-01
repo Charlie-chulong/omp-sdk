@@ -13,7 +13,7 @@
  *   4. Usage reports from two orgs on one email do NOT merge into a single
  *      report; org-less reports keep merging by email as before.
  */
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";

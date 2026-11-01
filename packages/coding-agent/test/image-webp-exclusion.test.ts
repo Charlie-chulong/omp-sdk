@@ -1,3 +1,4 @@
+import { encodeBase64 } from "@oh-my-pi/pi-utils";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { Api, Message, Model } from "@oh-my-pi/pi-ai";
 import { buildResponsesInput } from "@oh-my-pi/pi-ai/providers/openai-shared";
@@ -22,7 +23,7 @@ async function makeRedWebP(width: number, height: number): Promise<string> {
 		.resize(width, height, { filter: "nearest" })
 		.webp({ quality: 90 })
 		.bytes();
-	return Buffer.from(upscaled).toBase64();
+	return encodeBase64(Buffer.from(upscaled));
 }
 
 function buildLocalVisionModel(provider: string, api: Api = "openai-completions"): Model {
@@ -145,7 +146,7 @@ describe("normalizeModelContextImages model-aware WebP exclusion", () => {
 	test("preserves an undecodable WebP attachment slot for provider-boundary omission", async () => {
 		const corrupt = {
 			type: "image" as const,
-			data: Buffer.from("RIFF0000WEBPcorrupt").toBase64(),
+			data: encodeBase64(Buffer.from("RIFF0000WEBPcorrupt")),
 			mimeType: "image/webp",
 		};
 
@@ -159,7 +160,7 @@ describe("normalizeModelContextImages model-aware WebP exclusion", () => {
 	test("keeps custom-message image slots aligned when one WebP is undecodable", async () => {
 		const corrupt = {
 			type: "image" as const,
-			data: Buffer.from("RIFF0000WEBPbad-custom-message").toBase64(),
+			data: encodeBase64(Buffer.from("RIFF0000WEBPbad-custom-message")),
 			mimeType: "image/webp",
 		};
 		const validPng = {
@@ -310,7 +311,7 @@ describe("normalizeModelContextImages model-aware WebP exclusion", () => {
 	test("replaces an undecodable historical WebP with an omission note", async () => {
 		const corrupt = {
 			type: "image" as const,
-			data: Buffer.from("RIFF0000WEBPbad-history").toBase64(),
+			data: encodeBase64(Buffer.from("RIFF0000WEBPbad-history")),
 			mimeType: "image/webp",
 		};
 		const messages = [
@@ -339,7 +340,7 @@ describe("normalizeModelContextImages model-aware WebP exclusion", () => {
 		for (const mimeType of [undefined, null, 42]) {
 			const malformedImage = {
 				type: "image",
-				data: Buffer.from("RIFF0000WEBPbad-persisted-image").toBase64(),
+				data: encodeBase64(Buffer.from("RIFF0000WEBPbad-persisted-image")),
 				...(mimeType === undefined ? {} : { mimeType }),
 			};
 			const messages = [

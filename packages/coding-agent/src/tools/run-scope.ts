@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { untilAborted } from "@oh-my-pi/pi-utils/abortable";
 import * as postmortem from "@oh-my-pi/pi-utils/postmortem";
@@ -348,7 +349,7 @@ export function waitForRun(
 	const promise = (async (): Promise<unknown> => {
 		throwIfAborted(signal);
 		if (typeof msOrPredicate === "number") {
-			await untilAborted(signal, async () => await Bun.sleep(msOrPredicate));
+			await untilAborted(signal, async () => await runtime.sleep(msOrPredicate));
 			throwIfAborted(signal);
 			return undefined;
 		}
@@ -368,7 +369,7 @@ export function waitForRun(
 			if (Date.now() + interval > deadline) {
 				throw new ToolError(`wait(predicate) timed out after ${timeout}ms — predicate never returned truthy`);
 			}
-			await untilAborted(signal, async () => await Bun.sleep(interval));
+			await untilAborted(signal, async () => await runtime.sleep(interval));
 		}
 	})();
 	return trackBrowserRunPromise(promise);

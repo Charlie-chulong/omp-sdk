@@ -11,7 +11,7 @@
  * provider so the fix cannot silently regress in either direction.
  */
 
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { describe, expect, it } from "bun:test";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, rmSync } from "node:fs";

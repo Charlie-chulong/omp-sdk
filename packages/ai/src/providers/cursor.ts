@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import http2 from "node:http2";
 import { cursorModelParameters } from "@oh-my-pi/pi-catalog/compat/behavior";
@@ -2095,7 +2096,7 @@ function streamCursorWithWireMode(
 			const checkpointHash =
 				retryCheckpoint === undefined
 					? undefined
-					: Bun.hash(toBinary(ConversationStateStructureSchema, retryCheckpoint)).toString(36);
+					: runtime.hash(toBinary(ConversationStateStructureSchema, retryCheckpoint)).toString(36);
 			const repeatedCheckpoint = checkpointHash !== undefined && checkpointHash === retryContext?.checkpointHash;
 			const noProgressResumes = repeatedCheckpoint ? (retryContext?.noProgressResumes ?? 0) + 1 : 0;
 			const canRetryFromCheckpoint =
@@ -6097,7 +6098,7 @@ function handleConversationCheckpointUpdate(
 
 function createBlobId(data: Uint8Array): Uint8Array {
 	const id = new Uint8Array(32);
-	Bun.SHA256.hash(data, id);
+	runtime.SHA256.hash(data, id);
 	return id;
 }
 
@@ -6134,19 +6135,19 @@ function hashCursorParts(
 	parts: string | readonly (TextContent | ImageContent)[],
 	seed: number | bigint,
 ): number | bigint {
-	if (typeof parts === "string") return Bun.hash(parts, seed);
+	if (typeof parts === "string") return runtime.hash(parts, seed);
 	let hash = seed;
 	for (const item of parts) {
-		hash = Bun.hash(item.type, hash);
-		if (item.type === "text") hash = Bun.hash(item.text, hash);
-		else hash = Bun.hash(item.data, Bun.hash(item.mimeType, hash));
+		hash = runtime.hash(item.type, hash);
+		if (item.type === "text") hash = runtime.hash(item.text, hash);
+		else hash = runtime.hash(item.data, runtime.hash(item.mimeType, hash));
 	}
 	return hash;
 }
 
 /** Hash of a tool result's error state and content, chained from `seed`. */
 function hashCursorToolResult(result: ToolResultMessage, seed: number | bigint = 0): number | bigint {
-	return hashCursorParts(result.content, Bun.hash(result.isError ? "error" : "ok", seed));
+	return hashCursorParts(result.content, runtime.hash(result.isError ? "error" : "ok", seed));
 }
 
 /** Hash of the user or developer message that opened a turn, chained from `seed`. */
@@ -6171,7 +6172,7 @@ function cursorWireRoute(
 /** Hash of a blob-id list's bytes in order; taken before `onPayload`, it survives the hook mutating the ids. */
 function hashCursorBlobIds(ids: readonly Uint8Array[]): number | bigint {
 	let hash: number | bigint = ids.length;
-	for (const id of ids) hash = Bun.hash(id, hash);
+	for (const id of ids) hash = runtime.hash(id, hash);
 	return hash;
 }
 
@@ -6185,13 +6186,16 @@ function hashCursorBlobIds(ids: readonly Uint8Array[]): number | bigint {
 function cursorTurnDigest({ userMessage, content, toolResults }: Omit<CursorTurnBinding, "wireRoute">): string {
 	let digest = hashCursorUserMessage(userMessage);
 	for (const block of content) {
-		digest = Bun.hash(block.type, digest);
-		if (block.type === "text") digest = Bun.hash(block.text, digest);
-		else if (block.type === "thinking") digest = Bun.hash(block.thinking, digest);
+		digest = runtime.hash(block.type, digest);
+		if (block.type === "text") digest = runtime.hash(block.text, digest);
+		else if (block.type === "thinking") digest = runtime.hash(block.thinking, digest);
 		else if (block.type === "toolCall") {
-			digest = Bun.hash(JSON.stringify(block.arguments), Bun.hash(block.name, Bun.hash(block.id, digest)));
+			digest = runtime.hash(
+				JSON.stringify(block.arguments),
+				runtime.hash(block.name, runtime.hash(block.id, digest)),
+			);
 			const result = toolResults.get(block.id);
-			digest = result === undefined ? Bun.hash("unpaired", digest) : hashCursorToolResult(result, digest);
+			digest = result === undefined ? runtime.hash("unpaired", digest) : hashCursorToolResult(result, digest);
 		}
 	}
 	return digest.toString(36);
@@ -6412,7 +6416,7 @@ function cursorUserContentKey(content: string | (TextContent | ImageContent)[]):
 	if (typeof content === "string") {
 		return content.trim();
 	}
-	const hash = new Bun.SHA256();
+	const hash = new runtime.SHA256();
 	for (const item of content) {
 		hash.update(item.type);
 		if (item.type === "text") {

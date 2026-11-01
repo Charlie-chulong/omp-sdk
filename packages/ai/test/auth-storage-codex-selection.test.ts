@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { afterEach, beforeEach, describe, expect, test, vi } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
@@ -2056,7 +2056,7 @@ describe("AuthStorage codex oauth ranking", () => {
 		);
 
 		const token = "codex-broker-fresh-block";
-		const handle = startAuthBroker({
+		const handle = await startAuthBroker({
 			storage: authStorage,
 			bind: "127.0.0.1:0",
 			bearerTokens: [token],
@@ -2177,7 +2177,7 @@ describe("AuthStorage codex oauth ranking", () => {
 		);
 
 		const token = "codex-broker-same-deadline-block";
-		const handle = startAuthBroker({
+		const handle = await startAuthBroker({
 			storage: authStorage,
 			bind: "127.0.0.1:0",
 			bearerTokens: [token],
@@ -2280,7 +2280,7 @@ describe("AuthStorage codex oauth ranking", () => {
 		]);
 
 		const token = "codex-broker-legacy-block";
-		const handle = startAuthBroker({
+		const handle = await startAuthBroker({
 			storage: authStorage,
 			bind: "127.0.0.1:0",
 			bearerTokens: [token],
@@ -2451,7 +2451,7 @@ describe("AuthStorage codex oauth ranking", () => {
 		);
 
 		const token = "codex-broker-initial-snapshot-block";
-		const handle = startAuthBroker({
+		const handle = await startAuthBroker({
 			storage: authStorage,
 			bind: "127.0.0.1:0",
 			bearerTokens: [token],
@@ -2687,7 +2687,7 @@ describe("AuthStorage codex oauth ranking", () => {
 		store.cleanExpiredCredentialBlocks?.(Date.now() + STALE_BLOCK_GUARD_MS);
 
 		const token = "codex-broker-reconcile";
-		const handle = startAuthBroker({
+		const handle = await startAuthBroker({
 			storage: authStorage,
 			bind: "127.0.0.1:0",
 			bearerTokens: [token],

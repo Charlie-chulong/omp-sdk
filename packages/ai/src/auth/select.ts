@@ -1,4 +1,5 @@
-import { logger } from "@oh-my-pi/pi-utils";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
+import * as logger from "@oh-my-pi/pi-utils/logger";
 import * as AIError from "../error";
 import { getOAuthApiKey, getOAuthProvider } from "../registry/oauth";
 import type { OAuthCredentials, OAuthProvider } from "../registry/oauth/types";
@@ -121,7 +122,7 @@ export class CredentialSelector {
 	 */
 	#getHashedIndex(sessionId: string, total: number): number {
 		if (total <= 1) return 0;
-		return Bun.hash.xxHash32(sessionId) % total;
+		return runtime.hash.xxHash32(sessionId) % total;
 	}
 
 	/**

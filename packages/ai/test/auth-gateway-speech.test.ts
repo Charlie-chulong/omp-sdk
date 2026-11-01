@@ -38,7 +38,7 @@ beforeEach(async () => {
 		});
 		return new Response(upstreamAudio, { status: 200, headers: { "Content-Type": "application/octet-stream" } });
 	};
-	gateway = startAuthGateway({
+	gateway = await startAuthGateway({
 		bind: "127.0.0.1:0",
 		bearerTokens: ["gateway-token"],
 		storage,

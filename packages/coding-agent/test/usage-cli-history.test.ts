@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { afterEach, beforeEach, expect, test, vi } from "bun:test";
 import { AuthStorage, SqliteAuthCredentialStore, type UsageHistoryEntry } from "@oh-my-pi/pi-ai";
 import { type AuthBrokerServerHandle, startAuthBroker } from "@oh-my-pi/pi-ai/auth-broker";
@@ -27,11 +27,11 @@ let localStore: SqliteAuthCredentialStore;
 let handle: AuthBrokerServerHandle;
 const savedEnv: Record<string, string | undefined> = {};
 
-beforeEach(() => {
+beforeEach(async () => {
 	for (const key of BROKER_ENV) savedEnv[key] = process.env[key];
 	brokerStore = new SqliteAuthCredentialStore(new Database(":memory:"));
 	localStore = new SqliteAuthCredentialStore(new Database(":memory:"));
-	handle = startAuthBroker({
+	handle = await startAuthBroker({
 		storage: new AuthStorage(brokerStore),
 		bind: "127.0.0.1:0",
 		bearerTokens: ["history-bearer"],

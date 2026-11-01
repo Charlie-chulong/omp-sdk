@@ -148,7 +148,7 @@ async function runServe(flags: AuthBrokerCommandArgs["flags"]): Promise<void> {
 	const store = await SqliteAuthCredentialStore.open(dbPath);
 	const storage = createBrokerAuthStorage(store);
 	await storage.credentials.reload();
-	const handle = startAuthBroker({
+	const handle = await startAuthBroker({
 		storage,
 		bind,
 		bearerTokens: [token],

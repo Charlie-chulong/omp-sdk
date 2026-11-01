@@ -1,4 +1,4 @@
-import type { Database } from "bun:sqlite";
+import type { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { afterEach, describe, expect, it } from "bun:test";
 import { initBeam } from "@oh-my-pi/pi-mnemopi/core/beam";
 import {

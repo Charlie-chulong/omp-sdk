@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as path from "node:path";
 import * as vcs from "@oh-my-pi/pi-natives/vcs";
 import type { TUI } from "@oh-my-pi/pi-tui";
@@ -64,7 +65,7 @@ async function editTextSource(
 	try {
 		if (provenance.kind === "file") {
 			exitCode = await openEditorOnPath(editor, provenance.path);
-			next = await Bun.file(provenance.path).text();
+			next = await runtime.file(provenance.path).text();
 		} else {
 			next = await openInEditor(editor, current, { extension: ".txt", trimTrailingNewline: false });
 		}
@@ -92,7 +93,7 @@ async function editReviewedFile(tui: TUI, ctx: AnnotationOverlayContext, overlay
 	// Diff paths are repository-relative and exact, so resolve them from the repo root, not the session cwd.
 	const cwd = ctx.sessionManager.getCwd?.() ?? ctx.cwd;
 	const absolute = path.resolve(vcs.repo(cwd)?.root() ?? cwd, relative);
-	if (!(await Bun.file(absolute).exists())) {
+	if (!(await runtime.file(absolute).exists())) {
 		throw new Error(`${relative} is not on disk. The review still uses the frozen diff.`);
 	}
 	tui.stop();

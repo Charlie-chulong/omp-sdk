@@ -220,7 +220,7 @@ describe("waitForRelayExtension", () => {
 
 	it("rejects an extension without discarded-tab snapshots, even when it has no tabs", async () => {
 		const port = await findFreeCdpPort();
-		relay = startRelayServer({ port });
+		relay = await startRelayServer({ port });
 		extension = new WebSocket(`ws://127.0.0.1:${port}/ext`);
 		extension.addEventListener("open", () => extension?.send(JSON.stringify(LEGACY_EXTENSION_HELLO)), { once: true });
 		expect(await waitForRelayExtension(`http://127.0.0.1:${port}`)).toBe("outdated-extension");
@@ -228,7 +228,7 @@ describe("waitForRelayExtension", () => {
 
 	it("keeps polling a young relay and reports ready once the extension handshakes", async () => {
 		const port = await findFreeCdpPort();
-		relay = startRelayServer({ port });
+		relay = await startRelayServer({ port });
 		const wait = waitForRelayExtension(`http://127.0.0.1:${port}`);
 		// The relay is serving 503 (young, no extension yet) before the extension dials in.
 		expect((await fetch(`http://127.0.0.1:${port}/json/version`)).status).toBe(503);
@@ -239,7 +239,7 @@ describe("waitForRelayExtension", () => {
 
 	it("still waits for an extension that disconnected and comes back inside the redial window", async () => {
 		const port = await findFreeCdpPort();
-		relay = startRelayServer({ port });
+		relay = await startRelayServer({ port });
 		const first = new WebSocket(`ws://127.0.0.1:${port}/ext`);
 		first.addEventListener("open", () => first.send(JSON.stringify(EXTENSION_HELLO)), { once: true });
 		expect(await waitForRelayExtension(`http://127.0.0.1:${port}`)).toBe("ready");
@@ -272,7 +272,7 @@ describe("relayExtensionNotice", () => {
 
 	async function startRelay(): Promise<number> {
 		const port = await findFreeCdpPort();
-		relay = startRelayServer({ port });
+		relay = await startRelayServer({ port });
 		return port;
 	}
 

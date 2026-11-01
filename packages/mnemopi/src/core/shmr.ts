@@ -1,4 +1,5 @@
-import type { Database } from "bun:sqlite";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
+import type { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { cosineSimilarityPairs } from "@oh-my-pi/pi-natives";
 import { logger } from "@oh-my-pi/pi-utils";
 import * as embeddings from "./embeddings";
@@ -109,8 +110,9 @@ function hashEmbedding(text: string): Vector {
 	const out = new Float32Array(EMBEDDING_DIM);
 	const words = text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
 	const digest = new Uint8Array(20);
+	const hasher = new runtime.CryptoHasher("sha1");
 	for (const word of words) {
-		Bun.SHA1.hash(word, digest);
+		hasher.update(word).digest(digest);
 		const slot = ((digest[0] << 8) | digest[1]) % EMBEDDING_DIM;
 		out[slot] = (out[slot] ?? 0) + 1;
 	}
@@ -335,7 +337,7 @@ export function applyBeliefs(
 				confidence,
 				belief.target_fact_id,
 			]);
-		const beliefId = Bun.SHA256.hash(
+		const beliefId = runtime.SHA256.hash(
 			`${clusterId}:${belief.subject}:${belief.predicate}:${belief.object.slice(0, 50)}`,
 			"hex",
 		).slice(0, 24);

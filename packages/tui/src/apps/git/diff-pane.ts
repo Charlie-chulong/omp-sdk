@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Diff pane of the git TUI, with four view modes:
  *
@@ -747,7 +748,7 @@ export class DiffPane {
 				);
 			}
 			requestRender();
-			if (oldOffset < doc.oldDisplayLines.length || newOffset < doc.newDisplayLines.length) await Bun.sleep(0);
+			if (oldOffset < doc.oldDisplayLines.length || newOffset < doc.newDisplayLines.length) await runtime.sleep(0);
 		}
 	}
 

@@ -181,7 +181,7 @@ it("forwards inbound Anthropic user-profile attribution through the gateway to u
 		contextWindow: 200_000,
 		maxTokens: 8192,
 	});
-	const gateway = startAuthGateway({
+	const gateway = await startAuthGateway({
 		bind: "127.0.0.1:0",
 		bearerTokens: ["test-token"],
 		storage,

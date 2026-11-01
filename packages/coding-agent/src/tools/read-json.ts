@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -253,7 +254,7 @@ function pageStream(values: string[], selector: JsonSelector, page: JsonPage, mo
 
 async function readStderr(stderrPath: string): Promise<string> {
 	try {
-		return await Bun.file(stderrPath).text();
+		return await runtime.file(stderrPath).text();
 	} catch (err) {
 		if (isEnoent(err)) return "";
 		throw err;
@@ -416,7 +417,7 @@ export async function resolveJsonReadPath(
 	// extensionless file) admits only when it opens like JSON, so `?q=` on a video,
 	// SVG, PDF or raster image keeps its vision-question route.
 	const resolved = async (filePath: string): Promise<boolean> => {
-		const stat = await Bun.file(filePath).stat();
+		const stat = await runtime.file(filePath).stat();
 		if (!stat.isFile()) return false;
 		const jsonName = JSON_FILE_PATTERN.test(filePath);
 		return peekFile(filePath, IMAGE_METADATA_HEADER_BYTES, header => {
@@ -465,7 +466,7 @@ export async function readJson(
 	if ("url" in resolvedJsonPath) {
 		await using scratch = await TempDir.create("@omp-read-json-");
 		const inputPath = scratch.join("input.json");
-		await Bun.write(inputPath, resolvedJsonPath.content);
+		await runtime.write(inputPath, resolvedJsonPath.content);
 		queryOutput = await executeJsonQuery(inputPath, resolvedJsonPath.selector, signal);
 	} else {
 		queryOutput = await executeJsonQuery(resolvedJsonPath.absolutePath, resolvedJsonPath.selector, signal);

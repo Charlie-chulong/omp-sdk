@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as path from "node:path";
 import { $which, untilAborted } from "@oh-my-pi/pi-utils";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
@@ -117,7 +118,7 @@ export async function runForgeCli(
 	const timeoutSignal = AbortSignal.timeout(spec.timeoutMs);
 	const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 	try {
-		const child = Bun.spawn([spec.bin, ...args], {
+		const child = runtime.spawn([spec.bin, ...args], {
 			cwd,
 			env: spec.env,
 			stdin: "ignore",

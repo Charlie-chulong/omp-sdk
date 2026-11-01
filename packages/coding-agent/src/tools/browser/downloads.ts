@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -180,7 +181,7 @@ export class DownloadManager {
 				await fs.stat(source);
 				break;
 			} catch {
-				await Bun.sleep(10);
+				await runtime.sleep(10);
 			}
 		}
 		const name = typeof pending.suggestedFilename === "string" ? path.basename(pending.suggestedFilename) : "";

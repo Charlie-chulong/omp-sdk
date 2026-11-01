@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { TspSpan, TspText } from "@oh-my-pi/pi-wire";
 import { Text } from "../components/text";
 import { compactText, rowsText, styledSpans } from "../native/spans";
@@ -257,7 +258,7 @@ export class ToolCard implements Component {
 		}
 		if (snapshot.footerMeta) lines.push(snapshot.footerMeta);
 		const text = lines.join("\n");
-		const key = `${width}:${text.length}:${Bun.hash(text).toString(36)}:${state ?? "info"}:${snapshot.applyBg ?? true}`;
+		const key = `${width}:${text.length}:${runtime.hash(text).toString(36)}:${state ?? "info"}:${snapshot.applyBg ?? true}`;
 		if (key !== this.#plainKey) {
 			this.#plainKey = key;
 			this.#plainText.setText(text);

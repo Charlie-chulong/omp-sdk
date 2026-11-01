@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import {
 	MAX_THINKING_SUFFIX_OPTIONS,
 	parseThinkingSuffix,
@@ -132,7 +133,7 @@ export interface ScopedModel {
 }
 
 function matchingGlobModels(pattern: string, availableModels: readonly Model<Api>[]): Model<Api>[] {
-	const glob = new Bun.Glob(pattern.toLowerCase());
+	const glob = new runtime.Glob(pattern.toLowerCase());
 	return availableModels.filter(model => {
 		const fullId = `${model.provider}/${model.id}`;
 		return glob.match(fullId.toLowerCase()) || glob.match(model.id.toLowerCase());

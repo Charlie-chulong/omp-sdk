@@ -1,9 +1,9 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as net from "node:net";
 import * as path from "node:path";
 import { Process, ProcessStatus } from "@oh-my-pi/pi-natives";
 import { getBrowserProfilesDir, isRecord, untilAborted } from "@oh-my-pi/pi-utils";
-import type { Socket } from "bun";
 import type { Browser, Page, Target } from "puppeteer-core";
 import { throwIfAborted } from "../tool-errors";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
@@ -70,18 +70,14 @@ async function rawHttpGet(url: string, opts: RawGetOptions): Promise<CdpProbeRes
 	const port = target.port ? Number(target.port) : 80;
 	const requestPath = `${target.pathname}${target.search}` || "/";
 	const { promise, resolve } = Promise.withResolvers<CdpProbeResponse | null>();
-	let socket: Socket<undefined> | undefined;
+	let socket: net.Socket | undefined;
 	let settled = false;
 	const finish = (response: CdpProbeResponse | null) => {
 		if (settled) return;
 		settled = true;
 		clearTimeout(timer);
 		opts.signal?.removeEventListener("abort", onAbort);
-		try {
-			socket?.end();
-		} catch {
-			// socket already torn down
-		}
+		socket?.destroy();
 		resolve(response);
 	};
 	const onAbort = () => finish(null);
@@ -92,44 +88,75 @@ async function rawHttpGet(url: string, opts: RawGetOptions): Promise<CdpProbeRes
 	// Offset of the header/body separator once the header block is complete.
 	let headerEnd = -1;
 	let contentLength: number | null = null;
+	let chunked = false;
+	let chunkOffset = 0;
+	let chunkLength: number | null = null;
+	const bodyChunks: string[] = [];
 	const bodySoFar = () => buffered.slice(headerEnd + 4);
 	try {
-		socket = await Bun.connect({
-			hostname: target.hostname,
-			port,
-			socket: {
-				open(s) {
-					s.write(`GET ${requestPath} HTTP/1.1\r\nHost: ${target.hostname}:${port}\r\nConnection: close\r\n\r\n`);
-				},
-				data(_s, chunk) {
-					buffered += chunk.toString("latin1");
-					if (status === null) {
-						const match = /^HTTP\/\d(?:\.\d)? (\d{3})/.exec(buffered);
-						if (!match) return;
-						status = Number(match[1]);
-						if (!opts.readBody) {
-							finish({ status, body: "" });
+		socket = net.createConnection({ host: target.hostname.replace(/^\[|\]$/g, ""), port });
+		socket.once("connect", () => {
+			if (settled) return;
+			socket!.write(`GET ${requestPath} HTTP/1.1\r\nHost: ${target.hostname}:${port}\r\nConnection: close\r\n\r\n`);
+		});
+		socket.on("data", (chunk: Buffer) => {
+			if (settled) return;
+			buffered += chunk.toString("latin1");
+			if (status === null) {
+				const match = /^HTTP\/\d(?:\.\d)? (\d{3})/.exec(buffered);
+				if (!match) return;
+				status = Number(match[1]);
+				if (!opts.readBody) {
+					finish({ status, body: "" });
+					return;
+				}
+			}
+			if (headerEnd === -1) {
+				headerEnd = buffered.indexOf("\r\n\r\n");
+				if (headerEnd === -1) return;
+				const headers = buffered.slice(0, headerEnd);
+				const lengthHeader = /\r\ncontent-length:\s*(\d+)/i.exec(headers);
+				contentLength = lengthHeader ? Number(lengthHeader[1]) : null;
+				chunked = /\r\ntransfer-encoding:[^\r\n]*\bchunked\b/i.test(headers);
+				chunkOffset = headerEnd + 4;
+			}
+			if (chunked) {
+				while (!settled) {
+					if (chunkLength === null) {
+						const lineEnd = buffered.indexOf("\r\n", chunkOffset);
+						if (lineEnd === -1) return;
+						const size = buffered.slice(chunkOffset, lineEnd).split(";", 1)[0]!;
+						if (!/^[0-9a-f]+$/i.test(size)) {
+							finish(null);
+							return;
+						}
+						chunkLength = Number.parseInt(size, 16);
+						chunkOffset = lineEnd + 2;
+						if (chunkLength === 0) {
+							finish({ status, body: bodyChunks.join("") });
 							return;
 						}
 					}
-					if (headerEnd === -1) {
-						headerEnd = buffered.indexOf("\r\n\r\n");
-						if (headerEnd === -1) return;
-						const lengthHeader = /\r\ncontent-length:\s*(\d+)/i.exec(buffered.slice(0, headerEnd));
-						contentLength = lengthHeader ? Number(lengthHeader[1]) : null;
+					const end = chunkOffset + chunkLength;
+					if (buffered.length < end + 2) return;
+					if (buffered.slice(end, end + 2) !== "\r\n") {
+						finish(null);
+						return;
 					}
-					if (contentLength !== null && bodySoFar().length >= contentLength) {
-						finish({ status, body: bodySoFar().slice(0, contentLength) });
-					}
-				},
-				error() {
-					finish(null);
-				},
-				close() {
-					// Without Content-Length the peer's close delimits the body.
-					finish(status !== null && headerEnd !== -1 ? { status, body: bodySoFar() } : null);
-				},
-			},
+					bodyChunks.push(buffered.slice(chunkOffset, end));
+					chunkOffset = end + 2;
+					chunkLength = null;
+				}
+				return;
+			}
+			if (contentLength !== null && bodySoFar().length >= contentLength) {
+				finish({ status, body: bodySoFar().slice(0, contentLength) });
+			}
+		});
+		socket.once("error", () => finish(null));
+		socket.once("close", () => {
+			// Chunked bodies finish at the zero chunk; only unframed bodies end on close.
+			finish(!chunked && status !== null && headerEnd !== -1 ? { status, body: bodySoFar() } : null);
 		});
 	} catch {
 		finish(null);
@@ -171,7 +198,7 @@ export async function waitForCdp(cdpUrl: string, timeoutMs: number, signal?: Abo
 		const status = await probeCdpStatus(probeUrl, { timeoutMs: 2000, signal });
 		if (status !== null && status >= 200 && status < 300) return;
 		lastStatus = status;
-		await Bun.sleep(150);
+		await runtime.sleep(150);
 	}
 	throwIfAborted(signal);
 	throw new ToolError(
@@ -270,7 +297,7 @@ export function resolveSpawnArgs(exe: string, appArgs: string[] | undefined, cwd
 		return launchArgs;
 	}
 	const slug = base.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-	const hash = Bun.hash.wyhash(exe).toString(16).padStart(16, "0");
+	const hash = runtime.hash.wyhash(exe).toString(16).padStart(16, "0");
 	const launchArgs = [...args];
 	// A fresh profile otherwise opens the welcome tour and default-browser
 	// prompt as extra page targets, which attach may adopt instead of ours.
@@ -306,7 +333,8 @@ async function resolveWrapperTarget(wrapperPath: string): Promise<string | null>
 	if (process.platform !== "linux") return null;
 	const stat = await fs.stat(wrapperPath).catch(() => null);
 	if (!stat || !stat.isFile() || stat.size > 65_536) return null;
-	const content = await Bun.file(wrapperPath)
+	const content = await runtime
+		.file(wrapperPath)
 		.text()
 		.catch(() => null);
 	if (!content || content.charCodeAt(0) === 0x7f) return null;
@@ -515,7 +543,7 @@ export async function waitForMainFrame(
 		}
 		if (Date.now() >= deadline) return false;
 		try {
-			await untilAborted(signal, () => Bun.sleep(FRAME_READY_POLL_MS));
+			await untilAborted(signal, () => runtime.sleep(FRAME_READY_POLL_MS));
 		} catch (error) {
 			throwIfAborted(signal);
 			throw error;
@@ -637,7 +665,9 @@ export async function pickElectronTarget(browser: Browser, options: PickTargetOp
 			!entries.some(e => e.type === "page" && relayEntryMatches(e, matcher)) &&
 			Date.now() < settleDeadline
 		) {
-			await abortable(options.signal, () => Bun.sleep(Math.min(RELAY_MATCH_POLL_MS, settleDeadline - Date.now())));
+			await abortable(options.signal, () =>
+				runtime.sleep(Math.min(RELAY_MATCH_POLL_MS, settleDeadline - Date.now())),
+			);
 			const polled = await fetchRelayEntries(
 				options.relayJson,
 				options.signal,
@@ -670,7 +700,7 @@ export async function pickElectronTarget(browser: Browser, options: PickTargetOp
 						const visible = await abortable(options.signal, () =>
 							Promise.race([
 								page.evaluate(() => document.visibilityState === "visible").catch(() => false),
-								Bun.sleep(RELAY_VISIBILITY_TIMEOUT_MS).then(() => false),
+								runtime.sleep(RELAY_VISIBILITY_TIMEOUT_MS).then(() => false),
 							]),
 						);
 						if (visible) return page;
@@ -786,7 +816,7 @@ async function firstVisiblePage(pages: Page[], signal?: AbortSignal): Promise<Pa
 				await abortable(signal, () =>
 					Promise.race([
 						page.evaluate(() => document.visibilityState === "visible").catch(() => false),
-						Bun.sleep(RELAY_VISIBILITY_TIMEOUT_MS).then(() => false),
+						runtime.sleep(RELAY_VISIBILITY_TIMEOUT_MS).then(() => false),
 					]),
 				),
 		),

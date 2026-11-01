@@ -1,4 +1,4 @@
-import type { Database } from "bun:sqlite";
+import type { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { existsSync } from "node:fs";
 import { ftsWeight, importanceWeight, maxEpisodeChars, proactiveLinkingEnabled, vectorWeight } from "../../config";
 import { closeQuietly, openDatabase } from "../../db";

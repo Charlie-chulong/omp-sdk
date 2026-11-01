@@ -185,7 +185,7 @@ export interface UserMessageStats {
 	blame: number;
 	/** Judge-facing prose (see `judgeProse`); empty when the message was all markup. */
 	prose: string;
-	/** Hex `Bun.hash` of `prose`, keying the shared verdict cache; empty when `prose` is. */
+	/** Hex shared runtime hash of `prose`, keying the verdict cache; empty when `prose` is. */
 	proseHash: string;
 }
 

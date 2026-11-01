@@ -1,4 +1,5 @@
-import { workerHostEntry } from "@oh-my-pi/pi-utils/worker-host";
+import { workerHostEntry, nodeWorkerHostEntry } from "@oh-my-pi/pi-utils/worker-host";
+import { Worker as NodeWorker } from "node:worker_threads";
 import { PARENT_WATCHDOG_WORKER_ARG } from "../cli/worker-selectors";
 
 /**
@@ -13,10 +14,16 @@ import { PARENT_WATCHDOG_WORKER_ARG } from "../cli/worker-selectors";
  * process alive by itself.
  */
 export function startParentWatchdog(parentPid: number): void {
-	const hostEntry = workerHostEntry();
-	const worker = hostEntry
-		? new Worker(hostEntry, { type: "module", argv: [PARENT_WATCHDOG_WORKER_ARG] })
-		: new Worker(new URL("./parent-watchdog-worker.ts", import.meta.url).href, { type: "module" });
-	worker.postMessage(parentPid);
+	const hostEntry = workerHostEntry() ?? (typeof Bun === "undefined" ? nodeWorkerHostEntry() : null);
+	if (typeof Bun === "undefined" && !hostEntry)
+		throw new Error("Parent watchdog requires the shared Node worker host");
+	const worker =
+		typeof Bun === "undefined"
+			? new NodeWorker(hostEntry!, { argv: [PARENT_WATCHDOG_WORKER_ARG] })
+			: hostEntry
+				? new Worker(hostEntry, { type: "module", argv: [PARENT_WATCHDOG_WORKER_ARG] })
+				: new Worker(new URL("./parent-watchdog-worker.ts", import.meta.url).href, { type: "module" });
+	if (worker instanceof NodeWorker) worker.postMessage(parentPid);
+	else worker.postMessage(parentPid, []);
 	worker.unref();
 }

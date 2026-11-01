@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * AWS credential resolution for the Bedrock provider.
  *
@@ -659,7 +660,7 @@ async function readCredentialProcess(
 	signal: AbortSignal | undefined,
 ): Promise<ResolvedCredentials> {
 	const argv = buildCredentialProcessArgv(profile, command);
-	const child = Bun.spawn(argv, {
+	const child = runtime.spawn(argv, {
 		stdin: "ignore",
 		stdout: "pipe",
 		stderr: "pipe",
@@ -934,7 +935,7 @@ async function assumeRoleWithWebIdentity(
 ): Promise<ResolvedCredentials> {
 	let token: string;
 	try {
-		token = (await Bun.file(params.tokenFile).text()).trim();
+		token = (await runtime.file(params.tokenFile).text()).trim();
 	} catch (err) {
 		throw new AIError.AwsCredentialsError(
 			`Unable to read AWS web identity token file: ${String(err)}`,
@@ -1018,7 +1019,7 @@ async function readContainerCredentials(
 	const authorizationTokenFile = $env.AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE;
 	if (!authorization && authorizationTokenFile) {
 		try {
-			authorization = (await Bun.file(authorizationTokenFile).text()).trim();
+			authorization = (await runtime.file(authorizationTokenFile).text()).trim();
 		} catch (err) {
 			throw new AIError.AwsCredentialsError(
 				`Unable to read AWS container authorization token file: ${String(err)}`,

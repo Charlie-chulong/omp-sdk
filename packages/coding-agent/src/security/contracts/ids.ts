@@ -1,3 +1,4 @@
+import { runtime as platformRuntime } from "@oh-my-pi/pi-utils/runtime";
 import type { SecurityLocation } from "./types";
 
 function canonicalize(value: unknown): unknown {
@@ -67,7 +68,7 @@ export interface SecurityFindingFingerprintInput {
 }
 
 export function createSecurityFindingFingerprint(input: SecurityFindingFingerprintInput): string {
-	const digest = Bun.SHA256.hash(
+	const digest = platformRuntime.SHA256.hash(
 		canonicalSecurityJson({
 			ruleId: input.ruleId.trim().toLowerCase(),
 			category: input.category.trim().toLowerCase(),
@@ -80,24 +81,24 @@ export function createSecurityFindingFingerprint(input: SecurityFindingFingerpri
 }
 
 export function createSecurityFindingId(fingerprint: string): string {
-	return `secf_${Bun.SHA256.hash(fingerprint, "hex").slice(0, 24)}`;
+	return `secf_${platformRuntime.SHA256.hash(fingerprint, "hex").slice(0, 24)}`;
 }
 
 export function createSecurityOccurrenceId(fingerprint: string, locations: readonly SecurityLocation[]): string {
 	const material = canonicalSecurityJson({ fingerprint, locations: normalizedLocations(locations) });
-	return `seco_${Bun.SHA256.hash(material, "hex").slice(0, 24)}`;
+	return `seco_${platformRuntime.SHA256.hash(material, "hex").slice(0, 24)}`;
 }
 
 export function createSecurityEvidenceId(fingerprint: string, label: string, ordinal: number): string {
-	return `sece_${Bun.SHA256.hash(canonicalSecurityJson({ fingerprint, label, ordinal }), "hex").slice(0, 24)}`;
+	return `sece_${platformRuntime.SHA256.hash(canonicalSecurityJson({ fingerprint, label, ordinal }), "hex").slice(0, 24)}`;
 }
 
-export function createSecurityScanId(randomUuid: () => string = () => Bun.randomUUIDv7()): string {
+export function createSecurityScanId(randomUuid: () => string = () => platformRuntime.randomUUIDv7()): string {
 	return `secscan_${randomUuid().replaceAll("-", "")}`;
 }
 
 export function createSecurityPlanId(fingerprint: string): string {
-	return `secplan_${Bun.SHA256.hash(fingerprint, "hex").slice(0, 24)}`;
+	return `secplan_${platformRuntime.SHA256.hash(fingerprint, "hex").slice(0, 24)}`;
 }
 
 export function encodeSecurityProjectKey(repositoryRoot: string): string {
@@ -107,5 +108,5 @@ export function encodeSecurityProjectKey(repositoryRoot: string): string {
 		.replace(/[^a-zA-Z0-9._-]+/g, "-")
 		.replace(/^-+|-+$/g, "")
 		.slice(-80);
-	return `${readable || "project"}-${Bun.SHA256.hash(normalized, "hex").slice(0, 12)}`;
+	return `${readable || "project"}-${platformRuntime.SHA256.hash(normalized, "hex").slice(0, 12)}`;
 }

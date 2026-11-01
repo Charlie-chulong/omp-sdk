@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * AgentSession - Core abstraction for agent lifecycle and session management.
  *
@@ -236,7 +237,7 @@ import {
 } from "@oh-my-pi/pi-tui/thinking";
 import { isAttachmentOnlyTitleInput, isLowSignalTitleInput } from "../tiny/text";
 import type { ImageAttachmentEntry, ToolSession } from "../tools";
-import { resolveApproval } from "../tools/approval";
+import { type ApprovalMode, resolveApproval } from "../tools/approval";
 import { type AskToolDetails } from "@oh-my-pi/pi-tui/tools/ask";
 import { type AskToolInput, recoverAskQuestions } from "../tools/ask";
 import {
@@ -572,6 +573,7 @@ import {
 	cfgDevAutoqaConsent,
 	cfgTodoEnabled,
 	cfgToolsApproval,
+	cfgToolsApprovalMode,
 } from "../tools/settings";
 import { cfgTtsrJudge } from "../export/ttsr-settings";
 
@@ -876,10 +878,10 @@ function isEvalActivity(message: AgentMessage): boolean {
 
 /** A retry supersedes a failed operation only when its intent matches, allowing a missing append phase to be supplied. */
 function todoRetryMatches(failed: Record<string, unknown>, retry: Record<string, unknown>): boolean {
-	if (Bun.deepEquals(failed, retry)) return true;
+	if (runtime.deepEquals(failed, retry)) return true;
 	if (failed.op !== "append" || Object.hasOwn(failed, "phase") || typeof retry.phase !== "string") return false;
 	for (const key in failed) {
-		if (!Object.hasOwn(retry, key) || !Bun.deepEquals(failed[key], retry[key])) return false;
+		if (!Object.hasOwn(retry, key) || !runtime.deepEquals(failed[key], retry[key])) return false;
 	}
 	for (const key in retry) {
 		if (key !== "phase" && !Object.hasOwn(failed, key)) return false;
@@ -1935,6 +1937,7 @@ export class AgentSession implements SettingsScope {
 		);
 		this.sessionManager = config.sessionManager;
 		this.settings = config.settings;
+		if (config.autoApprove) cfgToolsApprovalMode.override(this.settings, "yolo");
 		this.#ownsCostGate = config.costGate === undefined;
 		this.#costGate = config.costGate ?? this.#createCostGate();
 		this.#skillDescriptions = config.skillDescriptions ?? new SkillDescriptionCatalog();
@@ -2421,7 +2424,6 @@ export class AgentSession implements SettingsScope {
 			waitForUser: dialog => this.waitForUser(dialog),
 		};
 		this.#tools = new SessionTools(sessionToolsHost, {
-			autoApprove: config.autoApprove,
 			toolRegistry: config.toolRegistry,
 			createVibeTools: config.createVibeTools,
 			createThinkTool: config.createThinkTool,
@@ -5910,7 +5912,7 @@ export class AgentSession implements SettingsScope {
 	 * the cache key: model, system prompt, tool set, thinking level, retention.
 	 */
 	#cacheWarmingShape(model: Model | undefined): number | bigint {
-		return Bun.hash(
+		return runtime.hash(
 			JSON.stringify([
 				model?.provider,
 				model?.id,
@@ -6530,7 +6532,7 @@ export class AgentSession implements SettingsScope {
 		const previousSessionId = this.sessionId;
 		const closedProviderSessions = this.#providerSessionState.size;
 		this.#closeAllProviderSessions("fresh session");
-		this.#freshProviderSessionId = Bun.randomUUIDv7();
+		this.#freshProviderSessionId = runtime.randomUUIDv7();
 		this.#syncAgentSessionId();
 		this.#memory.rekeyForCurrentSessionId();
 		this.agent.appendOnlyContext?.invalidateForModelChange();
@@ -6613,7 +6615,7 @@ export class AgentSession implements SettingsScope {
 		// history server-side starts a brand-new exchange rather than resuming the
 		// context we just dropped (mirrors freshSession()).
 		this.#closeAllProviderSessions("reset context");
-		this.#freshProviderSessionId = Bun.randomUUIDv7();
+		this.#freshProviderSessionId = runtime.randomUUIDv7();
 		this.#syncAgentSessionId();
 		this.#memory.rekeyForCurrentSessionId();
 		this.agent.appendOnlyContext?.invalidateForModelChange();
@@ -10975,7 +10977,7 @@ export class AgentSession implements SettingsScope {
 		if (this.#titleProviderParentSessionId === parentSessionId && this.#titleProviderSessionId) {
 			return this.#titleProviderSessionId;
 		}
-		const titleSessionId = Bun.randomUUIDv7();
+		const titleSessionId = runtime.randomUUIDv7();
 		this.#titleProviderParentSessionId = parentSessionId;
 		this.#titleProviderSessionId = titleSessionId;
 		return titleSessionId;
@@ -11605,6 +11607,16 @@ export class AgentSession implements SettingsScope {
 	/** Lists available models after applying the configured enabled-model filter. */
 	getAvailableModels(): Model[] {
 		return this.#models.getAvailableModels();
+	}
+
+	/** The live approval mode used by tools in this session. */
+	get approvalMode(): ApprovalMode {
+		return cfgToolsApprovalMode.get(this.settings);
+	}
+
+	/** Changes tool approval immediately without restarting work or persisting a default. */
+	setApprovalMode(mode: ApprovalMode): void {
+		cfgToolsApprovalMode.override(this.settings, mode);
 	}
 
 	/** Selects the session thinking level and optionally persists it as the default. */
@@ -14983,7 +14995,7 @@ export class AgentSession implements SettingsScope {
 		const messages = this.messages;
 		if (messages.length === 0) return undefined;
 		const filePath = path.join(os.tmpdir(), `omp-llm-request-${Snowflake.next()}.json`);
-		await Bun.write(filePath, await this.#formatLlmRequestJson(messages));
+		await runtime.write(filePath, await this.#formatLlmRequestJson(messages));
 		return filePath;
 	}
 

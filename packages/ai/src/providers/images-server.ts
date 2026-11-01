@@ -1,3 +1,4 @@
+import { encodeBase64 } from "@oh-my-pi/pi-utils";
 import { type } from "@oh-my-pi/omptype";
 import * as AIError from "../error";
 import { isDataUrlMimeType } from "../images/shared";
@@ -111,7 +112,7 @@ async function parseMultipart(form: FormData): Promise<ImagesParsedRequest> {
 	for (const entry of entries) {
 		if (typeof entry === "string") validation("image must be a file part");
 		const bytes = new Uint8Array(await entry.arrayBuffer());
-		inputImages.push({ data: bytes.toBase64(), mimeType: entry.type || "image/png" });
+		inputImages.push({ data: encodeBase64(bytes), mimeType: entry.type || "image/png" });
 	}
 	const nValue = form.get("n");
 	let count: number | undefined;

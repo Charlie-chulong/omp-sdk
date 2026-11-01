@@ -9,6 +9,7 @@
 //
 
 import * as fs from "node:fs";
+import { runtime } from "./runtime";
 import * as os from "node:os";
 import * as path from "node:path";
 import { isFullyQualifiedPath } from "./path";
@@ -189,7 +190,7 @@ export interface WhichOptions extends Bun.WhichOptions {
 // Darwin-specific "which" shim: consult Xcode/CLT toolchain directories after $PATH.
 // Uses cached directory listings instead of per-command existsSync or xcrun subprocesses.
 function darwinWhich(command: string, options?: Bun.WhichOptions): string | null {
-	const regular = Bun.which(command, options);
+	const regular = runtime.which(command, options);
 	if (regular) return regular;
 	if (isXcodeBin(command)) {
 		return getMacosToolPaths().get(command) ?? null;
@@ -212,7 +213,7 @@ function filterAbsoluteSearchPath(rawPath: string | undefined): string | null {
 export const whichFresh =
 	os.platform() === "darwin"
 		? darwinWhich
-		: (command: string, options?: Bun.WhichOptions): string | null => Bun.which(command, options);
+		: (command: string, options?: Bun.WhichOptions): string | null => runtime.which(command, options);
 
 // Length-prefixed (command, cwd, PATH) tuple: exact, unlike the 64-bit hash
 // chain it replaced, and the length prefixes keep `("ab", "c")` and
@@ -279,7 +280,7 @@ export function $whichAll(command: string, options?: Bun.WhichOptions): string[]
 	const matches: string[] = [];
 	for (const dir of searchPath.split(path.delimiter)) {
 		if (!dir) continue;
-		const match = Bun.which(command, { cwd: options?.cwd, PATH: dir });
+		const match = runtime.which(command, { cwd: options?.cwd, PATH: dir });
 		if (match && !matches.includes(match)) matches.push(match);
 	}
 	if (os.platform() === "darwin" && isXcodeBin(command)) {

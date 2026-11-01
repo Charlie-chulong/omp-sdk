@@ -292,6 +292,7 @@ describe("RpcInputDispatcher", () => {
 					success: true,
 					data: {
 						thinkingLevel: undefined,
+						approvalMode: "always-ask",
 						isStreaming: false,
 						isCompacting: false,
 						steeringMode: "all",
@@ -332,6 +333,36 @@ describe("RpcInputDispatcher", () => {
 		expect((outputs[0] as RpcResponse).id).toBe("first");
 		expect((outputs[1] as RpcResponse).id).toBe("second");
 		expect((outputs[1] as RpcResponse).command).toBe("get_state");
+	});
+
+	test("approval mode controls are acknowledged while an ordinary command is blocked", async () => {
+		const releaseFirst = Promise.withResolvers<void>();
+		const { deps, outputs } = makeDeps(async command => {
+			if (command.type === "set_approval_mode") {
+				return {
+					id: command.id,
+					type: "response",
+					command: "set_approval_mode",
+					success: true,
+					data: { mode: command.mode },
+				};
+			}
+			if (command.type !== "abort_retry") throw new Error(`unexpected command type: ${command.type}`);
+			await releaseFirst.promise;
+			return { id: command.id, type: "response", command: "abort_retry", success: true };
+		});
+		const dispatcher = new RpcInputDispatcher({ deps });
+		dispatcher.dispatch({ id: "blocked", type: "abort_retry" });
+		await flushMicrotasks();
+		try {
+			dispatcher.dispatch({ id: "permissions", type: "set_approval_mode", mode: "yolo" });
+			await flushMicrotasks();
+			expect(outputs.map(frame => (frame as RpcResponse).command)).toEqual(["set_approval_mode"]);
+		} finally {
+			releaseFirst.resolve();
+			await dispatcher.drain();
+		}
+		expect(outputs.map(frame => (frame as RpcResponse).command)).toEqual(["set_approval_mode", "abort_retry"]);
 	});
 
 	test("a steer_subagent waiting for the subagent to accept does not block a later abort", async () => {

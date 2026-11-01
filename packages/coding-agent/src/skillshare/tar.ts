@@ -11,7 +11,7 @@
  * The reader accepts ustar, PAX `path` records, and GNU `L` long names so
  * archives produced by other tools can be inspected; directories are skipped
  * and anything that is not a regular file (symlinks, hard links, devices) is
- * rejected. Gzip is handled by callers (`Bun.gzipSync` / `Bun.gunzipSync`).
+ * rejected. Gzip is handled by callers through the shared runtime adapter.
  */
 
 export interface TarEntry {

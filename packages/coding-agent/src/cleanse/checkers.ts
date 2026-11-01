@@ -2,6 +2,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as vcs from "@oh-my-pi/pi-natives/vcs";
 import { $which, isRecord, ptree, sanitizeText } from "@oh-my-pi/pi-utils";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { CLEANSE_PARSER_KINDS, CleanseStreamParser, type CleanseParserKind, parseCleanseDiagnostics } from "./parsers";
 import type { CleanseCheckResult, CleanseDiagnostic, CleanseDiagnosticReport, SkippedCleanseCheck } from "./types";
 
@@ -243,7 +244,7 @@ export async function buildCustomCleanseSuite(
 		let executable: string | undefined;
 		if (/[\\/]/.test(binary)) {
 			const candidate = path.resolve(resolvedCwd, root, binary);
-			executable = (await Bun.file(candidate).exists()) ? candidate : undefined;
+			executable = (await runtime.file(candidate).exists()) ? candidate : undefined;
 		} else {
 			executable = resolveBinary(resolvedCwd, root, [binary]);
 		}
@@ -284,7 +285,7 @@ async function listProjectFiles(cwd: string): Promise<string[]> {
 		return normalizeFiles([...tracked, ...untracked]);
 	} catch {
 		const files: string[] = [];
-		for await (const entry of new Bun.Glob("**/*").scan({ cwd, absolute: false, dot: true, onlyFiles: true })) {
+		for await (const entry of new runtime.Glob("**/*").scan({ cwd, absolute: false, dot: true, onlyFiles: true })) {
 			const normalized = entry.split(path.sep).join("/");
 			if (hasIgnoredDirectory(normalized)) continue;
 			files.push(normalized);
@@ -362,7 +363,7 @@ function resolveBinary(projectCwd: string, root: string, names: readonly string[
 		if (parent === current || (!parent.startsWith(`${projectCwd}${path.sep}`) && parent !== projectCwd)) break;
 		current = parent;
 	}
-	const searchPath = [...new Set(searchDirectories), Bun.env.PATH ?? ""].filter(Boolean).join(path.delimiter);
+	const searchPath = [...new Set(searchDirectories), runtime.env.PATH ?? ""].filter(Boolean).join(path.delimiter);
 	for (const name of names) {
 		const executable = $which(name, { cwd, PATH: searchPath });
 		if (executable) return executable;
@@ -615,7 +616,8 @@ async function discoverPython(state: DiscoveryState): Promise<void> {
 		const file = root === "." ? "pyproject.toml" : `${root}/pyproject.toml`;
 		pyprojectContent.set(
 			root,
-			await Bun.file(path.resolve(state.projectCwd, file))
+			await runtime
+				.file(path.resolve(state.projectCwd, file))
 				.text()
 				.catch(() => ""),
 		);
@@ -753,7 +755,7 @@ async function discoverPackageTests(state: DiscoveryState): Promise<void> {
 		if (path.posix.basename(file) !== "package.json") continue;
 		let manifest: unknown;
 		try {
-			manifest = await Bun.file(path.resolve(state.projectCwd, file)).json();
+			manifest = await runtime.file(path.resolve(state.projectCwd, file)).json();
 		} catch {
 			continue;
 		}
@@ -1255,7 +1257,7 @@ async function runChecker(
 						// trailing lines and open JSON documents wait for the next one.
 						const partial = new CleanseStreamParser(plan.parser, context);
 						while (running) {
-							await Bun.sleep(flushMs);
+							await runtime.sleep(flushMs);
 							if (!running) break;
 							emit(inProject(partial.push(takeUnread(stdout), takeUnread(stderr))));
 						}

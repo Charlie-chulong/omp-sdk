@@ -1,10 +1,13 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { getAgentDir, isEnoent, ptree, withFileLock, writeRuntimeManifest } from "@oh-my-pi/pi-utils";
+import { $which, getAgentDir, isEnoent, ptree, withFileLock, writeRuntimeManifest } from "@oh-my-pi/pi-utils";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import { trackDownload } from "../../downloads/activity";
 import { resolveExecutablePath } from "../../subprocess/worker-client";
 import { normalizePackageRequirements } from "../package-requirements";
+import type { StdioSpawnCommand } from "../../mcp/transports/stdio";
+import { resolveStdioSpawnCommand } from "../../mcp/transports/stdio";
 
 /** Filesystem target used for explicit JavaScript eval dependencies. */
 export type JsPackageEnvironmentMode = "managed" | "project";
@@ -12,14 +15,14 @@ export type JsPackageEnvironmentMode = "managed" | "project";
 /** Resolved package-manager target and runtime module fallback. */
 export interface JsPackageEnvironment {
 	mode: JsPackageEnvironmentMode;
-	/** Directory owning package.json, bun.lock, and node_modules. */
+	/** Directory owning package.json, the package-manager lockfile, and node_modules. */
 	root: string;
 	/** Fallback module-resolution root consulted after the importing file's own project. */
 	packageRoot?: string;
 	description: string;
 }
 
-/** Inputs for one host-side Bun dependency reconciliation. */
+/** Inputs for one host-side JavaScript dependency reconciliation. */
 export interface InstallJsPackagesOptions {
 	cwd: string;
 	packages: readonly string[];
@@ -47,7 +50,7 @@ function projectRoot(cwd: string): string {
 }
 
 function projectLockPath(cwd: string): string {
-	const projectKey = Bun.hash(path.resolve(cwd)).toString(16).padStart(16, "0");
+	const projectKey = runtime.hash(path.resolve(cwd)).toString(16).padStart(16, "0");
 	return path.join(getAgentDir(), "cache", "eval-js", "project-locks", projectKey);
 }
 
@@ -60,7 +63,7 @@ export function resolveJsPackageEnvironment(
 	if (mode === "project") {
 		return { mode, root: project, packageRoot: project, description: `project environment at ${project}` };
 	}
-	const key = Bun.hash(project).toString(16).padStart(16, "0");
+	const key = runtime.hash(project).toString(16).padStart(16, "0");
 	const root = path.join(getAgentDir(), "cache", "eval-js", "environments", key);
 	return { mode, root, packageRoot: root, description: `OMP-managed environment at ${root}` };
 }
@@ -90,7 +93,7 @@ async function ensureManagedManifest(
 
 async function currentDependencies(root: string): Promise<string> {
 	try {
-		const manifest: unknown = await Bun.file(path.join(root, "package.json")).json();
+		const manifest: unknown = await runtime.file(path.join(root, "package.json")).json();
 		if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) return "none recorded";
 		const dependencies = Reflect.get(manifest, "dependencies");
 		if (!dependencies || typeof dependencies !== "object" || Array.isArray(dependencies)) return "none recorded";
@@ -115,9 +118,10 @@ function installFailure(
 	exitCode: number | null,
 ): ToolError {
 	const exactOutput = [stdout.trimEnd(), stderr.trimEnd()].filter(Boolean).join("\n");
-	const detail = exactOutput || "Bun produced no diagnostic output.";
+	const manager = typeof Bun === "undefined" ? "npm" : "Bun";
+	const detail = exactOutput || `${manager} produced no diagnostic output.`;
 	return new ToolError(
-		`Bun could not update the ${environment.description} (exit ${exitCode ?? "unknown"}). ` +
+		`${manager} could not update the ${environment.description} (exit ${exitCode ?? "unknown"}). ` +
 			"Any existing retained JS worker was not restarted. " +
 			"Lifecycle scripts are disabled for eval installs; packages that require postinstall/native builds must be prepared explicitly outside eval.\n" +
 			detail,
@@ -143,13 +147,31 @@ export async function installJsPackages(options: InstallJsPackagesOptions): Prom
 		async () => {
 			options.signal?.throwIfAborted();
 			if (mode === "managed") await ensureManagedManifest(environment, options.autoProvision, options.signal);
+			const manager = typeof Bun === "undefined" ? "npm" : "Bun";
+			const npm = typeof Bun === "undefined" ? $which(process.platform === "win32" ? "npm.cmd" : "npm") : null;
+			if (typeof Bun === "undefined" && !npm)
+				throw new ToolError("JavaScript package installation requires npm on PATH in the Node host.");
+			const command = npm
+				? [npm, "install", "--prefix", environment.root, "--ignore-scripts", "--no-audit", "--no-fund", ...packages]
+				: [resolveExecutablePath(), "add", "--cwd", environment.root, "--ignore-scripts", ...packages];
+			const spawnCommand: StdioSpawnCommand =
+				npm && process.platform === "win32"
+					? await resolveStdioSpawnCommand(
+							{ command: npm, args: command.slice(1) },
+							{
+								cwd: environment.root,
+								env: process.env,
+								platform: process.platform,
+								hostHasInheritableConsole: true,
+							},
+						)
+					: { cmd: command, detached: process.platform !== "darwin" && process.platform !== "win32" };
 			const tracker = trackDownload("npm packages", { detail: packages.join(" ") });
 			const result = await ptree
-				.exec([resolveExecutablePath(), "add", "--cwd", environment.root, "--ignore-scripts", ...packages], {
-					// In a compiled distribution the resolved executable is omp.
-					// BUN_BE_BUN re-enters Bun's real package-manager
-					// CLI instead of recursively dispatching omp's command parser.
-					env: { ...Bun.env, BUN_BE_BUN: "1" },
+				.exec(spawnCommand.cmd, {
+					env: typeof Bun === "undefined" ? { ...process.env } : { ...process.env, BUN_BE_BUN: "1" },
+					windowsHide: spawnCommand.windowsHide,
+					windowsVerbatimArguments: spawnCommand.windowsVerbatimArguments,
 					signal: options.signal,
 					allowNonZero: true,
 					stderr: "full",
@@ -162,7 +184,8 @@ export async function installJsPackages(options: InstallJsPackagesOptions): Prom
 				// Bun's own `error: …` line names the failing package; the thrown error carries the full log.
 				const bunError = result.stderr.split("\n").findLast(line => line.startsWith("error:"));
 				tracker.fail(
-					bunError?.slice("error:".length).trim() || `bun add exited ${result.exitCode ?? "abnormally"}`,
+					bunError?.slice("error:".length).trim() ||
+						`${manager} install exited ${result.exitCode ?? "abnormally"}`,
 				);
 				throw installFailure(environment, result.stdout, result.stderr, result.exitCode);
 			}
@@ -173,7 +196,7 @@ export async function installJsPackages(options: InstallJsPackagesOptions): Prom
 			return {
 				environment,
 				summary:
-					`Bun reconciled ${environment.description}. Current declared dependencies: ${dependencies}. ` +
+					`${manager} reconciled ${environment.description}. Current declared dependencies: ${dependencies}. ` +
 					"Lifecycle scripts were disabled, so packages requiring native builds/postinstall may not work. " +
 					"Already imported modules remain cached in this persistent runtime; use reset to load upgraded package code.",
 			};

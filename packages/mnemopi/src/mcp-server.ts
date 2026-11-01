@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import { getToolDefinitions, handleToolCall, type ToolArguments, type ToolDefinition } from "./mcp-tools";
 
 export interface JsonRpcRequest {
@@ -91,8 +92,8 @@ export async function handleJsonRpc(request: JsonRpcRequest): Promise<JsonRpcRes
 }
 
 export async function runStdio(
-	input: ReadableStream<Uint8Array> = Bun.stdin.stream(),
-	output: WritableOutput = Bun.stdout,
+	input: ReadableStream<Uint8Array> = Readable.toWeb(process.stdin) as ReadableStream<Uint8Array>,
+	output: WritableOutput = process.stdout,
 ): Promise<void> {
 	const reader = input.getReader();
 	const decoder = new TextDecoder();
@@ -135,7 +136,7 @@ export function runMcpServer(
 	return runStdio();
 }
 
-export function main(argv: readonly string[] = Bun.argv.slice(2)): Promise<void> {
+export function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
 	let transport = "stdio";
 	let port: number | undefined;
 	let bank: string | undefined;

@@ -4,6 +4,7 @@ import * as Module from "node:module";
 import * as path from "node:path";
 import { withFileLock } from "./file-lock";
 import { isEexist, isEnoent } from "./fs-error";
+import { runtime } from "./runtime";
 
 /**
  * On-demand runtime dependency support for native-heavy optional packages
@@ -385,7 +386,7 @@ async function withLegacyInstallLock<T>(runtimeDir: string, sleepMs: number, fn:
 			if (Date.now() - stat.mtimeMs > STALE_LEGACY_LOCK_MS) {
 				await fsp.rm(legacy, { recursive: true, force: true });
 			} else {
-				await Bun.sleep(sleepMs);
+				await runtime.sleep(sleepMs);
 			}
 			continue;
 		}
@@ -408,7 +409,7 @@ export async function writeRuntimeManifest(runtimeDir: string, install: RuntimeI
 	};
 	if (install.overrides && Object.keys(install.overrides).length) manifest.overrides = install.overrides;
 	if (install.trustedDependencies?.length) manifest.trustedDependencies = install.trustedDependencies;
-	await Bun.write(path.join(runtimeDir, "package.json"), `${JSON.stringify(manifest, null, "\t")}\n`);
+	await runtime.write(path.join(runtimeDir, "package.json"), `${JSON.stringify(manifest, null, "\t")}\n`);
 }
 
 async function readPipe(stream: ReadableStream<Uint8Array> | null): Promise<string> {
@@ -419,8 +420,20 @@ async function readPipe(stream: ReadableStream<Uint8Array> | null): Promise<stri
 async function runRuntimeInstall(runtimeDir: string): Promise<void> {
 	// `process.execPath` is plain bun in source/bundle mode and the compiled
 	// binary otherwise; BUN_BE_BUN makes the compiled binary act as bun.
-	const proc = Bun.spawn([process.execPath, "install", "--cwd", runtimeDir, "--production"], {
-		env: { ...Bun.env, BUN_BE_BUN: "1" },
+	const npm = runtime.capabilities.bun ? undefined : runtime.which("npm");
+	if (!runtime.capabilities.bun && !npm)
+		throw new Error("On-demand Node dependency installation requires npm on PATH");
+	let command: string[];
+	if (runtime.capabilities.bun) {
+		command = [process.execPath, "install", "--cwd", runtimeDir, "--production"];
+	} else {
+		command = ["install", "--prefix", runtimeDir, "--omit=dev", "--no-audit", "--no-fund"];
+		if (process.platform === "win32" && /\.(?:cmd|bat)$/i.test(npm!)) {
+			command.unshift(process.execPath, path.join(path.dirname(npm!), "node_modules", "npm", "bin", "npm-cli.js"));
+		} else command.unshift(npm!);
+	}
+	const proc = runtime.spawn(command, {
+		env: { ...process.env, ...(runtime.capabilities.bun ? { BUN_BE_BUN: "1" } : {}) },
 		stdout: "pipe",
 		stderr: "pipe",
 	});
@@ -432,7 +445,7 @@ async function runRuntimeInstall(runtimeDir: string): Promise<void> {
 	if (exitCode === 0) return;
 	const output = `${stdout}\n${stderr}`.trim();
 	throw new Error(
-		`Failed to install runtime at ${runtimeDir} with ${process.execPath} install (exit ${exitCode}): ${output}`,
+		`Failed to install runtime at ${runtimeDir} with ${command[0]} install (exit ${exitCode}): ${output}`,
 	);
 }
 
@@ -457,7 +470,9 @@ export async function ensureRuntimeInstalled(options: EnsureRuntimeInstalledOpti
 		}
 	}
 	if (!probePackage) throw new Error(`Runtime install at ${runtimeDir} declares no dependencies`);
-	const probeManifest = Bun.file(path.join(runtimeDir, "node_modules", ...probePackage.split("/"), "package.json"));
+	const probeManifest = runtime.file(
+		path.join(runtimeDir, "node_modules", ...probePackage.split("/"), "package.json"),
+	);
 	if (await probeManifest.exists()) return runtimeDir;
 
 	onPhase?.("initiate");

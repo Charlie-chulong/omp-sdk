@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Mid-conversation reasoning effort via `configuration_update` input items
  * (GPT-6 family; `model.compat.supportsConfigurationUpdate`).
@@ -122,7 +123,7 @@ function effortControlAnchor(input: readonly AnchorableItem[], index: number): s
 	const item = input[index - 1];
 	if (!item) return "";
 	const { id: _id, status: _status, ...stable } = item;
-	return String(Bun.hash(JSON.stringify(stable)));
+	return String(runtime.hash(JSON.stringify(stable)));
 }
 
 function resetOpenAIEffortControlState(state: OpenAIEffortControlState<string>): void {

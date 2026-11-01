@@ -1,8 +1,11 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
+import { readArchiveEntries } from "@oh-my-pi/pi-utils/ar";
+import { fileURLToPath } from "node:url";
 import type { Dirent } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { isEnoent, logger } from "@oh-my-pi/pi-utils";
-import { $, type Server } from "bun";
+import { $, type RuntimeServer as Server } from "@oh-my-pi/pi-utils/runtime";
 import {
 	getCostDashboardStats,
 	getDashboardStats,
@@ -49,10 +52,11 @@ import {
 	TracePathError,
 } from "./trace";
 
-const CLIENT_DIR = path.join(import.meta.dir, "client");
-const STATIC_DIR = path.join(import.meta.dir, "..", "dist", "client");
+const MODULE_DIR = import.meta.dirname ?? path.dirname(fileURLToPath(import.meta.url));
+const CLIENT_DIR = path.join(MODULE_DIR, "client");
+const STATIC_DIR = path.join(MODULE_DIR, "..", "dist", "client");
 const IS_BUN_COMPILED =
-	Boolean(process.env.PI_COMPILED || Bun.env.PI_COMPILED) ||
+	Boolean(process.env.PI_COMPILED || runtime.env.PI_COMPILED) ||
 	import.meta.url.includes("$bunfs") ||
 	import.meta.url.includes("~BUN") ||
 	import.meta.url.includes("%7EBUN");
@@ -60,7 +64,7 @@ const IS_BUN_COMPILED =
 // process.env.PI_BUNDLED at build time. Like compiled binaries, it ships no
 // dashboard sources or prebuilt dist/client next to the bundle, so the
 // embedded archive is the only viable asset source.
-const IS_PREBUILT = IS_BUN_COMPILED || Boolean(process.env.PI_BUNDLED || Bun.env.PI_BUNDLED);
+const IS_PREBUILT = IS_BUN_COMPILED || Boolean(process.env.PI_BUNDLED || runtime.env.PI_BUNDLED);
 // Sniff the base64 gzip magic instead of decoding: importing this module (every
 // TUI start) must not pay for a multi-megabyte archive nobody may serve.
 const USE_EMBEDDED_CLIENT = hasEmbeddedClientArchive(embeddedClientArchiveTxt) || IS_PREBUILT;
@@ -78,10 +82,10 @@ async function getEmbeddedClientFiles(): Promise<Map<string, Blob>> {
 	}
 
 	// Keep bundled assets in memory so OS temporary-file cleanup cannot break a live dashboard.
-	embeddedClientFilesPromise = new Bun.Archive(archive).files().then(files => {
-		for (const [name, file] of files) {
-			// Archive entries are untyped blobs; infer MIME types just as disk-backed Bun files do.
-			files.set(name, new File([file], name, { type: Bun.file(name).type }));
+	embeddedClientFilesPromise = readArchiveEntries({ bytes: archive, format: "tar.gz" }).then(entries => {
+		const files = new Map<string, Blob>();
+		for (const [name, bytes] of entries) {
+			files.set(name, new File([bytes], name, { type: runtime.file(name).type }));
 		}
 		return files;
 	});
@@ -147,7 +151,7 @@ const ensureClientBuild = async () => {
 	await fs.rm(STATIC_DIR, { recursive: true, force: true });
 
 	logger.debug("Building stats client");
-	const packageRoot = path.join(import.meta.dir, "..");
+	const packageRoot = path.join(MODULE_DIR, "..");
 	const buildResult = await $`bun run build.ts`.cwd(packageRoot).quiet().nothrow();
 	if (buildResult.exitCode !== 0) {
 		const output = buildResult.text().trim();
@@ -347,15 +351,15 @@ async function handleStatic(requestPath: string): Promise<Response> {
 	const filePath = requestPath === "/" ? "/index.html" : requestPath;
 	const fullPath = path.join(STATIC_DIR, filePath);
 
-	const file = Bun.file(fullPath);
+	const file = runtime.file(fullPath);
 	if (await file.exists()) {
-		return new Response(file);
+		return new Response(file.stream(), { headers: { "Content-Type": file.type } });
 	}
 
 	// SPA fallback
-	const index = Bun.file(path.join(STATIC_DIR, "index.html"));
+	const index = runtime.file(path.join(STATIC_DIR, "index.html"));
 	if (await index.exists()) {
-		return new Response(index);
+		return new Response(index.stream(), { headers: { "Content-Type": index.type } });
 	}
 
 	return new Response("Not Found", { status: 404 });
@@ -367,8 +371,8 @@ export function formatStatsDashboardUrl(hostname: string, port: number): string 
 	return `http://${urlHostname}:${port}`;
 }
 
-function createDashboardServer(port: number, hostname: string): Server<undefined> {
-	const server = Bun.serve({
+async function createDashboardServer(port: number, hostname: string): Promise<Server<undefined>> {
+	const server = await runtime.serve({
 		port,
 		hostname,
 		async fetch(req, server) {
@@ -536,23 +540,23 @@ export async function startServer(
 
 	let claim = await prepareStatsPort(port, hostname);
 	if (claim === "bind") {
-		const server = bindDashboardServer(port, hostname);
+		const server = await bindDashboardServer(port, hostname);
 		if (server) return register(server);
 		claim = await recoverStatsPort(port, hostname);
 	}
 	if (claim === "reuse") return { hostname, port, stop: () => {} };
 	if (claim === "bind") {
-		const server = bindDashboardServer(port, hostname);
+		const server = await bindDashboardServer(port, hostname);
 		if (server) return register(server);
 	}
 	logger.warn("Stats dashboard port is held by another process; serving on an ephemeral port", { hostname, port });
-	return register(createDashboardServer(0, hostname));
+	return register(await createDashboardServer(0, hostname));
 }
 
 /** {@link createDashboardServer}, or null when the port is already in use. */
-function bindDashboardServer(port: number, hostname: string): Server<undefined> | null {
+async function bindDashboardServer(port: number, hostname: string): Promise<Server<undefined> | null> {
 	try {
-		return createDashboardServer(port, hostname);
+		return await createDashboardServer(port, hostname);
 	} catch (error) {
 		if (error instanceof Error && "code" in error && error.code === "EADDRINUSE") return null;
 		throw error;

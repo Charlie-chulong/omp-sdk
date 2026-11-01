@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "bun:test";
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import * as path from "node:path";
 import type { ChatUsageEvent } from "@oh-my-pi/pi-agent-core";
 import type { Api, AssistantMessage, ChoiceQuestion, ImageContent, Model, NoulQuestion } from "@oh-my-pi/pi-ai";
@@ -12,7 +12,7 @@ import { ChainJudge, hasNativeJudge, JudgmentCache, journalJudgmentUsage } from 
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import { tinyModelClient } from "@oh-my-pi/pi-coding-agent/tiny/title-client";
 import { encodeRawPng } from "@oh-my-pi/pi-coding-agent/utils/png-encode";
-import { TempDir } from "@oh-my-pi/pi-utils";
+import { encodeBase64, TempDir } from "@oh-my-pi/pi-utils";
 import { createInMemoryAuthStorage } from "./helpers/agent-session-setup";
 import { asGlobalFetch } from "./helpers/fetch-mock";
 
@@ -468,7 +468,7 @@ describe("ChainJudge", () => {
 		// 401x41 fits as 1568x160 centered on a 1568x280 canvas: source rows span canvas 60–220.
 		const strip: ImageContent = {
 			type: "image",
-			data: encodeRawPng(new Uint8Array(401 * 41 * 4).fill(255), 401, 41, 4).toBase64(),
+			data: encodeBase64(encodeRawPng(new Uint8Array(401 * 41 * 4).fill(255), 401, 41, 4)),
 			mimeType: "image/png",
 		};
 

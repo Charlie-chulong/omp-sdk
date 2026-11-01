@@ -1,4 +1,5 @@
 import { logger } from "@oh-my-pi/pi-utils";
+import { assertLocalRuntimeAvailable } from "../sdk-profile";
 import {
 	type ModelWorkerMessage,
 	ModelWorkerHost,
@@ -142,6 +143,7 @@ export const TTS_WORKER_ARG = "__omp_worker_tts";
  * production callers go through {@link spawnTtsWorker}.
  */
 export function createTtsSubprocess(): SpawnedSubprocess<TtsWorkerOutbound> {
+	assertLocalRuntimeAvailable("Offline speech synthesis");
 	return createWorkerSubprocess<TtsWorkerOutbound>({
 		spawnCommand: resolveWorkerSpawnCmd(TTS_WORKER_ARG),
 		env: tinyWorkerEnv(),
@@ -175,6 +177,7 @@ export class TtsClient {
 	}
 
 	async synthesize(modelKey: string, text: string, options: TtsSynthesizeOptions = {}): Promise<TtsAudio | null> {
+		assertLocalRuntimeAvailable("Offline speech synthesis");
 		if (!isTtsLocalModelKey(modelKey)) return null;
 		if (options.signal?.aborted) return null;
 
@@ -210,6 +213,7 @@ export class TtsClient {
 	 * cannot spawn.
 	 */
 	synthesizeStream(modelKey: string, options: TtsStreamOptions = {}): TtsStreamHandle {
+		assertLocalRuntimeAvailable("Offline speech synthesis");
 		if (!isTtsLocalModelKey(modelKey) || options.signal?.aborted) {
 			const channel = new AudioChunkChannel();
 			channel.close();
@@ -269,6 +273,7 @@ export class TtsClient {
 	}
 
 	async downloadModel(modelKey: string, options: TtsDownloadOptions = {}): Promise<boolean> {
+		assertLocalRuntimeAvailable("Offline speech model download");
 		if (!isTtsLocalModelKey(modelKey)) return false;
 		return (await this.#host.downloadModel(modelKey, options)).ok;
 	}

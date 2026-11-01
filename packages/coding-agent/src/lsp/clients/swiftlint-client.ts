@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * SwiftLint CLI-based linter client.
  * Parses SwiftLint's JSON reporter output into LSP Diagnostic format.
@@ -35,7 +36,7 @@ async function runSwiftLint(
 	const command = resolvedCommand ?? "swiftlint";
 
 	try {
-		const proc = Bun.spawn([command, ...args], {
+		const proc = runtime.spawn([command, ...args], {
 			cwd,
 			stdout: "pipe",
 			stderr: "pipe",

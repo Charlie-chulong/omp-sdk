@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import { HistoryStorage } from "@oh-my-pi/pi-coding-agent/session/history-storage";
 import { TempDir } from "@oh-my-pi/pi-utils";

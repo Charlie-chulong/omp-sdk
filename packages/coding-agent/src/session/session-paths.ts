@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -66,7 +67,7 @@ function encodeHashedSessionDirName(canonicalCwd: string, scope: "home" | "tmp" 
 		.replace(/[^a-zA-Z0-9._-]+/g, "-")
 		.replace(/^-+|-+$/g, "")
 		.slice(-80);
-	const digest = Bun.SHA256.hash(normalized, "hex");
+	const digest = runtime.SHA256.hash(normalized, "hex");
 	return `${scope}-${readable || "project"}-${digest}`;
 }
 
@@ -521,7 +522,7 @@ export async function readTerminalBreadcrumbEntry(): Promise<TerminalBreadcrumb 
 
 	try {
 		const breadcrumbFile = path.join(getTerminalSessionsDir(), terminalId);
-		const parsed = parseTerminalBreadcrumb(await Bun.file(breadcrumbFile).text());
+		const parsed = parseTerminalBreadcrumb(await runtime.file(breadcrumbFile).text());
 		if (!parsed) return null;
 		const { cwd: breadcrumbCwd, sessionFile, fresh, cwdIdentity } = parsed;
 

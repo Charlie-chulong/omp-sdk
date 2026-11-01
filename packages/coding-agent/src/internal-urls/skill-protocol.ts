@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Protocol handler for skill:// URLs.
  *
@@ -252,7 +253,7 @@ async function readSkillTarget(url: InternalUrl, target: LocatedSkillTarget): Pr
 		throw new Error(`skill:// URL must resolve to a file or directory: ${url.href}`);
 	}
 
-	const content = await Bun.file(targetPath).text();
+	const content = await runtime.file(targetPath).text();
 	return {
 		url: url.href,
 		content,

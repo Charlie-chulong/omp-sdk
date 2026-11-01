@@ -20,12 +20,26 @@ let workerHostMain: string | null = null;
 
 /** Called by CLI entrypoints whose main module dispatches worker argv selectors. */
 export function declareWorkerHostEntry(): void {
-	workerHostMain = stripWindowsExtendedLengthPathPrefix(Bun.main);
+	workerHostMain = stripWindowsExtendedLengthPathPrefix(
+		typeof Bun === "undefined" ? (process.argv[1] ?? "") : Bun.main,
+	);
 }
 
 /** Main-module path of the self-dispatching CLI host, or null outside it. */
 export function workerHostEntry(): string | null {
 	return workerHostMain;
+}
+
+let nodeHostMain: string | null = null;
+
+/** Register the SDK's packaged Node worker dispatcher without changing the CLI host. */
+export function setNodeWorkerHostEntry(entry: string): void {
+	nodeHostMain = stripWindowsExtendedLengthPathPrefix(entry);
+}
+
+/** The explicitly registered Node SDK dispatcher, or null outside Node SDK embedding. */
+export function nodeWorkerHostEntry(): string | null {
+	return nodeHostMain;
 }
 
 /**

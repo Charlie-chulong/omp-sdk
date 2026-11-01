@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fsp from "node:fs/promises";
 import { createRequire } from "node:module";
 import * as path from "node:path";
@@ -167,7 +168,7 @@ export function replayCachedReady<K, M>(
 export async function installSharpStubResolver(runtimeDir: string): Promise<string> {
 	const nodeModules = path.join(runtimeDir, "node_modules");
 	const sharpStub = path.join(runtimeDir, "omp-sharp-stub.cjs");
-	await Bun.write(sharpStub, "module.exports = {};\n");
+	await runtime.write(sharpStub, "module.exports = {};\n");
 	installRuntimeModuleResolver({ runtimeNodeModules: nodeModules, stubs: { sharp: sharpStub } });
 	return nodeModules;
 }
@@ -208,9 +209,17 @@ async function installOnnxRuntimeCudaProviders(packageDir: string, runtimeDir: s
 		);
 	}
 
-	const proc = Bun.spawn([process.execPath, script], {
+	const proc = runtime.spawn([process.execPath, script], {
 		cwd: runtimeDir,
-		env: { ...Bun.env, BUN_BE_BUN: "1", ONNXRUNTIME_NODE_INSTALL: ONNX_RUNTIME_CUDA_INSTALL },
+		env: {
+			...process.env,
+			...(typeof Bun === "undefined"
+				? process.versions.electron
+					? { ELECTRON_RUN_AS_NODE: "1" }
+					: {}
+				: { BUN_BE_BUN: "1" }),
+			ONNXRUNTIME_NODE_INSTALL: ONNX_RUNTIME_CUDA_INSTALL,
+		},
 		stdout: "pipe",
 		stderr: "pipe",
 	});

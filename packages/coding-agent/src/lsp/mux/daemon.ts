@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Client half of the broker-shared LSP mux.
  *
@@ -345,7 +346,7 @@ export async function smokeTestLspMux(): Promise<void> {
 				alive = true;
 				break;
 			}
-			await Bun.sleep(200);
+			await runtime.sleep(200);
 		}
 		if (!alive) {
 			throw new Error(`lsp mux smoke failed: no ping response (${proc.peekStderr().slice(-500) || "no stderr"})`);

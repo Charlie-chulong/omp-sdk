@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { adjustHsv } from "@oh-my-pi/pi-utils/color";
@@ -114,7 +115,7 @@ export async function loadThemeJson(name: string): Promise<ThemeJson> {
 	const customThemesDir = getCustomThemesDir();
 	const themePath = path.join(customThemesDir, `${name}.json`);
 	try {
-		return parseThemeJson(name, await Bun.file(themePath).text());
+		return parseThemeJson(name, await runtime.file(themePath).text());
 	} catch (error) {
 		if (isEnoent(error)) throw new Error(`Theme not found: ${name}`);
 		throw error;

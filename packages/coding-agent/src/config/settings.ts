@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Layered settings store (global config, project, `--config` overlay, runtime overrides) with
  * background persistence. Values are typed and read through registry handles
@@ -32,7 +33,7 @@ import {
 } from "@oh-my-pi/pi-utils";
 import { withFileLock } from "@oh-my-pi/pi-utils/file-lock";
 import { isLightTheme } from "@oh-my-pi/pi-tui/theme/theme";
-import { JSONC, YAML } from "bun";
+import { JSONC, YAML } from "@oh-my-pi/pi-utils/runtime";
 import { invalidate as invalidateCapabilityFsCache } from "../capability/fs";
 import { type Settings as SettingsCapabilityItem, settingsCapability } from "../capability/settings";
 import type { ModelRole } from "../config/model-roles";
@@ -267,7 +268,7 @@ function pendingChangeApplies(
 		deleteByPath(onDisk, inner);
 		deleteByPath(captured, inner);
 	}
-	return Bun.deepEquals(onDisk.value, captured.value);
+	return runtime.deepEquals(onDisk.value, captured.value);
 }
 
 /**
@@ -2517,7 +2518,7 @@ export class Settings {
 	async #loadOverlayYaml(filePath: string, captureLegacyChangelogVersion = true): Promise<RawSettings> {
 		let content: string;
 		try {
-			content = await Bun.file(filePath).text();
+			content = await runtime.file(filePath).text();
 		} catch (error) {
 			throw new Error(
 				isEnoent(error)
@@ -2547,7 +2548,7 @@ export class Settings {
 
 		const settingsJsonPath = path.join(this.#agentDir, "settings.json");
 		try {
-			const parsed: unknown = JSONC.parse(await Bun.file(settingsJsonPath).text());
+			const parsed: unknown = JSONC.parse(await runtime.file(settingsJsonPath).text());
 			if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
 				settings = this.#deepMerge(settings, this.#migrateRawSettings(parsed as RawSettings));
 				migrated = true;
@@ -3574,12 +3575,12 @@ export class Settings {
 		if (!legacy) return;
 		const markerPath = getLastChangelogVersionPath(this.#agentDir);
 		try {
-			if ((await Bun.file(markerPath).text()).trim()) return;
+			if ((await runtime.file(markerPath).text()).trim()) return;
 		} catch (error) {
 			if (!isEnoent(error)) return;
 		}
 		try {
-			await Bun.write(markerPath, legacy);
+			await runtime.write(markerPath, legacy);
 		} catch (error) {
 			logger.warn("Settings: failed to seed last-changelog-version marker", { error: String(error) });
 		}
@@ -3688,7 +3689,7 @@ export class Settings {
 						mutation !== undefined &&
 						mutation.generation.kind !== "unreadable" &&
 						(yamlGenerationsMatch(mutation.generation, loaded.generation) ||
-							Bun.deepEquals(currentRoleValues[role], mutation.baseValue));
+							runtime.deepEquals(currentRoleValues[role], mutation.baseValue));
 					if (canApply) return true;
 					logger.warn("Settings: skipped stale change after external config edit", {
 						path: configPath,

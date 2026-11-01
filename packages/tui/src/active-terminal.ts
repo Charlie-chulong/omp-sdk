@@ -4,6 +4,8 @@
  * notifications) can route through the active terminal without an import cycle.
  */
 import type { ProcessTerminal } from "./terminal";
+import { isMainThread } from "node:worker_threads";
+import { isTerminalHeadless } from "@oh-my-pi/pi-utils/env";
 
 // The started terminal that owns stdout in this thread; also consulted by the
 // emergency restore on crash.
@@ -69,7 +71,8 @@ export function writeThroughActiveTerminal(data: string): boolean {
  * terminal and would write around its pump, so it writes nothing.
  */
 export function writeTerminalSequence(data: string): void {
-	if (!Bun.isMainThread) return;
+	if (!isMainThread) return;
+	if (typeof Bun === "undefined" && (!process.stdout.isTTY || isTerminalHeadless())) return;
 	if (writeThroughActiveTerminal(data)) return;
 	installStdoutErrorListener();
 	try {

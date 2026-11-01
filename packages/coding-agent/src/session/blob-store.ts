@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { blobExtensionForImageMimeType, normalizeBlobExtension } from "@oh-my-pi/pi-tui/prompt/image-format";
 import * as fs from "node:fs";
 import * as fsp from "node:fs/promises";
@@ -42,7 +43,7 @@ export interface BlobPutOptions {
 
 function blobHash(data: Buffer, precomputed: string | undefined): string {
 	if (precomputed !== undefined && BLOB_HASH_RE.test(precomputed)) return precomputed;
-	return new Bun.SHA256().update(data).digest("hex");
+	return new runtime.SHA256().update(data).digest("hex");
 }
 
 export interface BlobPutResult {
@@ -127,7 +128,7 @@ function writeFileAtomicSync(target: string, data: Buffer): void {
 async function writeFileAtomic(target: string, data: Buffer): Promise<void> {
 	const tempPath = blobStagingPath(target);
 	try {
-		await Bun.write(tempPath, data);
+		await runtime.write(tempPath, data);
 		await fsp.rename(tempPath, target);
 	} catch (err) {
 		try {
@@ -249,7 +250,7 @@ export class BlobStore {
 	async get(hash: string): Promise<Buffer | null> {
 		const blobPath = path.join(this.dir, hash);
 		try {
-			const file = Bun.file(blobPath);
+			const file = runtime.file(blobPath);
 			const ab = await file.arrayBuffer();
 			return Buffer.from(ab);
 		} catch (err) {

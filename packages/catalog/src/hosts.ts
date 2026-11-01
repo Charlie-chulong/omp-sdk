@@ -69,8 +69,6 @@ export const KNOWN_HOSTS = {
 	/** Google AI Studio's OpenAI-compatible shim (`/v1beta/openai`) — a subset of chat-completions; rejects `store` with a 400. Native Gemini uses `google-generative-ai` api instead. */
 	googleAistudio: { providers: [], urlMarkers: ["generativelanguage.googleapis.com"] },
 	opencode: { providers: ["opencode-go", "opencode-zen"], urlMarkers: ["opencode.ai"] },
-	/** ZenMux's Anthropic-compatible proxy (`zenmux.ai/api/anthropic`) forwards to signature-enforcing Anthropic. */
-	zenmux: { providers: ["zenmux"], urlMarkers: ["zenmux.ai"] },
 	chutes: { urlMarkers: ["chutes.ai"] },
 } as const satisfies Record<string, HostClassSpec>;
 

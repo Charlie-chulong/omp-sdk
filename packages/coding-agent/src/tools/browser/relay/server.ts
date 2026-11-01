@@ -13,6 +13,7 @@
  * Binds loopback only: anything that can reach this port can drive the
  * user's logged-in browser.
  */
+import { runtime, type RuntimeServerWebSocket } from "@oh-my-pi/pi-utils/runtime";
 import { VERSION } from "@oh-my-pi/pi-utils/dirs";
 import { RelayBridge, type RelayBridgeExtensionUpdater } from "./bridge";
 import {
@@ -91,7 +92,7 @@ interface SocketData {
 	extensionId?: string;
 }
 
-type RelayWebSocket = Bun.ServerWebSocket<SocketData>;
+type RelayWebSocket = RuntimeServerWebSocket<SocketData>;
 
 const WS_KEEPALIVE_MS = 30_000;
 /** Screenshots travel base64-encoded through both websocket legs. */
@@ -110,7 +111,7 @@ function isWsAuthority(raw: string): boolean {
 }
 
 /** Start the relay server on 127.0.0.1. Throws if the port is taken. */
-export function startRelayServer(opts: RelayServerOptions): RelayServer {
+export async function startRelayServer(opts: RelayServerOptions): Promise<RelayServer> {
 	const log = opts.log ?? (() => {});
 	const group =
 		opts.group === false ? null : opts.group === true || opts.group === undefined ? DEFAULT_GROUP : opts.group;
@@ -119,11 +120,11 @@ export function startRelayServer(opts: RelayServerOptions): RelayServer {
 	const sockets = new Set<RelayWebSocket>();
 	const startedAt = Date.now();
 
-	const server = Bun.serve({
+	const server = await runtime.serve<SocketData>({
 		hostname: "127.0.0.1",
 		port: opts.port,
 		fetch(req, srv): Response | undefined {
-			const fallback = `127.0.0.1:${opts.port}`;
+			const fallback = `127.0.0.1:${srv.port}`;
 			const rawHost = req.headers.get("host")?.trim();
 			const host = rawHost && isWsAuthority(rawHost) ? rawHost : fallback;
 			const requestUrl =
@@ -175,8 +176,7 @@ export function startRelayServer(opts: RelayServerOptions): RelayServer {
 		},
 		websocket: {
 			maxPayloadLength: MAX_PAYLOAD_BYTES,
-			// Disabled: Bun caps idleTimeout at 255s, and the keepalive pings
-			// below already detect dead peers via the websocket close path.
+			// The keepalive pings below detect dead peers via the websocket close path.
 			idleTimeout: 0,
 			open(ws: RelayWebSocket): void {
 				sockets.add(ws);
@@ -212,10 +212,10 @@ export function startRelayServer(opts: RelayServerOptions): RelayServer {
 	}, WS_KEEPALIVE_MS);
 	keepalive.unref();
 
-	log("relay listening", { port: opts.port });
+	log("relay listening", { port: server.port });
 	return {
 		bridge,
-		port: opts.port,
+		port: server.port,
 		stop() {
 			clearInterval(keepalive);
 			server.stop(true);

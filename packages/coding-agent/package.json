@@ -15,7 +15,10 @@
 		"url": "https://github.com/can1357/oh-my-pi/issues"
 	},
 	"license": "MIT",
-	"author": { "name": "Stencil Labs, Inc.", "url": "https://stencil.so" },
+	"author": {
+		"name": "Stencil Labs, Inc.",
+		"url": "https://stencil.so"
+	},
 	"contributors": [
 		"Mario Zechner"
 	],
@@ -34,6 +37,7 @@
 		"!src/export/html/template.js",
 		"!src/export/html/share-loader.js",
 		"dist/cli.js",
+		"dist/node",
 		"dist/docs-index.generated.txt",
 		"dist/CHANGELOG-*.md",
 		"dist/*.node",
@@ -47,10 +51,59 @@
 	"type": "module",
 	"main": "./src/index.ts",
 	"types": "./src/index.ts",
+	"imports": {
+		"#coding-agent-headless": {
+			"bun": "./src/index.ts",
+			"node": "./src/headless.ts",
+			"default": "./src/index.ts"
+		},
+		"#coding-agent-host-api": {
+			"bun": "./src/extensibility/host-api.ts",
+			"node": "./src/extensibility/host-api.node.ts",
+			"default": "./src/extensibility/host-api.ts"
+		}
+	},
 	"exports": {
+		"./package.json": "./package.json",
 		".": {
+			"bun": {
+				"types": "./src/index.ts",
+				"import": "./src/index.ts"
+			},
+			"node": {
+				"types": "./src/headless.ts",
+				"import": "./dist/node/sdk.mjs"
+			},
 			"types": "./src/index.ts",
 			"import": "./src/index.ts"
+		},
+		"./sdk": {
+			"bun": {
+				"types": "./src/sdk.ts",
+				"import": "./src/sdk.ts"
+			},
+			"node": {
+				"types": "./src/headless.ts",
+				"import": "./dist/node/sdk.mjs"
+			},
+			"types": "./src/sdk.ts",
+			"import": "./src/sdk.ts"
+		},
+		"./sdk/rpc": {
+			"bun": "./src/modes/rpc/rpc-mode.ts",
+			"node": {
+				"types": "./src/modes/rpc/rpc-mode.ts",
+				"import": "./dist/node/rpc.mjs"
+			},
+			"default": "./src/modes/rpc/rpc-mode.ts"
+		},
+		"./sdk/plugins": {
+			"bun": "./src/cli/plugin-cli.ts",
+			"node": {
+				"types": "./src/node-plugin.ts",
+				"import": "./dist/node/plugins.mjs"
+			},
+			"default": "./src/cli/plugin-cli.ts"
 		},
 		"./*": {
 			"types": "./src/*.ts",
@@ -530,8 +583,10 @@
 		"format-prompts": "bun scripts/format-prompts.ts",
 		"gen:export-viewer": "bun --cwd=../collab-web run gen:export-viewer",
 		"gen:bundle": "bun scripts/bundle-dist.ts",
+		"gen:bundle:node": "bun scripts/bundle-node-sdk.ts",
+		"gen:bundle:desktop": "bun scripts/bundle-node-sdk.ts --desktop",
 		"gen:rpc": "bun scripts/gen-rpc/index.ts",
-		"prepack": "bun run gen:export-viewer && bun run gen:bundle",
+		"prepack": "bun run gen:export-viewer && bun run gen:bundle && bun run gen:bundle:node",
 		"bench:guard": "bun scripts/bench-guard.ts"
 	},
 	"dependencies": {
@@ -558,7 +613,10 @@
 		"@opentelemetry/sdk-metrics": "catalog:",
 		"@opentelemetry/sdk-trace-base": "catalog:",
 		"@opentelemetry/sdk-trace-node": "catalog:",
+		"@ts-morph/common": "catalog:",
 		"axe-core": "4.13.0",
+		"core-js": "3.51.0",
+		"koffi": "^2.15.1",
 		"puppeteer-core": "catalog:"
 	},
 	"devDependencies": {

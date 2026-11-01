@@ -18,6 +18,8 @@ rust_library(
         "src/**/*.txt",
         "data/*.bin.zst",
     ]),
+    # Full Bazel releases retain SmolLM even when Cargo consumers opt out.
+    crate_features = ["smollm"],
     crate_name = "pi_predict",
     edition = "2024",
     proc_macro_deps = all_crate_deps(proc_macro = True),
@@ -27,6 +29,7 @@ rust_library(
 
 rust_test(
     name = "pi-predict_test",
+    crate_features = ["smollm"],
     crate = ":pi-predict",
     edition = "2024",
     proc_macro_deps = all_crate_deps(proc_macro_dev = True),

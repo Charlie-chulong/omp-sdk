@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { randomUUID } from "node:crypto";
 import * as net from "node:net";
 import * as os from "node:os";
@@ -198,7 +199,7 @@ export class CmuxSocketClient {
 		const authPath = path.join(os.homedir(), ".cmux", "relay", `${endpoint.port}.auth`);
 		let payload: unknown;
 		try {
-			payload = await Bun.file(authPath).json();
+			payload = await runtime.file(authPath).json();
 		} catch {
 			throw new ToolError(
 				`Missing cmux relay auth metadata for ${endpoint.host}:${endpoint.port}; set CMUX_RELAY_ID/CMUX_RELAY_TOKEN or restore ~/.cmux/relay/${endpoint.port}.auth`,

@@ -60,7 +60,7 @@ export function renderMCPCall(args: Record<string, unknown>, theme: Theme, label
 			if (args && typeof args === "object" && Object.keys(args).length > 0) {
 				// Inline preview budgeted against the render width, leaving room for
 				// the ` └─ ` connector prefix instead of a fixed cap.
-				const inlineBudget = Math.max(20, contentWidth - Bun.stringWidth(theme.tree.last) - 2);
+				const inlineBudget = Math.max(20, contentWidth - visibleWidth(theme.tree.last) - 2);
 				const preview = formatArgsInline(args, inlineBudget);
 				if (preview) {
 					body.push(` ${theme.fg("dim", theme.tree.last)} ${theme.fg("dim", preview)}`);

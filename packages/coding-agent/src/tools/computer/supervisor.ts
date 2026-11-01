@@ -1,3 +1,4 @@
+import { Worker } from "node:worker_threads";
 import type { AgentToolContext } from "@oh-my-pi/pi-agent-core";
 import { postmortem, untilAborted } from "@oh-my-pi/pi-utils";
 import type { DesktopCapabilities } from "@oh-my-pi/pi-natives";
@@ -5,7 +6,9 @@ import { closeDesktopEventTaps, desktopEscapeStops, forgetDesktopEscapeStops } f
 import { withTimeout } from "@oh-my-pi/pi-utils/async";
 import * as logger from "@oh-my-pi/pi-utils/logger";
 import { Snowflake } from "@oh-my-pi/pi-utils/snowflake";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { workerHostEntry } from "@oh-my-pi/pi-utils/worker-host";
+import { resolveNodeWorkerHost } from "../../subprocess/worker-client";
 import {
 	type ApprovalContextSource,
 	type ApprovalPolicy,
@@ -70,7 +73,7 @@ export interface ComputerController {
 	close(): Promise<void>;
 }
 
-/** Minimal Bun worker lifecycle surface used by the supervisor. */
+/** Minimal worker-thread lifecycle surface used by the supervisor. */
 export interface ComputerWorkerHandle {
 	send(message: ComputerWorkerInbound): void;
 	onMessage(handler: (message: ComputerWorkerOutbound) => void): () => void;
@@ -126,27 +129,26 @@ function wrapWorker(worker: Worker): ComputerWorkerHandle {
 			worker.postMessage(message);
 		},
 		onMessage(handler) {
-			const listener = (event: MessageEvent): void => handler(event.data as ComputerWorkerOutbound);
-			worker.addEventListener("message", listener);
-			return () => worker.removeEventListener("message", listener);
+			const listener = (message: ComputerWorkerOutbound): void => handler(message);
+			worker.on("message", listener);
+			return () => worker.off("message", listener);
 		},
 		onError(handler) {
-			const onError = (event: ErrorEvent): void =>
-				handler(event.error instanceof Error ? event.error : new Error(event.message));
-			const onMessageError = (event: MessageEvent): void =>
-				handler(new Error(`Computer worker message error: ${String(event.data)}`));
-			const onClose = (): void => handler(new Error("Computer worker exited"));
-			worker.addEventListener("error", onError);
-			worker.addEventListener("messageerror", onMessageError);
-			worker.addEventListener("close", onClose);
+			const onError = (error: Error): void => handler(error);
+			const onMessageError = (error: Error): void =>
+				handler(new Error(`Computer worker message error: ${error.message}`, { cause: error }));
+			const onExit = (code: number): void => handler(new Error(`Computer worker exited with code ${code}`));
+			worker.on("error", onError);
+			worker.on("messageerror", onMessageError);
+			worker.on("exit", onExit);
 			return () => {
-				worker.removeEventListener("error", onError);
-				worker.removeEventListener("messageerror", onMessageError);
-				worker.removeEventListener("close", onClose);
+				worker.off("error", onError);
+				worker.off("messageerror", onMessageError);
+				worker.off("exit", onExit);
 			};
 		},
 		async terminate() {
-			worker.terminate();
+			await worker.terminate();
 		},
 	};
 }
@@ -158,14 +160,17 @@ export function spawnComputerWorker(): ComputerWorkerHandle {
 	if (!closesEventTapsAtExit) {
 		closesEventTapsAtExit = true;
 		// A macOS event tap the worker's session still holds when this process dies makes WindowServer deliver the
-		// key the user is typing at that moment twice or more. Bun's process.exit runs no native exit hook, and the
-		// worker's own exit handlers do not run when the main thread exits, so the taps are closed from here.
+		// key the user is typing at that moment twice or more. The worker's own exit handlers do not run when
+		// the main thread exits, so the taps are closed from here.
 		postmortem.register("computer-event-taps", () => closeDesktopEventTaps(), { exitOnly: true });
 	}
-	const hostEntry = workerHostEntry();
+	const hostEntry = runtime.capabilities.node ? resolveNodeWorkerHost() : workerHostEntry();
 	const worker = hostEntry
-		? new Worker(hostEntry, { type: "module", argv: [COMPUTER_WORKER_ARG] })
-		: new Worker(new URL("./worker-entry.ts", import.meta.url).href, { type: "module" });
+		? new Worker(hostEntry, {
+				argv: [COMPUTER_WORKER_ARG],
+				execArgv: runtime.capabilities.node ? ["--experimental-vm-modules"] : undefined,
+			})
+		: new Worker(new URL("./worker-entry.ts", import.meta.url));
 	return wrapWorker(worker);
 }
 

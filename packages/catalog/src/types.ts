@@ -313,7 +313,7 @@ export interface OpenAICompat {
 	 * strict chat templates (e.g. Qwen-served via vLLM, MiniMax) accept
 	 * the request. Default: detected per provider/baseUrl. Canonical
 	 * OpenAI/Azure/OpenRouter/Cerebras/Together/Fireworks/Groq/DeepSeek/
-	 * Mistral/xAI/Z.ai/GitHub Copilot/Zenmux are treated as `true`;
+	 * Mistral/xAI/Z.ai/GitHub Copilot are treated as `true`;
 	 * unknown or strict-template hosts default to `false`. Setting this
 	 * to `true` preserves separate blocks, which is preferred for
 	 * KV-cache reuse when the trailing prompt changes between calls.
@@ -762,7 +762,7 @@ export interface AnthropicCompat {
 	/**
 	 * The configured endpoint enforces Anthropic's signature protocol on
 	 * replayed thinking blocks — either the official API itself or a proxy
-	 * that forwards to it (GitHub Copilot, ZenMux, Cloudflare AI Gateway's
+	 * that forwards to it (GitHub Copilot, Cloudflare AI Gateway's
 	 * `/anthropic` route, Google Vertex's `publishers/anthropic/…`).
 	 * Downstream transforms strip stale cross-model thinking signatures on
 	 * these endpoints so the signing proxy doesn't 400 with

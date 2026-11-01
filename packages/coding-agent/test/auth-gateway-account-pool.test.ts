@@ -46,7 +46,7 @@ describe("auth-gateway account pool", () => {
 		});
 		brokerStorage = new AuthStorage(brokerStore);
 		await brokerStorage.credentials.reload();
-		handle = startAuthBroker({
+		handle = await startAuthBroker({
 			storage: brokerStorage,
 			bind: "127.0.0.1:0",
 			bearerTokens: [BROKER_TOKEN],

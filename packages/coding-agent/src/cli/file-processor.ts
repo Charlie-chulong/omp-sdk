@@ -4,7 +4,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ImageContent } from "@oh-my-pi/pi-ai";
-import { getProjectDir, isEnoent, readImageMetadata } from "@oh-my-pi/pi-utils";
+import { encodeBase64, getProjectDir, isEnoent, readImageMetadata } from "@oh-my-pi/pi-utils";
 import chalk from "@oh-my-pi/pi-utils/chalk";
 import { resolveReadPath } from "../tools/path-utils";
 import { formatBytes } from "@oh-my-pi/pi-tui/render/render-utils";
@@ -101,7 +101,7 @@ export async function processFileArguments(fileArgs: string[], options?: Process
 
 		if (mimeType) {
 			// Handle image file
-			const base64Content = buffer.toBase64();
+			const base64Content = encodeBase64(buffer);
 			let attachment: ImageContent;
 			let dimensionNote: string | undefined;
 

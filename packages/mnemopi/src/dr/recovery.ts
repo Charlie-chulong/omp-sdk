@@ -1,4 +1,5 @@
-import type { Database } from "bun:sqlite";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
+import type { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import {
 	copyFileSync,
 	existsSync,
@@ -90,7 +91,7 @@ function timestampForBackup(now = new Date()): string {
 }
 
 function sha256Hex16(bytes: Uint8Array): string {
-	return Bun.SHA256.hash(bytes, "hex").slice(0, 16);
+	return runtime.SHA256.hash(bytes, "hex").slice(0, 16);
 }
 
 function nextUniqueToken(): string {

@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import * as fs from "node:fs/promises";
 import type { ServiceTier, Usage } from "@oh-my-pi/pi-ai";
 import { pricingPeerFor } from "@oh-my-pi/pi-catalog/compat/behavior";

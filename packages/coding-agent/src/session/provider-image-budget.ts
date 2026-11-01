@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type {
 	Context,
 	DeveloperMessage,
@@ -336,7 +337,7 @@ const IMAGE_DECODE_CACHE_MAX_ENTRIES = 512;
 const imageDecodeFailures = new LRUCache<string, string | null>({ max: IMAGE_DECODE_CACHE_MAX_ENTRIES });
 
 async function unreadableImageReason(image: ImageContent): Promise<string | null> {
-	const key = `${image.mimeType}:${image.data.length}:${String(Bun.hash(image.data))}`;
+	const key = `${image.mimeType}:${image.data.length}:${String(runtime.hash(image.data))}`;
 	const cached = imageDecodeFailures.get(key);
 	if (cached !== undefined) return cached;
 	const reason = await imageDecodeFailureReason(image);

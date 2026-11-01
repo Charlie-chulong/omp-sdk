@@ -12,7 +12,7 @@ import { getAgentDir, getProjectDir, isEnoent, logger } from "@oh-my-pi/pi-utils
 import { getConfigDirs } from "../../config";
 
 import { execCommand } from "../../exec/exec";
-import { getCodingAgentApi } from "../host-api";
+import { getCodingAgentApi } from "#coding-agent-host-api";
 import * as typebox from "../legacy-typebox";
 import { GreenCommand } from "./bundled/ci-green";
 import { AnnotateCommand } from "./bundled/annotate";

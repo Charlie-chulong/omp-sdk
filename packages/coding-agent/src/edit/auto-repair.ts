@@ -16,6 +16,7 @@
 import { completeSimple, retryTransientCompletion } from "@oh-my-pi/pi-ai";
 import { diffLineRuns, editDiffString, parseCodeStatus } from "@oh-my-pi/pi-natives";
 import { logger, prompt } from "@oh-my-pi/pi-utils";
+import { runtime as platformRuntime } from "@oh-my-pi/pi-utils/runtime";
 import { resolveRoleSelection } from "../config/model-resolver";
 import type { WritethroughCallback } from "../lsp";
 import type { ToolSession } from "../tools";
@@ -358,7 +359,7 @@ export async function attemptEditAutoRepair(options: {
 	// observation — and may even have restored the parse.
 	let current: string;
 	try {
-		current = await Bun.file(snapshot.path).text();
+		current = await platformRuntime.file(snapshot.path).text();
 	} catch {
 		return undefined;
 	}
@@ -406,7 +407,7 @@ export async function attemptEditAutoRepair(options: {
 	const repair = await repairParseRegression({ ...snapshot, next: current }, complete);
 	if (!repair) return undefined;
 
-	await writethrough(snapshot.path, repair.content, options.signal, Bun.file(snapshot.path));
+	await writethrough(snapshot.path, repair.content, options.signal, platformRuntime.file(snapshot.path));
 	logger.debug("Edit auto-repair applied", {
 		path: snapshot.path,
 		attempts: repair.attempts,

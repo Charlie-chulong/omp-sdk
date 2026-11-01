@@ -22,7 +22,12 @@ interface Broker {
 async function startBroker(dir: string, apiKey: string): Promise<Broker> {
 	const storage = new AuthStorage(await SqliteAuthCredentialStore.open(path.join(dir, `${apiKey}.db`)));
 	await storage.credentials.set(PROVIDER, { type: "api_key", key: apiKey });
-	const handle = startAuthBroker({ storage, bind: "127.0.0.1:0", bearerTokens: [TOKEN], disableRefresher: true });
+	const handle = await startAuthBroker({
+		storage,
+		bind: "127.0.0.1:0",
+		bearerTokens: [TOKEN],
+		disableRefresher: true,
+	});
 	return { handle, storage };
 }
 

@@ -1,3 +1,4 @@
+import { encodeBase64 } from "@oh-my-pi/pi-utils";
 import { afterEach, describe, expect, test } from "bun:test";
 import * as vm from "node:vm";
 import { type Document, Element, parseHTML } from "@oh-my-pi/pi-utils/dom";
@@ -49,7 +50,7 @@ function renderSession(entries: unknown[], leafId: string, subSessions?: Record<
 	});
 	const sessionData = document.getElementById("session-data");
 	if (!sessionData) throw new Error("Export template is missing session data");
-	sessionData.textContent = Buffer.from(
+	sessionData.textContent = encodeBase64(Buffer.from(
 		JSON.stringify({
 			header: {
 				type: "session",
@@ -62,7 +63,7 @@ function renderSession(entries: unknown[], leafId: string, subSessions?: Record<
 			leafId,
 			subSessions,
 		}),
-	).toBase64();
+	));
 	Object.defineProperty(window, "location", {
 		value: new URL("https://example.test/export.html"),
 		configurable: true,

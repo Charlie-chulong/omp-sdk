@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Marketplace catalog fetcher.
  *
@@ -233,7 +234,7 @@ async function readMarketplaceCatalog(
 		const displayPath = options.relativeDisplayPaths ? rel : catalogPath;
 		tried.push(displayPath);
 		try {
-			const content = await Bun.file(catalogPath).text();
+			const content = await runtime.file(catalogPath).text();
 			return { catalogPath, displayPath, content };
 		} catch (err) {
 			if (isEnoent(err)) continue;

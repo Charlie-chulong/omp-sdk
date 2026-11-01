@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * LSP-based linter client.
  * Uses the Language Server Protocol for formatting and diagnostics.
@@ -74,7 +75,7 @@ export class LspLinterClient implements LinterClient {
 			if (publishedDiagnostics !== undefined) {
 				return publishedDiagnostics.diagnostics;
 			}
-			await untilAborted(signal, () => Bun.sleep(100));
+			await untilAborted(signal, () => runtime.sleep(100));
 		}
 
 		return client.diagnostics.get(uri)?.diagnostics ?? [];

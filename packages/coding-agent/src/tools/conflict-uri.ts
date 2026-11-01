@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * `conflict://` reads and writes against the session's {@link ConflictHistory}:
  * rendering a registered marker block (or one side of it) with its original
@@ -147,7 +148,7 @@ async function resolveConflict(
 	}
 
 	const expanded = expandContentTokens(replacementContent, entry);
-	const originalText = await Bun.file(absolutePath).text();
+	const originalText = await runtime.file(absolutePath).text();
 	const splice = spliceConflict(originalText, entry, expanded);
 	const newContent = splice.text;
 
@@ -373,7 +374,7 @@ async function resolveAllConflicts(
 		const resolvedEntries: ConflictEntry[] = [];
 		let failure: string | undefined;
 		try {
-			text = await Bun.file(absolutePath).text();
+			text = await runtime.file(absolutePath).text();
 		} catch (error) {
 			failedFiles.push({
 				displayPath: sample.displayPath,

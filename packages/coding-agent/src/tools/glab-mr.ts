@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { isEnoent, logger } from "@oh-my-pi/pi-utils";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import type { Settings } from "../config/settings";
@@ -58,7 +59,7 @@ async function assertGitlabHostTrustedForEnvToken(host: string, cwd: string, sig
 	}
 	if (trusted.has(host)) return;
 	try {
-		const config = Bun.YAML.parse(await Bun.file(getGlabConfigPath()).text()) as { hosts?: unknown } | null;
+		const config = runtime.YAML.parse(await runtime.file(getGlabConfigPath()).text()) as { hosts?: unknown } | null;
 		if (config && typeof config.hosts === "object" && config.hosts !== null) {
 			for (const name of Object.keys(config.hosts)) trusted.add(name.toLowerCase());
 		}

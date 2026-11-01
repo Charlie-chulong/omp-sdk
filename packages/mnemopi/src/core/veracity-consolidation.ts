@@ -1,4 +1,5 @@
-import type { Database } from "bun:sqlite";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
+import type { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { type DatabasePath, openDatabase } from "../db";
 
 export const VERACITY_WEIGHTS = Object.freeze({
@@ -152,7 +153,7 @@ export function computeFactId(subject: string, predicate: string, object: string
 		if (value === "") throw new RangeError(`compute_fact_id: ${name} must be non-empty`);
 	}
 
-	const hash = new Bun.SHA256();
+	const hash = new runtime.SHA256();
 	for (const value of [subject, predicate, object]) {
 		const bytes = Buffer.from(value.normalize("NFC"), "utf8");
 		hash.update(`${bytes.length}:`).update(bytes);

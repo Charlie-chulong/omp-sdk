@@ -13,6 +13,7 @@ rust_library(
     name = "pi-voice",
     srcs = glob(["src/**/*.rs"]),
     aliases = aliases(),
+    crate_features = ["live"],
     crate_name = "pi_voice",
     edition = "2024",
     proc_macro_deps = all_crate_deps(proc_macro = True),
@@ -23,6 +24,7 @@ rust_library(
 rust_test(
     name = "pi-voice_test",
     crate = ":pi-voice",
+    crate_features = ["live"],
     edition = "2024",
     proc_macro_deps = all_crate_deps(proc_macro_dev = True),
     deps = all_crate_deps(normal_dev = True),

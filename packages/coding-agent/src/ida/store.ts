@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { getAgentDir, peekFile } from "@oh-my-pi/pi-utils";
+import { runtime as platformRuntime } from "@oh-my-pi/pi-utils/runtime";
 import { shortenPath } from "@oh-my-pi/pi-tui/render/render-utils";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 
@@ -126,7 +127,8 @@ export function parseFatSlices(header: Uint8Array): MachOSlice[] | null {
 
 /** Slice table of a fat Mach-O on disk; null when the file is not one. */
 export async function readFatSlices(absPath: string): Promise<MachOSlice[] | null> {
-	const header = await Bun.file(absPath)
+	const header = await platformRuntime
+		.file(absPath)
 		.slice(0, FAT_HEADER_SIZE + MAX_FAT_ARCHS * FAT_ARCH_64_SIZE)
 		.bytes();
 	return parseFatSlices(header);
@@ -221,8 +223,8 @@ async function hashFileContent(absPath: string): Promise<string> {
 	const stat = await fs.promises.stat(absPath);
 	const cached = contentHashes.get(absPath);
 	if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) return cached.sha;
-	const hasher = new Bun.CryptoHasher("sha256");
-	for await (const chunk of Bun.file(absPath).stream()) {
+	const hasher = new platformRuntime.CryptoHasher("sha256");
+	for await (const chunk of platformRuntime.file(absPath).stream()) {
 		hasher.update(chunk);
 	}
 	const sha = hasher.digest("hex");
@@ -244,7 +246,7 @@ export async function locateIdb(sourcePath: string, options: LocateIdbOptions = 
 	}
 
 	if (isIdaDatabasePath(absPath)) {
-		const pathSha = new Bun.CryptoHasher("sha256").update(absPath).digest("hex");
+		const pathSha = new platformRuntime.CryptoHasher("sha256").update(absPath).digest("hex");
 		return {
 			id: `${name}-${pathSha.slice(0, 8)}`,
 			dir: path.dirname(absPath),
@@ -279,7 +281,7 @@ export async function locateIdb(sourcePath: string, options: LocateIdbOptions = 
 export async function prepareStoreDir(loc: IdbLocation): Promise<void> {
 	if (loc.kind === "inplace") {
 		const id0Path = path.join(loc.dir, `${path.basename(loc.openPath, path.extname(loc.openPath))}.id0`);
-		if (await Bun.file(id0Path).exists()) {
+		if (await platformRuntime.file(id0Path).exists()) {
 			throw new ToolError(
 				`${shortenPath(loc.openPath)} appears open in IDA (unpacked .id0 present); close it in IDA first`,
 			);
@@ -290,16 +292,16 @@ export async function prepareStoreDir(loc: IdbLocation): Promise<void> {
 
 	const stagedName = sanitizeIdbName(path.basename(loc.sourcePath));
 	const staged = path.join(loc.dir, stagedName);
-	if (!(await Bun.file(staged).exists())) {
+	if (!(await platformRuntime.file(staged).exists())) {
 		if (loc.fat) {
 			// IDA's loader would silently take the first slice of a fat file; stage the chosen thin Mach-O instead.
 			const { arch, offset, size } = loc.fat.slice;
-			const source = Bun.file(loc.sourcePath);
+			const source = platformRuntime.file(loc.sourcePath);
 			if (offset + size > source.size) {
 				throw new ToolError(`${shortenPath(loc.sourcePath)}: ${arch} slice extends past end of file`);
 			}
-			// Materialize the bytes: `Bun.write` of a sliced BunFile copies the whole source file.
-			await Bun.write(staged, await source.slice(offset, offset + size).bytes());
+			// Materialize the selected slice so both backends stage only its bytes.
+			await platformRuntime.write(staged, await source.slice(offset, offset + size).bytes());
 		} else {
 			await fs.promises.copyFile(loc.sourcePath, staged, fs.constants.COPYFILE_FICLONE);
 		}

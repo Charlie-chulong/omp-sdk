@@ -1,8 +1,9 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { Dirent } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { $which, logger } from "@oh-my-pi/pi-utils";
-import { $ } from "bun";
+import { $ } from "@oh-my-pi/pi-utils/runtime";
 
 /**
  * Upper bound on the identity probe. A live dashboard ingests on its main thread
@@ -80,7 +81,7 @@ async function findLinuxPortHolder(port: number): Promise<PortHolder | null> {
 	for (const tablePath of ["/proc/net/tcp", "/proc/net/tcp6"]) {
 		let table: string;
 		try {
-			table = await Bun.file(tablePath).text();
+			table = await runtime.file(tablePath).text();
 		} catch {
 			continue;
 		}
@@ -129,7 +130,7 @@ async function findLinuxPortHolder(port: number): Promise<PortHolder | null> {
 
 		let commandLine = "";
 		try {
-			const rawCommandLine = await Bun.file(`/proc/${pid}/cmdline`).text();
+			const rawCommandLine = await runtime.file(`/proc/${pid}/cmdline`).text();
 			commandLine = rawCommandLine.split("\0").filter(Boolean).join(" ");
 		} catch {}
 
@@ -145,7 +146,7 @@ async function findLinuxPortHolder(port: number): Promise<PortHolder | null> {
 }
 
 async function findMacPortHolder(port: number): Promise<PortHolder | null> {
-	const lsof = $which("lsof") ?? ((await Bun.file("/usr/sbin/lsof").exists()) ? "/usr/sbin/lsof" : null);
+	const lsof = $which("lsof") ?? ((await runtime.file("/usr/sbin/lsof").exists()) ? "/usr/sbin/lsof" : null);
 	if (!lsof) return null;
 
 	const selector = `-iTCP:${port}`;
@@ -228,7 +229,7 @@ async function terminatePortHolder(holder: PortHolder): Promise<void> {
 	}
 
 	for (let attempt = 0; attempt < PROCESS_EXIT_POLLS; attempt++) {
-		await Bun.sleep(PROCESS_EXIT_POLL_MS);
+		await runtime.sleep(PROCESS_EXIT_POLL_MS);
 		try {
 			process.kill(holder.pid, 0);
 		} catch (error) {
@@ -243,7 +244,7 @@ async function terminatePortHolder(holder: PortHolder): Promise<void> {
 		if (error instanceof Error && "code" in error && error.code === "ESRCH") return;
 		throw new Error(`Failed to kill ${holder.image} (PID ${holder.pid})`, { cause: error });
 	}
-	await Bun.sleep(PROCESS_EXIT_POLL_MS);
+	await runtime.sleep(PROCESS_EXIT_POLL_MS);
 }
 
 /**

@@ -31,6 +31,7 @@ pub mod applefm;
 pub mod ast;
 pub mod audio;
 pub mod block;
+mod capabilities;
 pub mod clipboard;
 pub mod crash_handler;
 pub mod desktop;
@@ -51,6 +52,7 @@ pub mod ipc;
 pub mod js;
 pub mod keys;
 pub mod line_match;
+#[cfg(feature = "live-voice")]
 pub mod live;
 pub mod memory;
 pub mod mermaid;

@@ -9,7 +9,7 @@ import * as path from "node:path";
 import type { VcsGitRepo, VcsNumstatEntry } from "@oh-my-pi/pi-natives";
 import { DiffSide, DiffStream, type DiffStreamProgress, rasterizeSvg } from "@oh-my-pi/pi-natives";
 import * as vcs from "@oh-my-pi/pi-natives/vcs";
-import { BINARY_SNIFF_BYTES, isEnoent, isProbablyBinaryHeader } from "@oh-my-pi/pi-utils";
+import { BINARY_SNIFF_BYTES, encodeBase64, isEnoent, isProbablyBinaryHeader } from "@oh-my-pi/pi-utils";
 import type { NumstatEntry } from "../../commit/types";
 import {
 	DIFF_CONTEXT_LINES,
@@ -143,10 +143,6 @@ function imageMimeType(format: Bun.Image.Format): string {
 	}
 }
 
-function bytesToBase64(bytes: Uint8Array): string {
-	return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
-}
-
 async function decodeReviewImage(
 	bytes: Uint8Array,
 	options: { filePath: string; lfsOid?: string },
@@ -157,7 +153,7 @@ async function decodeReviewImage(
 			const png = await rasterizeSvg(bytes, SVG_PREVIEW_MAX_PX, SVG_PREVIEW_MAX_PX);
 			const metadata = await new Bun.Image(png, { maxPixels: MAX_IMAGE_PIXELS }).metadata();
 			return {
-				data: bytesToBase64(png),
+				data: encodeBase64(png),
 				mimeType: "image/png",
 				sourceMimeType: "image/svg+xml",
 				widthPx: metadata.width,
@@ -174,7 +170,7 @@ async function decodeReviewImage(
 		const image = new Bun.Image(bytes, { maxPixels: MAX_IMAGE_PIXELS });
 		const metadata = await image.metadata();
 		return {
-			data: metadata.format === "png" ? bytesToBase64(bytes) : await image.png().toBase64(),
+			data: metadata.format === "png" ? encodeBase64(bytes) : await image.png().toBase64(),
 			mimeType: "image/png",
 			sourceMimeType: imageMimeType(metadata.format),
 			widthPx: metadata.width,

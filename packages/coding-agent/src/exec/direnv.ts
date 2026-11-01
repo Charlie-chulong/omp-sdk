@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { inflateSync } from "node:zlib";
@@ -188,11 +189,11 @@ let cleanSpawnEnvCache: { size: number; checksum: number; env: Record<string, st
 function envChecksum(): { size: number; checksum: number } {
 	let size = 0;
 	let checksum = 0;
-	for (const key in Bun.env) {
+	for (const key in process.env) {
 		if (key.startsWith("DIRENV_")) continue;
 		size++;
 		for (let i = 0; i < key.length; i++) checksum = (checksum * 31 + key.charCodeAt(i)) | 0;
-		const value = Bun.env[key];
+		const value = process.env[key];
 		if (typeof value === "string") {
 			checksum = (checksum * 31 + value.length) | 0;
 			for (let i = 0; i < value.length; i++) checksum = (checksum * 31 + value.charCodeAt(i)) | 0;
@@ -206,7 +207,7 @@ function cleanSpawnEnv(): Record<string, string> {
 	const cached = cleanSpawnEnvCache;
 	if (cached !== undefined && cached.size === size && cached.checksum === checksum) return cached.env;
 	const out: Record<string, string> = {};
-	for (const [key, value] of Object.entries(Bun.env)) {
+	for (const [key, value] of Object.entries(process.env)) {
 		if (value !== undefined && !key.startsWith("DIRENV_")) out[key] = value;
 	}
 	cleanSpawnEnvCache = { size, checksum, env: out };
@@ -226,7 +227,7 @@ async function runDirenv(
 	const abortSignal = signal
 		? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
 		: AbortSignal.timeout(timeoutMs);
-	const proc = Bun.spawn([bin, ...args], {
+	const proc = runtime.spawn([bin, ...args], {
 		cwd,
 		env,
 		stdout: "pipe",

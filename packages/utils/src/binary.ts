@@ -12,7 +12,27 @@
  * if (await isProbablyBinary(path)) return "[binary file omitted]";
  * const text = await Bun.file(path).text();
  */
+import { Buffer } from "node:buffer";
 import { peekFile, peekFileSync } from "./peek-file";
+
+/** Encode only the visible bytes, without copying the backing buffer. */
+export function encodeBase64(bytes: Uint8Array): string {
+	return (Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)).toString(
+		"base64",
+	);
+}
+
+const BASE64_BYTES = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}(?:==)?|[A-Za-z0-9+/]{3}=?)?$/;
+const BASE64URL_BYTES = /^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-]{2}(?:==)?|[A-Za-z0-9_-]{3}=?)?$/;
+
+/** Decode with Uint8Array.fromBase64's default loose final-quantum syntax. */
+export function decodeBase64Bytes(data: string, alphabet: "base64" | "base64url" = "base64"): Buffer<ArrayBuffer> {
+	const compact = data.replace(/[\t\n\f\r ]/g, "");
+	if (!(alphabet === "base64url" ? BASE64URL_BYTES : BASE64_BYTES).test(compact)) {
+		throw new SyntaxError("Invalid base64 data");
+	}
+	return Buffer.from(compact, alphabet);
+}
 
 /**
  * Header window sniffed for the binary heuristic; mirrors git's 8000-byte scan.

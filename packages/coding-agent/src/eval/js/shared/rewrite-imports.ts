@@ -1,4 +1,7 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type * as BabelParser from "@babel/parser";
+import { createRequire } from "node:module";
+import type * as CompilerModule from "@ts-morph/common";
 
 // Static ESM `import` declarations are not valid inside vm.runInContext (script-mode parsing),
 // and dynamic `import(...)` would otherwise resolve specifiers against the worker module's URL
@@ -175,7 +178,7 @@ function buildCellSyntaxError(code: string, error: unknown): SyntaxError | undef
 			// Keep tabs so the caret lines up with the source line above it.
 			let pad = "";
 			for (const char of text.slice(0, caretColumn)) {
-				pad += char === "\t" ? char : " ".repeat(Bun.stringWidth(char));
+				pad += char === "\t" ? char : " ".repeat(runtime.stringWidth(char));
 			}
 			frame.push(`${" ".repeat(gutterWidth)} | ${pad}^`);
 		}
@@ -1154,14 +1157,42 @@ async function requiresAsyncWrapper(code: string): Promise<boolean> {
  */
 type TypeScriptStripLoader = "ts" | "tsx";
 
-const TS_TRANSPILER = new Bun.Transpiler({ loader: "ts" });
-const TSX_TRANSPILER = new Bun.Transpiler({ loader: "tsx" });
+const TS_TRANSPILER = typeof Bun === "undefined" ? undefined : new Bun.Transpiler({ loader: "ts" });
+const TSX_TRANSPILER = typeof Bun === "undefined" ? undefined : new Bun.Transpiler({ loader: "tsx" });
+const compilerRequire = createRequire(import.meta.url);
+let nodeCompiler: typeof CompilerModule.ts | undefined;
 
 function stripTypeScript(code: string, options: { force?: boolean; loader?: TypeScriptStripLoader } = {}): string {
 	if (!options.force && !LOOKS_LIKE_TS.test(code)) return code;
+	const transpiler = options.loader === "tsx" ? TSX_TRANSPILER : TS_TRANSPILER;
+	if (!transpiler && !nodeCompiler) {
+		// The installed package exposes the same compiler namespace used by our build tooling.
+		const module: typeof CompilerModule = compilerRequire("@ts-morph/common");
+		nodeCompiler = module.ts;
+	}
 	try {
-		const transpiler = options.loader === "tsx" ? TSX_TRANSPILER : TS_TRANSPILER;
-		return transpiler.transformSync(code);
+		if (transpiler) return transpiler.transformSync(code);
+		const ts = nodeCompiler!;
+		const result = ts.transpileModule(code, {
+			fileName: options.loader === "tsx" ? "cell.tsx" : "cell.ts",
+			compilerOptions: {
+				target: ts.ScriptTarget.ESNext,
+				module: ts.ModuleKind.ESNext,
+				jsx: ts.JsxEmit.ReactJSX,
+				verbatimModuleSyntax: true,
+			},
+			reportDiagnostics: true,
+		});
+		const errors = result.diagnostics?.filter(diagnostic => diagnostic.category === ts.DiagnosticCategory.Error);
+		if (errors?.length)
+			throw new SyntaxError(
+				ts.formatDiagnosticsWithColorAndContext(errors, {
+					getCanonicalFileName: name => name,
+					getCurrentDirectory: () => process.cwd(),
+					getNewLine: () => "\n",
+				}),
+			);
+		return result.outputText;
 	} catch {
 		// Transpiler failed (e.g. unrecoverable syntax). Hand the original source back so the
 		// downstream rewriter / VM surfaces the real error to the user.

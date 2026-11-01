@@ -1,4 +1,4 @@
-import { $env } from "@oh-my-pi/pi-utils";
+import { $env } from "@oh-my-pi/pi-utils/env";
 import * as AIError from "../error";
 import type { LocalWorkSource } from "./event-stream";
 

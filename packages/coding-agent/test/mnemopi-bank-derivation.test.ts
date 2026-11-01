@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";

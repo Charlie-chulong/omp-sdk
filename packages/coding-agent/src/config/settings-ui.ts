@@ -17,7 +17,8 @@ import { cfgMemoryBackend } from "../memory-backend/settings";
 import { cfgTuiVimMode } from "../modes/settings";
 import { cfgAdvisorEnabled } from "../advisor/settings";
 import { cfgContextFilesExtra } from "../session/context-settings";
-import { cfgToolsRestrictedFolders } from "../tools/settings";
+import { cfgToolsApprovalMode, cfgToolsRestrictedFolders } from "../tools/settings";
+import type { ApprovalMode } from "../tools/approval";
 
 /** Condition over the global settings; hidden (false) until they are initialized. */
 function whenSettings(test: (settings: Settings) => boolean): () => boolean {
@@ -55,7 +56,10 @@ function envNote(setting: AnySetting): string {
  * edits the value of the settings layers, never an environment-supplied one (so an env credential
  * is never pre-filled or written to config); descriptions note an active environment variable.
  */
-export function createSettingsHost(): SettingsHost {
+export function createSettingsHost(session?: {
+	readonly approvalMode: ApprovalMode;
+	setApprovalMode(mode: ApprovalMode): void;
+}): SettingsHost {
 	const entries: SettingsDisplayEntry[] = [];
 	for (const tab of SETTING_TABS) {
 		for (const setting of orderedSettings()) {
@@ -80,8 +84,12 @@ export function createSettingsHost(): SettingsHost {
 	};
 	return {
 		entries,
-		get: path => lookup(path)?.layered(settings),
-		set: (path, value) => resolve(path).set(settings, value),
+		get: path =>
+			path === cfgToolsApprovalMode.id && session ? session.approvalMode : lookup(path)?.layered(settings),
+		set: (path, value) => {
+			resolve(path).set(settings, value);
+			if (path === cfgToolsApprovalMode.id && session) session.setApprovalMode(value as ApprovalMode);
+		},
 		unset: path => resolve(path).unset(settings),
 		normalizeProviderLimits: normalizeProviderMaxInFlightRequests,
 		validateProviderLimits: validateProviderMaxInFlightRequests,

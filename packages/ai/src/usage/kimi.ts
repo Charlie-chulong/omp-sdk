@@ -1,5 +1,5 @@
 import { toNumber } from "@oh-my-pi/pi-catalog/utils";
-import { $env } from "@oh-my-pi/pi-utils";
+import { $env } from "@oh-my-pi/pi-utils/env";
 import { getKimiCommonHeaders } from "../registry/oauth/kimi";
 import type {
 	CredentialRankingStrategy,

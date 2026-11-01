@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -248,9 +249,9 @@ export const handleYouTube: SpecialHandler = async (
 		// The metadata spawn already wrote English manual subtitles next to tmpBase
 		if (hasManualSubs) {
 			// Find the downloaded subtitle file using glob
-			const subFiles = await Array.fromAsync(new Bun.Glob(`${tmpBase}*.vtt`).scan({ absolute: true }));
+			const subFiles = await Array.fromAsync(new runtime.Glob(`${tmpBase}*.vtt`).scan({ absolute: true }));
 			if (subFiles.length > 0) {
-				const vttContent = await Bun.file(subFiles[0]).text();
+				const vttContent = await runtime.file(subFiles[0]).text();
 				transcript = cleanVttToText(vttContent);
 				transcriptSource = "manual";
 				notes.push("Using manual subtitles");
@@ -281,9 +282,9 @@ export const handleYouTube: SpecialHandler = async (
 			);
 
 			if (autoResult.ok) {
-				const subFiles = await Array.fromAsync(new Bun.Glob(`${tmpBase}*.vtt`).scan({ absolute: true }));
+				const subFiles = await Array.fromAsync(new runtime.Glob(`${tmpBase}*.vtt`).scan({ absolute: true }));
 				if (subFiles.length > 0) {
-					const vttContent = await Bun.file(subFiles[0]).text();
+					const vttContent = await runtime.file(subFiles[0]).text();
 					transcript = cleanVttToText(vttContent);
 					transcriptSource = "auto-generated";
 					notes.push("Using auto-generated captions");
@@ -292,7 +293,7 @@ export const handleYouTube: SpecialHandler = async (
 		}
 	} finally {
 		// Cleanup temp files (fire-and-forget with error suppression)
-		Array.fromAsync(new Bun.Glob(`${tmpBase}*`).scan({ absolute: true }))
+		Array.fromAsync(new runtime.Glob(`${tmpBase}*`).scan({ absolute: true }))
 			.then(tmpFiles => Promise.all(tmpFiles.map(f => fs.unlink(f).catch(() => {}))))
 			.catch(() => {});
 	}

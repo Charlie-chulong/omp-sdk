@@ -1,3 +1,4 @@
+import { runtime as platformRuntime } from "@oh-my-pi/pi-utils/runtime";
 import { decodeJwt } from "@oh-my-pi/pi-ai/registry/oauth/openai-codex";
 import * as vcs from "@oh-my-pi/pi-natives/vcs";
 import type { AuthStorage } from "../session/auth-storage";
@@ -482,7 +483,7 @@ function normalizeFinding(
 	const title = requiredString(commit.title ?? raw.title, "finding title");
 	const ruleId =
 		optionalString(commit.rule_id) ??
-		`codex-security:${Bun.SHA256.hash(title.trim().toLowerCase(), "hex").slice(0, 16)}`;
+		`codex-security:${platformRuntime.SHA256.hash(title.trim().toLowerCase(), "hex").slice(0, 16)}`;
 	const category = optionalString(commit.category) ?? "codex-security";
 	const cloudId = requiredString(raw.hid ?? raw.id, "finding id");
 	const preliminary = locationsAndEvidence(commit, cloudId);
@@ -647,7 +648,7 @@ export async function pullCodexSecurityCloudResults(
 				displayName: configuration.repositoryUrl,
 				includePaths: [],
 				excludePaths: [],
-				treeDigest: Bun.SHA256.hash(`${configuration.repositoryUrl}\0${revision ?? "unknown"}`, "hex"),
+				treeDigest: platformRuntime.SHA256.hash(`${configuration.repositoryUrl}\0${revision ?? "unknown"}`, "hex"),
 			},
 			producer,
 			provenance: {

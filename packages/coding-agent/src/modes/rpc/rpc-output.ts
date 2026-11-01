@@ -1,13 +1,13 @@
 import * as fs from "node:fs";
 import type { Writable } from "node:stream";
 import { logger, TempDir } from "@oh-my-pi/pi-utils";
-import type { BunFile } from "bun";
+import { runtime, type RuntimeFile } from "@oh-my-pi/pi-utils/runtime";
 
 const READ_BYTES = 64 * 1024;
 
 interface Spool {
 	dir: TempDir;
-	file: BunFile;
+	file: RuntimeFile;
 	fd: number;
 	read: number;
 	written: number;
@@ -72,7 +72,7 @@ export class RpcOutputWriter {
 			const dir = TempDir.createSync("@omp-rpc-output-");
 			try {
 				const file = dir.join("output");
-				const handle = Bun.file(file);
+				const handle = runtime.file(file);
 				const fd = fs.openSync(file, fs.constants.O_RDWR | fs.constants.O_CREAT | fs.constants.O_EXCL, 0o600);
 				this.#spool = { dir, file: handle, fd, read: 0, written: 0 };
 			} catch (error) {

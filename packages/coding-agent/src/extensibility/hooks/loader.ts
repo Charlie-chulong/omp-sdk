@@ -8,7 +8,7 @@ import { logger } from "@oh-my-pi/pi-utils";
 import { hookCapability } from "../../capability/hook";
 import type { Hook } from "../../discovery";
 import { loadCapability } from "../../discovery";
-import { getCodingAgentApi } from "../host-api";
+import { getCodingAgentApi } from "#coding-agent-host-api";
 import type { CustomMessagePayload } from "../../session/messages";
 import * as typebox from "../legacy-typebox";
 import { resolvePath, withHostGuard } from "../utils";

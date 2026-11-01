@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Native judgment client: the {@link Judge} backend for catalog models whose
  * API answers typed questions directly ({@link isJudgmentApi}).
@@ -523,7 +524,7 @@ export class NativeJudge implements Judge {
 				);
 			} catch (error) {
 				if (signal?.aborted || attempt + 1 >= MAX_ATTEMPTS) throw error;
-				await Bun.sleep(backoffMs(attempt, undefined));
+				await runtime.sleep(backoffMs(attempt, undefined));
 				continue;
 			}
 			if (response.ok) return await response.json();
@@ -533,7 +534,7 @@ export class NativeJudge implements Judge {
 			});
 			const transient = response.status === 408 || response.status === 429 || response.status >= 500;
 			if (!transient || attempt + 1 >= MAX_ATTEMPTS) throw error;
-			await Bun.sleep(backoffMs(attempt, response.headers));
+			await runtime.sleep(backoffMs(attempt, response.headers));
 		}
 	}
 }

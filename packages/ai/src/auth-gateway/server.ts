@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * omp auth-gateway router and HTTP server.
  *
@@ -31,7 +32,7 @@
 import { Effort } from "@oh-my-pi/pi-catalog/effort";
 import { clampThinkingLevelForModel, getSupportedEfforts } from "@oh-my-pi/pi-catalog/model-thinking";
 import { type ModelKind, modelKind } from "@oh-my-pi/pi-catalog/types";
-import { logger } from "@oh-my-pi/pi-utils";
+import * as logger from "@oh-my-pi/pi-utils/logger";
 import { classifyGatewayError } from "../error/gateway";
 import * as anthropicMessages from "../providers/anthropic-messages-server";
 import * as openaiChat from "../providers/openai-chat-server";
@@ -1017,7 +1018,7 @@ export function createAuthGatewayRouter(hostOpts: AuthGatewayRouteOptions): Auth
 	return { route, close: () => sessionStates.close() };
 }
 
-export function startAuthGateway(opts: AuthGatewayBootOptions): AuthGatewayServerHandle {
+export async function startAuthGateway(opts: AuthGatewayBootOptions): Promise<AuthGatewayServerHandle> {
 	const bind = parseBind(opts.bind ?? DEFAULT_AUTH_GATEWAY_BIND);
 	const tokens = new Set<string>(opts.bearerTokens);
 	const clients = new AuthGatewayClientTable(opts.storage.sessions, tokens);
@@ -1027,7 +1028,7 @@ export function startAuthGateway(opts: AuthGatewayBootOptions): AuthGatewayServe
 	const version = opts.version;
 	const router = createAuthGatewayRouter(opts);
 
-	const server = Bun.serve({
+	const server = await runtime.serve({
 		hostname: bind.hostname,
 		port: bind.port,
 		fetch: async (req, server): Promise<Response> => {
@@ -1084,7 +1085,7 @@ export function startAuthGateway(opts: AuthGatewayBootOptions): AuthGatewayServe
 		port: boundPort,
 		hostname: boundHost,
 		close: async () => {
-			server.stop(true);
+			await server.stop(true);
 			// Drain after the listener is down: the retained provider states own
 			// sockets and timers (Codex WebSockets, GitLab Duo workflows), so the
 			// process can't settle until each one is closed.

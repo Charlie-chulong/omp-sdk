@@ -1,7 +1,8 @@
 /**
- * Bun JavaScriptCore remote inspector control.
+ * Runtime remote inspector control (JavaScriptCore on Bun, V8 on Node).
  *
  * Wraps `bun:jsc`'s `startRemoteDebugger`, which exposes JavaScriptCore's
+ * Node uses its built-in inspector; Bun retains the behavior described below.
  * built-in WebKit RemoteInspectorServer over a raw socket. The API is one-shot
  * and rough around the edges (Bun documents it as untested, "may not be
  * supported yet on macOS"):
@@ -14,7 +15,10 @@
  *     probe rather than by whether the call threw.
  */
 
-import { startRemoteDebugger } from "bun:jsc";
+import { createRequire } from "node:module";
+import type * as Inspector from "node:inspector";
+import type * as Jsc from "bun:jsc";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as net from "node:net";
 
 const DEFAULT_HOST = "127.0.0.1";
@@ -34,10 +38,21 @@ let starting: Promise<RemoteDebuggerInfo> | null = null;
 /** Underlying starter signature; tests inject a disposable listener in its place. */
 export type RemoteDebuggerStarter = (host: string, port: number) => void;
 
+const debuggerRequire = createRequire(import.meta.url);
+const startRuntimeDebugger: RemoteDebuggerStarter = (host, port) => {
+	if (typeof Bun === "undefined") {
+		const inspector: typeof Inspector = debuggerRequire("node:inspector");
+		inspector.open(port, host, false);
+	} else {
+		const jsc: typeof Jsc = debuggerRequire("bun:jsc");
+		jsc.startRemoteDebugger(host, port);
+	}
+};
+
 export interface StartRemoteDebuggerOptions {
 	/** Explicit port; when omitted a free port is reserved automatically. */
 	port?: number;
-	/** Override the JSC starter. Defaults to `bun:jsc`'s `startRemoteDebugger`. */
+	/** Override the runtime's native inspector starter. */
 	start?: RemoteDebuggerStarter;
 }
 
@@ -88,7 +103,7 @@ async function waitForListening(host: string, port: number): Promise<boolean> {
 	const deadline = Date.now() + PROBE_DEADLINE_MS;
 	do {
 		if (await tryConnect(host, port, PROBE_INTERVAL_MS)) return true;
-		await Bun.sleep(PROBE_INTERVAL_MS);
+		await runtime.sleep(PROBE_INTERVAL_MS);
 	} while (Date.now() < deadline);
 	return false;
 }
@@ -112,7 +127,7 @@ export async function startRemoteDebuggerServer(options: StartRemoteDebuggerOpti
 	}
 }
 
-async function launch({ port, start = startRemoteDebugger }: StartRemoteDebuggerOptions): Promise<RemoteDebuggerInfo> {
+async function launch({ port, start = startRuntimeDebugger }: StartRemoteDebuggerOptions): Promise<RemoteDebuggerInfo> {
 	const host = DEFAULT_HOST;
 	const chosen = port ?? (await reserveFreePort(host));
 

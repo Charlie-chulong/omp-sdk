@@ -42,6 +42,8 @@ The canonical global file is YAML at `config.yml`; `config.yaml` is accepted as 
 
 Use the interactive `/settings` panel inside a session, or the `omp config` command from a shell. The CLI reads effective values including setting environment variables. The panel shows and edits merged settings-layer values, not environment-supplied values; descriptions note active env overrides so env credentials are never pre-filled or persisted. Ordinary persistent writes land in the **global** file; model-selector role changes are the exception when `modelRoleStorage: project` (see [Where writes go](#where-writes-go)).
 
+**Tool Approval** (Interaction → Approvals) takes effect immediately in the running session, even when startup flags supplied the initial mode, and saves the selected global default. Use [`/permissions`](./approval-mode.md#changing-a-running-session) for a session-only change without restarting work.
+
 ```bash
 omp config list                 # all settings with current effective values
 omp config list --json          # same, machine-readable

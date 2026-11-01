@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Cross-process contract for the machine-global text-prediction daemon.
  *
@@ -37,7 +38,7 @@ export function textPredictReadyBanner(endpoint: string): string {
  * tests) get separate daemons because history and learned state are per agent dir.
  */
 export function textPredictDaemon(runtimeDir: string, agentDir: string): { name: string; endpoint: string } {
-	const key = Bun.hash.wyhash(path.resolve(agentDir)).toString(16).padStart(16, "0").slice(0, 12);
+	const key = runtime.hash.wyhash(path.resolve(agentDir)).toString(16).padStart(16, "0").slice(0, 12);
 	return { name: `omp.text-predict.${key}`, endpoint: ipcEndpoint(runtimeDir, `text-predict-${key}`) };
 }
 

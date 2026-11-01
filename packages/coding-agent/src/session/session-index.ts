@@ -19,7 +19,7 @@
  * against the right file. Never versions the db — `PRAGMA user_version` is
  * owned by HistoryStorage's rebuild pass, which drops only its own tables.
  */
-import { Database, type SQLQueryBindings, type Statement } from "bun:sqlite";
+import { Database, type SQLQueryBindings, type Statement } from "@oh-my-pi/pi-utils/sqlite-driver";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {

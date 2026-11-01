@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as AIError from "../../error";
 
 const DEVICE_FLOW_CANCEL_MESSAGE = "Login cancelled";
@@ -29,7 +30,7 @@ export interface OAuthDeviceCodeFlowOptions<T> {
 
 async function abortableDeviceFlowSleep(ms: number, signal: AbortSignal | undefined): Promise<void> {
 	if (!signal) {
-		await Bun.sleep(ms);
+		await runtime.sleep(ms);
 		return;
 	}
 	if (signal.aborted) {

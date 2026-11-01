@@ -8,7 +8,7 @@
  * it declined is injected at the next boundary like ordinary steering.
  */
 import type { LiveSteerClaim, LiveSteering, UserMessage } from "@oh-my-pi/pi-ai";
-import { logger } from "@oh-my-pi/pi-utils";
+import * as logger from "@oh-my-pi/pi-utils/logger";
 import type { AgentMessage } from "./types";
 
 /** Steering-queue access for one provider call, supplied by the agent loop. */

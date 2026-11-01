@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Reusable isolation lifecycle for subagent execution.
  *
@@ -150,7 +151,7 @@ export async function prepareIsolationContext(cwd: string): Promise<IsolationCon
 function deltaFingerprint(rootPatch: string, nestedPatches: readonly NestedRepoPatch[]): bigint | number {
 	let key = rootPatch;
 	for (const { relativePath, patch } of nestedPatches) key += `\0${relativePath}\0${patch}`;
-	return Bun.hash(key);
+	return runtime.hash(key);
 }
 
 /** Build a commit-message callback for branch/nested commits; `undefined` ⇒ fall back to generic message. */
@@ -235,7 +236,7 @@ export async function persistNestedPatches(
 			// leave a truncated file behind, and `force: true` makes removing
 			// a never-created path a no-op.
 			saved.push(destination);
-			await Bun.write(destination, nestedPatch.patch);
+			await runtime.write(destination, nestedPatch.patch);
 		}
 	} catch (error) {
 		await Promise.all(saved.map(file => fs.rm(file, { force: true }).catch(() => undefined)));
@@ -270,7 +271,7 @@ async function writeIsolationPatch(
 ): Promise<IsolationPatchCapture> {
 	const delta = await captureDeltaPatch(isolationDir, baseline);
 	const patchPath = path.join(artifactsDir, `${agentId}.patch`);
-	await Bun.write(patchPath, delta.rootPatch);
+	await runtime.write(patchPath, delta.rootPatch);
 	const nestedPatchPaths = await persistNestedPatches(artifactsDir, agentId, delta.nestedPatches);
 	return {
 		artifacts: {
@@ -331,7 +332,7 @@ export async function retainIsolationWorkspace(
 			return { dir: path.join(retainedBase, path.basename(isolationDir)), sidecarOk };
 		} catch {
 			if (attempt === 2) return { dir: isolationDir, sidecarOk };
-			await Bun.sleep(25);
+			await runtime.sleep(25);
 		}
 	}
 	return { dir: isolationDir, sidecarOk };
@@ -714,7 +715,7 @@ export async function mergeIsolatedChanges(opts: IsolationMergeOptions): Promise
 			changesApplied = false;
 			hadAnyChanges = false;
 		} else {
-			const patchText = await Bun.file(result.patchPath).text();
+			const patchText = await runtime.file(result.patchPath).text();
 			if (!patchText.trim()) {
 				changesApplied = true;
 				hadAnyChanges = false;

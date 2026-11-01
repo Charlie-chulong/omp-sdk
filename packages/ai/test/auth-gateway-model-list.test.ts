@@ -11,7 +11,7 @@ test("model listing exposes one provider-qualified route per upstream model", as
 	const storage = await AuthStorage.create(path.join(dir, "auth.db"));
 	const anthropic = createMockModel({ provider: "anthropic", id: "shared-model" });
 	const devin = createMockModel({ provider: "devin", id: "shared-model" });
-	const handle = startAuthGateway({
+	const handle = await startAuthGateway({
 		bind: "127.0.0.1:0",
 		bearerTokens: [],
 		storage,

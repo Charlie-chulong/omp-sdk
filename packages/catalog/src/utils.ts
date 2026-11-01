@@ -46,7 +46,7 @@ export function isAnthropicOAuthToken(key: string): boolean {
 
 /**
  * Gateway author prefix ("OpenAI: ", "Z.ai: ", "Arcee AI: ") as emitted by
- * aggregator catalogs (OpenRouter, Kilo, NanoGPT, ZenMux).
+ * aggregator catalogs (OpenRouter, Kilo, NanoGPT).
  */
 const AUTHOR_PREFIX = /^[A-Za-z][A-Za-z0-9 .+&'-]{0,23}: /;
 

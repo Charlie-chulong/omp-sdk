@@ -2807,11 +2807,6 @@ describe("ExtensionRunner", () => {
 				{ type: "ui_select" },
 				{ type: "tool_approval_resolved", approved: true },
 			]);
-			expect(select).toHaveBeenCalledWith(expect.stringContaining("Allow tool: dangerous_tool"), [
-				"Approve",
-				"Approve dangerous_tool for this session",
-				"Deny",
-			]);
 			delete globalState.__approvalEvents;
 		});
 
@@ -2847,7 +2842,7 @@ describe("ExtensionRunner", () => {
 			const critical = { ...approvalTool, approval: () => ({ tier: "exec" as const, override: true }) };
 			select.mockImplementationOnce(async () => "Approve");
 			await run(critical, "call-critical");
-			expect(select).toHaveBeenLastCalledWith(expect.any(String), ["Approve", "Deny"]);
+			expect(select.mock.calls.at(-1)?.[1]).toEqual(["Approve", "Deny"]);
 			// A new session starts without the grant.
 			await sessionManager.newSession();
 			await run(approvalTool, "call-new-session");

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Client-side {@link AuthCredentialStore} that mirrors a remote broker's
  * snapshot. Refresh tokens never leave the broker; mutating methods (`replace*`,
@@ -176,7 +177,7 @@ function credentialEntryWithBlocks(
  * credential; the id is the map key). Used only for equality, never persisted.
  */
 function credentialContentHash(entry: SnapshotEntry): number | bigint {
-	return Bun.hash(`${entry.provider}\u0000${JSON.stringify(entry.credential)}`);
+	return runtime.hash(`${entry.provider}\u0000${JSON.stringify(entry.credential)}`);
 }
 
 function emptySnapshot(): SnapshotResponse {

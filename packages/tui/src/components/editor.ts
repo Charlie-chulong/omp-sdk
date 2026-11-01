@@ -1824,7 +1824,7 @@ export class Editor implements Component, Focusable {
 		if (autocompleteList) {
 			// Clamp the dropdown to the terminal viewport: the editor rows already
 			// rendered above plus a small reserve must stay visible.
-			const viewportRows = this.viewportRowsProvider?.() || process.stdout.rows || Number(Bun.env.LINES) || 24;
+			const viewportRows = this.viewportRowsProvider?.() || process.stdout.rows || Number(process.env.LINES) || 24;
 			autocompleteList.setMaxVisible(
 				Math.max(3, Math.min(this.#autocompleteMaxVisible, viewportRows - result.length - 2)),
 			);

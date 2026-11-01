@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import { InternalUrlRouter } from "../internal-urls";
 import { sessionResolveContext } from "../internal-urls/context";
@@ -77,7 +78,7 @@ export async function prepareEvalSource(
 	}
 	let code: string;
 	try {
-		code = await Bun.file(filename).text();
+		code = await runtime.file(filename).text();
 	} catch (error) {
 		throw new ToolError(`Cannot load eval script ${file}: ${error instanceof Error ? error.message : String(error)}`);
 	}

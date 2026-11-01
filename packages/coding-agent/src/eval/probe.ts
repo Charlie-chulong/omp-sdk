@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Bounded runtime-availability probe shared by the Python eval backend.
  *
@@ -77,7 +78,7 @@ export async function runBoundedProbe(
 	const ceiling = Math.max(timeoutCeilingMs ?? 0, DEFAULT_PROBE_TIMEOUT_MS);
 	const bound = Math.min(timeoutMs && timeoutMs > 0 ? timeoutMs : ceiling, ceiling);
 	const detached = process.platform !== "win32";
-	const proc = Bun.spawn(command, {
+	const proc = runtime.spawn(command, {
 		cwd,
 		env,
 		stdin: "ignore",
@@ -108,7 +109,7 @@ export async function runBoundedProbe(
 			}
 		} else {
 			try {
-				const killer = Bun.spawn(["taskkill.exe", "/PID", String(proc.pid), "/T", "/F"], {
+				const killer = runtime.spawn(["taskkill.exe", "/PID", String(proc.pid), "/T", "/F"], {
 					stdin: "ignore",
 					stdout: "ignore",
 					stderr: "ignore",

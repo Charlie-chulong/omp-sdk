@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { TempDir } from "@oh-my-pi/pi-utils";
 import { AuthStorage, SqliteAuthCredentialStore } from "../src/session/auth-storage";

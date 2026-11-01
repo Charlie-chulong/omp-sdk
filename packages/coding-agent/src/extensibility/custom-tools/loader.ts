@@ -18,7 +18,7 @@ import { execCommand } from "../../exec/exec";
 import type { HookUIContext } from "../../extensibility/hooks/types";
 import { getAllPluginToolPaths } from "../../extensibility/plugins/loader";
 import { loadLegacyPiModule } from "../plugins/legacy-pi-compat";
-import { getCodingAgentApi } from "../host-api";
+import { getCodingAgentApi } from "#coding-agent-host-api";
 import * as typebox from "../legacy-typebox";
 import { createNoOpUIContext, resolvePath, withHostGuard } from "../utils";
 import type { CustomToolAPI, CustomToolFactory, LoadedCustomTool, ToolLoadError } from "./types";

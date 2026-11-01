@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Mid-turn steering over the Codex Responses WebSocket (`response.steer`).
  *
@@ -16,7 +17,7 @@
  * const { accepted } = await pump.finish(); // after the terminal event
  * ```
  */
-import { logger } from "@oh-my-pi/pi-utils";
+import * as logger from "@oh-my-pi/pi-utils/logger";
 import type { LiveSteering, UserMessage } from "../../types";
 import type { InputItem } from "./request-transformer";
 
@@ -104,7 +105,7 @@ export class CodexSteerPump {
 				const claimedAt = performance.now();
 				const claim = await this.#source.claim(signal);
 				if (!claim) {
-					await Bun.sleep(EMPTY_CLAIM_BACKOFF_MS);
+					await runtime.sleep(EMPTY_CLAIM_BACKOFF_MS);
 					continue;
 				}
 				// The response ended while the input was being prepared: the caller

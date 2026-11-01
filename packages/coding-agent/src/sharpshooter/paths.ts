@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Sharpshooter storage layout.
  *
@@ -49,9 +50,9 @@ export function sharpshooterLockPath(agentDir: string, cwd: string): string {
 /** Read a bank's consolidation state; a missing or corrupt file yields the epoch state. */
 export async function readSharpshooterState(agentDir: string, cwd: string): Promise<SharpshooterState> {
 	try {
-		const parsed = (await Bun.file(
-			path.join(sharpshooterBankDir(agentDir, cwd), "state.json"),
-		).json()) as SharpshooterState;
+		const parsed = (await runtime
+			.file(path.join(sharpshooterBankDir(agentDir, cwd), "state.json"))
+			.json()) as SharpshooterState;
 		if (parsed && typeof parsed === "object" && parsed.v === 1) return parsed;
 	} catch {
 		// Missing or corrupt state only delays the next consolidation window; start fresh.
@@ -61,7 +62,7 @@ export async function readSharpshooterState(agentDir: string, cwd: string): Prom
 
 /** Persist a bank's consolidation state (parent directories auto-created). */
 export async function writeSharpshooterState(agentDir: string, cwd: string, state: SharpshooterState): Promise<void> {
-	await Bun.write(
+	await runtime.write(
 		path.join(sharpshooterBankDir(agentDir, cwd), "state.json"),
 		`${JSON.stringify(state, null, "\t")}\n`,
 	);

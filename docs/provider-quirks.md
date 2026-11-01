@@ -1934,7 +1934,7 @@ StepFun is the OpenAI-compatible Open Platform endpoint at `https://api.stepfun.
 ### Special casings
 
 - **`max_tokens` Only**: The provider rule sets `max-tokens-field "max_tokens"` in `packages/catalog/src/compat/rules/providers/stepfun.kdl`. StepFun documents `max_tokens` (default `INF`) and never the `max_completion_tokens` spelling the OpenAI baseline assumes, which the endpoint silently ignores — output budgets would go unlimited.
-- **Provider-Owned Effort Ladder**: The same rule file assigns `thinking-mode "effort"` and `thinking-efforts "low" "medium" "high"` for the `stepfun` class/`step` family. The census ladder for this class spans `minimal`…`xhigh` because relay hosts (OpenRouter, NanoGPT, NVIDIA, ZenMux) advertise those tiers; StepFun's own API rejects them, so the provider scope overrides the relay default.
+- **Provider-Owned Effort Ladder**: The same rule file assigns `thinking-mode "effort"` and `thinking-efforts "low" "medium" "high"` for the `stepfun` class/`step` family. The census ladder for this class spans `minimal`…`xhigh` because relay hosts (OpenRouter, NanoGPT, NVIDIA) advertise those tiers; StepFun's own API rejects them, so the provider scope overrides the relay default.
 - **`reasoning_content` Reasoning Field**: Reasoning streams arrive as `reasoning_content` deltas (StepFun's `reasoning_format: "general"` default returns a `reasoning` field, and both are parsed), handled by the generic dispatch in `packages/ai/src/providers/openai-completions.ts`.
 - **Non-Chat Roster Filtering**: `/v1/models` interleaves StepAudio (ASR/TTS/realtime/gen) and image-generation SKUs with the chat models. `isStepfunChatModelId` in `packages/catalog/src/provider-models/openai-compat.ts` drops them using the `exclude-models provider="stepfun"` policy in `packages/catalog/src/compat/rules/runtime/behavior.kdl`.
 - **No Cross-Host Limit Backfill**: The provider entry sets `skip-cross-provider-reference-fills #true` so the generator never copies relay-host output ceilings (e.g. the 256K figures on NanoGPT/Hugging Face rows) onto first-party rows where StepFun publishes no cap.
@@ -2326,55 +2326,6 @@ Provider-specific overrides in `packages/catalog/src/compat/rules/providers/zai.
 - **Provider entry (`zai`)**: `packages/catalog/src/compat/rules/providers/zai.kdl` declares default model `glm-5.3`. Environment keys: `ZAI_API_KEY`.
 - **Authored seeds**: `glm-5.3`, `glm-5.3-flash`; bundle policy `always`. Limits, capabilities, and prices are authored alongside these rows.
 
-## ZenMux (`zenmux`)
-
-ZenMux is a multi-provider gateway using dual transport routing based on model ownership. Models owned by Anthropic (identified by `owned_by: "anthropic"` or an `anthropic/` prefix) route through Anthropic Messages (`https://zenmux.ai/api/anthropic`), while all other models route through OpenAI Chat Completions (`https://zenmux.ai/api/v1`).
-
-### Special casings
-
-Provider-specific overrides in `packages/catalog/src/compat/rules/providers/zenmux.kdl` (more-specific selectors override provider defaults):
-
-- For class anthropic; revision >=3.7.0 <4.6.0: `thinking.efforts=["minimal","low","medium","high","xhigh"]`.
-- For class baidu; family ernie: `thinking.mode="effort"`.
-- For class bytedance; family doubao: `thinking.mode="effort"`.
-- For class deepseek: `thinking.mode="effort"`.
-- For class gemini; revision >=2.5.0 <3.7.0: `thinking.mode="effort"`.
-- For class glm; family flash: `thinking.efforts=["minimal","low","medium","high","xhigh"]`.
-- For class glm; family turbo: `thinking.efforts=["minimal","low","medium","high","xhigh"]`.
-- For class glm: `thinking.mode="effort"`.
-- For class kimi: `thinking.mode="effort"`.
-- For class mimo; family v2: `thinking.mode="effort"`.
-- For class minimax: `thinking.mode="effort"`.
-- For class openai; revision >=4.0.0 <5.7.0: `thinking.mode="effort"`.
-- For class qwen; revision >=3.0.0 <3.236.0: `thinking.mode="effort"`.
-- For class stepfun; family step: `thinking.mode="effort"`.
-- For class unknown: `thinking.efforts=["minimal","low","medium","high","xhigh"]`, `thinking.mode="effort"`.
-- For class xai; family grok: `thinking.mode="effort"`.
-- For models baidu/ernie-5.0-thinking-preview, tencent/hunyuan-2.0-thinking: `thinking.requiresEffort=true`.
-- For models deepseek/deepseek-chat-v3.1: `requiresReasoningContentForAllAssistantTurns=true`, `thinking.efforts=["high","max"]`.
-- For models deepseek/deepseek-reasoner: `requiresReasoningContentForAllAssistantTurns=true`, `thinking.efforts=["high","max"]`, `thinking.requiresEffort=true`.
-- For models google/gemma-4-26b-a4b-it: `thinking.mode="effort"`.
-- For models openai/gpt-5.1-codex: `thinking.efforts=["minimal","low","medium","high"]`.
-- For models openai/gpt-5.1-codex-mini: `thinking.efforts=["medium","high"]`.
-- For models z*5, z-ai/glm-4.5-air, z-ai/glm-4.6, z-ai/glm-4.6v, z-ai/glm-4.7, z-ai/glm-5.1: `thinking.efforts=["minimal","low","medium","high","xhigh"]`.
-- For models z-ai/glm-5.2*: `thinking.efforts=["minimal","low","medium","high","max"]`.
-- Provider defaults: `supportsStrictMode=true`.
-
-- **Dual Transport Base URL Normalization**: `normalizeZenMuxOpenAiBaseUrl` and `toZenMuxAnthropicBaseUrl` (`packages/catalog/src/provider-models/openai-compat.ts`) translate between endpoint URLs. OpenAI endpoints default to `https://zenmux.ai/api/v1` and Anthropic routes to `https://zenmux.ai/api/anthropic`, automatically converting paths when custom base URLs are specified.
-
-### Auth & usage
-
-- **API Key Resolution**: `ZENMUX_API_KEY` is registered in `descriptors.ts` (`packages/catalog/src/compat/rules/providers/zenmux.kdl`) and resolved via `getEnvApiKey("zenmux")` in `packages/ai/src/stream.ts`.
-- **Key Validation & Login**: Declared in `packages/catalog/src/compat/rules/auth/zenmux.kdl` as a `login "api-key"` rule (`packages/ai/src/registry/engine/api-key.ts`), directing users to `https://zenmux.ai/settings/keys` and validating credentials via `validate "models-endpoint"` against `https://zenmux.ai/api/v1/models`.
-- **Unauthenticated Discovery**: `allowUnauthenticated: true` in `descriptors.ts` enables model catalog discovery without requiring an API key.
-
-### Catalog model handling
-
-- **Provider entry (`zenmux`)**: `packages/catalog/src/compat/rules/providers/zenmux.kdl` declares default model `anthropic/claude-opus-5`. Environment keys: `ZENMUX_API_KEY`. Model management permits unauthenticated access.
-- **Dynamic Model Discovery**: `zenmuxModelManagerOptions` in `packages/catalog/src/provider-models/openai-compat.ts` queries `https://zenmux.ai/api/v1/models` using `fetchOpenAICompatibleModels`. `isZenMuxAnthropicModel` inspects `entry.owned_by === "anthropic"` or ID prefix `anthropic/` to set `api: "anthropic-messages"` or `api: "openai-completions"`.
-- **Pricing Extraction**: `getZenMuxPricingValue` and `getZenMuxCacheWritePrice` (`packages/catalog/src/provider-models/openai-compat.ts`) extract token costs from `entry.pricings`: `prompt` for input cost, `completion` for output cost, `input_cache_read` for cache read cost, and hierarchical lookup of `input_cache_write_1_h`, `input_cache_write_5_min`, or `input_cache_write` for cache write cost.
-- **Capabilities & Limits**: Maps `entry.display_name`, `entry.context_length` (`contextWindow`), `entry.max_completion_tokens` (`maxTokens`), `entry.input_modalities` (`input`), and `capabilities.reasoning` (`reasoning`).
-
 ## Zhipu Coding Plan (智谱) (`zhipu-coding-plan`)
 
 Zhipu (智谱) BigModel's domestic coding-plan provider using the OpenAI Chat Completions transport (`openai-completions` API). It routes requests to Zhipu's dedicated Coding Plan endpoint (`https://open.bigmodel.cn/api/coding/paas/v4`) rather than the general BigModel endpoint to ensure API calls consume coding-plan quota instead of account balance.
@@ -2571,38 +2522,6 @@ Provider-specific overrides in `packages/catalog/src/compat/rules/providers/zhip
 - **Discovery replacement**: Successful authoritative discovery replaces fallback provider rows rather than retaining retired seed models.
 - **Authored seeds**: `muse-spark-1.1`, `muse-spark-1.2`, `muse-spark-1.2-contributor`, `muse-spark-1.3`, `muse-spark-1.3-contributor`; bundle policy `always`. Limits, capabilities, and prices are authored alongside these rows.
 - Runtime manager: `museCodeModelManagerOptions` in `packages/catalog/src/provider-models/openai-compat.ts`.
-
-## SingularityAPI (`singularityapi-dev`)
-
-### Special casings
-
-- Uses the shared SingularityAPI manager with metadata mapping for the `.dev` deployment.
-
-### Auth & usage
-
-- Login kind `api-key` is declared in `packages/catalog/src/compat/rules/auth/singularityapi-dev.kdl`. Environment keys: `SINGULARITYAPI_DEV_API_KEY`. Validation uses `models-endpoint`.
-
-### Catalog model handling
-
-- **Provider entry (`singularityapi-dev`)**: `packages/catalog/src/compat/rules/providers/singularityapi-dev.kdl` declares default model `deepseek-v4-flash`. Environment keys: `SINGULARITYAPI_DEV_API_KEY`.
-- **Discovery replacement**: Successful authoritative discovery replaces fallback provider rows rather than retaining retired seed models.
-- Runtime manager: `singularityApiDevModelManagerOptions` in `packages/catalog/src/provider-models/openai-compat.ts`.
-
-## SingularityAPI Reserved Lanes (`singularityapi-tech`)
-
-### Special casings
-
-- Uses the shared SingularityAPI manager for slot-reserved `.tech` DeepSeek lanes. Its sparse `{id}` discovery rows rely on reviewed KDL policy for wire shape, limits, and effort ladders.
-
-### Auth & usage
-
-- Login kind `api-key` is declared in `packages/catalog/src/compat/rules/auth/singularityapi-tech.kdl`. Environment keys: `SINGULARITYAPI_TECH_API_KEY`. Validation uses `models-endpoint`.
-
-### Catalog model handling
-
-- **Provider entry (`singularityapi-tech`)**: `packages/catalog/src/compat/rules/providers/singularityapi-tech.kdl` declares default model `deepseek-ai/DeepSeek-V4.1-Flash`. Environment keys: `SINGULARITYAPI_TECH_API_KEY`.
-- **Discovery replacement**: Successful authoritative discovery replaces fallback provider rows rather than retaining retired seed models.
-- Runtime manager: `singularityApiTechModelManagerOptions` in `packages/catalog/src/provider-models/openai-compat.ts`.
 
 ## TypeSafe (`typesafe`)
 

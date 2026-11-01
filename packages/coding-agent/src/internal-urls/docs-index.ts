@@ -19,12 +19,12 @@ import * as path from "node:path";
 import { promisify } from "node:util";
 import { gunzip } from "node:zlib";
 import { isEnoent, logger } from "@oh-my-pi/pi-utils";
-import { Glob } from "bun";
+import { RuntimeGlob as Glob } from "@oh-my-pi/pi-utils/runtime";
 
 const docsEmbed = process.env.PI_DOCS_EMBED ?? "";
 
 /** Repo `docs/` tree backing a monorepo checkout; unreachable from an installed package (see `getIndex`). */
-const DOCS_DIR = path.resolve(import.meta.dir, "../../../../docs");
+const DOCS_DIR = path.resolve(import.meta.dirname, "../../../../docs");
 
 const gunzipAsync = promisify(gunzip);
 
@@ -96,7 +96,7 @@ function readDocsFromDisk(): DocsIndex | null {
  * corpus. Returns `null` when the file is absent (dev tree before a bundle build).
  */
 function readShippedEmbed(): DocsIndex | null {
-	const embedPath = path.resolve(import.meta.dir, "../../dist/docs-index.generated.txt");
+	const embedPath = path.resolve(import.meta.dirname, "../../dist/docs-index.generated.txt");
 	let raw: string;
 	try {
 		raw = readFileSync(embedPath, "utf8");

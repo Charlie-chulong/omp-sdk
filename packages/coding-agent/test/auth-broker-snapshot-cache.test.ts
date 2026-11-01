@@ -103,7 +103,7 @@ describe("discoverAuthStorage auth-broker snapshot cache", () => {
 		let handle: AuthBrokerServerHandle | undefined;
 		let storage: AuthStorage | undefined;
 		try {
-			handle = startAuthBroker({
+			handle = await startAuthBroker({
 				storage: brokerStorage,
 				bind: "127.0.0.1:0",
 				bearerTokens: [TOKEN],

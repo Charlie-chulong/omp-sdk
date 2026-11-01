@@ -1,3 +1,5 @@
+import { Worker } from "node:worker_threads";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import {
 	getProjectDir,
 	getPuppeteerDir,
@@ -11,6 +13,7 @@ import {
 import type { CDPSession, Page, Target } from "puppeteer-core";
 import { callSessionTool } from "../../eval/js/tool-bridge";
 import { webpExclusionForModel } from "@oh-my-pi/pi-tui/chat/image-loading";
+import { resolveNodeWorkerHost } from "../../subprocess/worker-client";
 import type { ToolSession } from "../index";
 import { expandPath } from "../path-utils";
 import { CELL_BUDGET_SLACK_MS } from "../run-scope";
@@ -1060,7 +1063,7 @@ async function runInTabWithSnapshot(
 				session: snapshot,
 			});
 		} catch (error) {
-			// Bun throws `InvalidStateError` once the worker is gone, which can precede its exit event.
+			// The worker handle rejects sends once termination or exit closes the transport.
 			if (!(error instanceof DOMException && error.name === "InvalidStateError")) throw error;
 			throw new ToolError(
 				`Tab ${JSON.stringify(name)}'s worker exited before this call reached it; omp reattaches the tab to a new worker, so retry the call.`,
@@ -1536,7 +1539,7 @@ async function setTabFrozen(tab: TabSession, frozen: boolean): Promise<boolean> 
 				// One retry for the in-flight run's sake: a brief frozen
 				// blip is harmless (rAF just skips frames), but an
 				// indefinite freeze stalls it to timeout.
-				await Bun.sleep(100);
+				await runtime.sleep(100);
 				if (await sendLifecycleState(session, "active")) return false;
 				tab.frozen = true;
 				return false;
@@ -1595,7 +1598,7 @@ async function unfreezeTabSession(tab: TabSession): Promise<boolean> {
 		}
 	}
 	if (await setTabFrozen(tab, false).catch(() => false)) return true;
-	await Bun.sleep(100);
+	await runtime.sleep(100);
 	return await setTabFrozen(tab, false).catch(() => false);
 }
 
@@ -1989,7 +1992,7 @@ function attachTabWorker(tab: WorkerTabSession, worker: WorkerHandle): void {
 		// A release or recycle owns a worker it replaced or is tearing down.
 		if (tabs.get(tab.name) !== tab || tab.worker !== worker || tab.state !== "alive" || releaseInflight.has(tab))
 			return;
-		// Bun's ErrorEvent message embeds a source excerpt; keep only its `error: …` line.
+		// Keep the first diagnostic line when a worker error includes a source excerpt.
 		const cause = lastError && (/^error: (.+)$/m.exec(lastError.message)?.[1] ?? lastError.message.split("\n", 1)[0]);
 		const exited = `Browser tab worker exited unexpectedly (exit code ${exitCode}${cause ? `, ${cause}` : ""})`;
 		logger.warn("Browser tab worker exited unexpectedly", { name: tab.name, exitCode, error: lastError?.message });
@@ -2347,58 +2350,71 @@ async function raceWithTimeout<T>(
 
 async function spawnTabWorker(): Promise<WorkerHandle> {
 	try {
-		const hostEntry = workerHostEntry();
+		const hostEntry = runtime.capabilities.node ? resolveNodeWorkerHost() : workerHostEntry();
 		const worker = hostEntry
-			? new Worker(hostEntry, { type: "module", argv: ["__omp_worker_tab"] })
-			: new Worker(new URL("./tab-worker-entry.ts", import.meta.url).href, { type: "module" });
-		return wrapBunWorker(worker);
+			? new Worker(hostEntry, {
+					argv: ["__omp_worker_tab"],
+					// Guest ESM evaluation uses node:vm's SourceTextModule inside the thread.
+					execArgv: runtime.capabilities.node ? ["--experimental-vm-modules"] : undefined,
+				})
+			: new Worker(new URL("./tab-worker-entry.ts", import.meta.url));
+		return wrapNodeWorker(worker);
 	} catch (err) {
-		logger.warn("Bun Worker spawn failed; using inline tab worker (no sync-loop guard)", {
+		logger.warn("Node Worker spawn failed; using inline tab worker (no sync-loop guard)", {
 			error: err instanceof Error ? err.message : String(err),
 		});
 		return spawnInlineWorker();
 	}
 }
 
-function wrapBunWorker(worker: Worker): WorkerHandle {
+function wrapNodeWorker(worker: Worker): WorkerHandle {
 	let terminated = false;
+	let exited = false;
+	worker.once("exit", () => {
+		exited = true;
+	});
 	return {
 		mode: "worker",
 		send(msg, transferList) {
-			worker.postMessage(msg, { transfer: transferList ?? [] });
+			if (terminated || exited) throw new DOMException("Tab worker is closed", "InvalidStateError");
+			worker.postMessage(msg, transferList ?? []);
 		},
 		onMessage(handler) {
-			const wrap = (event: MessageEvent): void => handler(event.data as WorkerOutbound);
-			worker.addEventListener("message", wrap);
-			return () => worker.removeEventListener("message", wrap);
+			const wrap = (message: WorkerOutbound): void => handler(message);
+			worker.on("message", wrap);
+			return () => {
+				worker.off("message", wrap);
+			};
 		},
 		onError(handler) {
-			const onError = (event: ErrorEvent): void => handler(errorFromWorkerEvent(event));
-			const onMessageError = (event: MessageEvent): void =>
-				handler(new WorkerMessageError(`Tab worker message error: ${String(event.data)}`));
-			worker.addEventListener("error", onError);
-			worker.addEventListener("messageerror", onMessageError);
+			const onError = (error: Error): void => handler(error);
+			const onMessageError = (error: Error): void =>
+				handler(new WorkerMessageError(`Tab worker message error: ${error.message}`));
+			worker.on("error", onError);
+			worker.on("messageerror", onMessageError);
 			return () => {
-				worker.removeEventListener("error", onError);
-				worker.removeEventListener("messageerror", onMessageError);
+				worker.off("error", onError);
+				worker.off("messageerror", onMessageError);
 			};
 		},
 		onExit(handler) {
-			const onClose = (event: CloseEvent): void => {
-				if (!terminated) handler(event.code);
+			const onExit = (exitCode: number): void => {
+				if (!terminated) handler(exitCode);
 			};
-			worker.addEventListener("close", onClose);
-			return () => worker.removeEventListener("close", onClose);
+			worker.on("exit", onExit);
+			return () => {
+				worker.off("exit", onExit);
+			};
 		},
 		async terminate() {
 			terminated = true;
-			worker.terminate();
+			await worker.terminate();
 		},
 	};
 }
 
 /**
- * Inline fallback for environments where Bun cannot compile or spawn the worker
+ * Inline fallback for environments that cannot load or spawn the worker
  * entry. This preserves normal browser behavior but cannot interrupt synchronous
  * infinite loops because user code runs on the main thread.
  */
@@ -2530,10 +2546,4 @@ export function initializeTabWorkerForTest(
 	deadlineStart: number = performance.now(),
 ): Promise<ReadyInfo> {
 	return initializeTabWorker(worker, payload, timeoutMs, deadlineStart);
-}
-
-function errorFromWorkerEvent(event: ErrorEvent): Error {
-	if (event.error instanceof Error) return event.error;
-	if (event.message) return new Error(event.message);
-	return new Error("Unknown tab worker error");
 }

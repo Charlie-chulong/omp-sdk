@@ -68,8 +68,6 @@ export type KnownProvider =
 	| "sambanova"
 	| "siliconflow"
 	| "siliconflow-cn"
-	| "singularityapi-dev"
-	| "singularityapi-tech"
 	| "snowflake"
 	| "stepfun"
 	| "synthetic"
@@ -89,5 +87,4 @@ export type KnownProvider =
 	| "xiaomi-token-plan-sgp"
 	| "yolo-auto"
 	| "zai"
-	| "zenmux"
 	| "zhipu-coding-plan";

@@ -1,10 +1,11 @@
+import { Image } from "@oh-my-pi/pi-utils/runtime-image";
 /**
  * Claude's image contract, enforced before a request leaves the client. Every
  * wire that delivers images to a Claude reader shares it: `anthropic-messages`
  * always, and Google's Cloud Code Assist wire when resolved policy declares
  * the host's limits (`max-image-dimension` / `max-image-payload-bytes`).
  */
-import { logger } from "@oh-my-pi/pi-utils";
+import * as logger from "@oh-my-pi/pi-utils/logger";
 import type { Context, ImageContent, Message, Model, TextContent } from "../types";
 
 const ANTHROPIC_MANY_IMAGE_THRESHOLD = 20;
@@ -122,7 +123,7 @@ async function resizeAnthropicImageBlock(block: ImageContent, caps: AnthropicIma
 	const { maxDimension, payloadBudget } = caps;
 	try {
 		const inputBuffer = Buffer.from(block.data, "base64");
-		const { width, height } = await new Bun.Image(inputBuffer).metadata();
+		const { width, height } = await new Image(inputBuffer).metadata();
 		if (!width || !height) return block;
 		const overDimension = width > maxDimension || height > maxDimension;
 		const overBudget = block.data.length > payloadBudget;
@@ -138,8 +139,8 @@ async function resizeAnthropicImageBlock(block: ImageContent, caps: AnthropicIma
 			const targetHeight = Math.max(1, Math.min(maxDimension, Math.round(height * scale)));
 			// One encoder at a time: a full-resolution surface is hundreds of
 			// megabytes, so the two candidates never coexist.
-			const png = await new Bun.Image(inputBuffer).resize(targetWidth, targetHeight).png().bytes();
-			const jpeg = await new Bun.Image(inputBuffer).resize(targetWidth, targetHeight).jpeg({ quality: 85 }).bytes();
+			const png = await new Image(inputBuffer).resize(targetWidth, targetHeight).png().bytes();
+			const jpeg = await new Image(inputBuffer).resize(targetWidth, targetHeight).jpeg({ quality: 85 }).bytes();
 			best =
 				png.length <= jpeg.length
 					? { buffer: png, mimeType: "image/png" }

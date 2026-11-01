@@ -1,10 +1,11 @@
+import { decodeBase64Bytes } from "@oh-my-pi/pi-utils";
 /**
  * SQLite-backed credential persistence for AuthStorage.
  *
  * The AuthCredentialStore contract lives in ./store so local and remote stores
  * share the same interface.
  */
-import type { Database, Statement } from "bun:sqlite";
+import type { Database, Statement } from "@oh-my-pi/pi-utils/sqlite-driver";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { authPolicyFor } from "@oh-my-pi/pi-catalog/compat/auth";
@@ -354,7 +355,7 @@ function extractOAuthTokenIdentifiers(token: string | undefined): string[] | und
 	if (parts.length !== 3) return undefined;
 	try {
 		const payload = JSON.parse(
-			new TextDecoder("utf-8").decode(Uint8Array.fromBase64(parts[1], { alphabet: "base64url" })),
+			new TextDecoder("utf-8").decode(decodeBase64Bytes(parts[1], "base64url")),
 		) as Record<string, unknown>;
 		const identifiers = new Set<string>();
 		const directEmail = normalizeStoredEmail(typeof payload.email === "string" ? payload.email : undefined);
@@ -826,7 +827,15 @@ export class SqliteAuthCredentialStore implements AuthCredentialStore {
 				id INTEGER PRIMARY KEY CHECK (id = 1),
 				revision INTEGER NOT NULL
 			);
-			INSERT OR IGNORE INTO auth_change_revision (id, revision) VALUES (1, 0);
+		`);
+		// Even INSERT OR IGNORE takes the writer lock on Node's SQLite driver.
+		// Existing stores need only a read here; keep the insert race-safe for
+		// first-time initialization by another process.
+		using revision = this.#db.prepare("SELECT 1 FROM auth_change_revision WHERE id = 1");
+		if (!revision.get()) {
+			this.#db.run("INSERT OR IGNORE INTO auth_change_revision (id, revision) VALUES (1, 0)");
+		}
+		this.#db.run(`
 			CREATE TEMP TABLE IF NOT EXISTS auth_local_change_revision (
 				id INTEGER PRIMARY KEY CHECK (id = 1),
 				revision INTEGER NOT NULL
@@ -1045,9 +1054,6 @@ export class SqliteAuthCredentialStore implements AuthCredentialStore {
 		if (fromVersion < 7) {
 			this.#migrateAuthSchemaV6ToV7();
 		}
-		if (fromVersion < 8) {
-			this.#migrateAuthSchemaV7ToV8();
-		}
 	}
 
 	#migrateAuthSchemaV0ToV1(): void {
@@ -1215,46 +1221,6 @@ export class SqliteAuthCredentialStore implements AuthCredentialStore {
 			`);
 			this.#createAuthCredentialBlockCompatibilityTriggers();
 			this.#writeAuthSchemaVersion(7);
-		});
-		migrate.immediate();
-	}
-
-	#migrateAuthSchemaV7ToV8(): void {
-		const migrate = this.#db.transaction(() => {
-			// SingularityAPI split into two providers — the pay-as-you-go universal
-			// gateway and the slot-reserved lanes — and keys stored under the
-			// retired shared id belong to one or the other by format: the gateway
-			// issues `sk-sapi-...` while the lanes issue plain `sk-...` (both
-			// observed live 2026-09-22), and neither key is accepted by the other
-			// host. Route each stored credential to the product that serves it
-			// instead of orphaning it under an id nothing reads anymore.
-			const select = this.#db.prepare(
-				"SELECT id, credential_type, data FROM auth_credentials WHERE provider = 'singularityapi'",
-			);
-			let rows: Array<{ id: number; credential_type: string; data: string }>;
-			try {
-				rows = select.all() as Array<{ id: number; credential_type: string; data: string }>;
-			} finally {
-				select.finalize();
-			}
-			for (const row of rows) {
-				let provider = "singularityapi-tech";
-				try {
-					const parsed = JSON.parse(row.data) as { key?: unknown };
-					if (typeof parsed.key === "string" && parsed.key.startsWith("sk-sapi-")) {
-						provider = "singularityapi-dev";
-					}
-				} catch {
-					// Unparsable payload takes the lane default; whichever product the
-					// key really belongs to then answers 401 and the owner re-logs in.
-				}
-				this.#db.run("UPDATE auth_credentials SET provider = ? WHERE id = ?", [provider, row.id]);
-				this.#db.run(
-					"UPDATE auth_credential_blocks SET provider_key = ? WHERE credential_id = ? AND provider_key = ?",
-					[`${provider}:${row.credential_type}`, row.id, `singularityapi:${row.credential_type}`],
-				);
-			}
-			this.#writeAuthSchemaVersion(8);
 		});
 		migrate.immediate();
 	}

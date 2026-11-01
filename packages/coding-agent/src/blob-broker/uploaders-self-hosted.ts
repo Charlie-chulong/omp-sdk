@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as path from "node:path";
 import { getSafeProjectCwd } from "@oh-my-pi/pi-utils";
 import { writeRemoteFile } from "../ssh/file-transfer";
@@ -243,7 +244,7 @@ function createFtpUploader(config: DestinationRuntimeConfig): BlobUploader {
 			if (protocol === "ftps" && port !== 990) args.push("--ssl-reqd");
 			args.push(ftpUploadUrl(protocol, host, port, destinationPath));
 			try {
-				const process = Bun.spawn(args, {
+				const process = runtime.spawn(args, {
 					stdin: request.bytes,
 					stdout: "ignore",
 					stderr: "pipe",
@@ -280,7 +281,7 @@ function createSharedFolderUploader(config: DestinationRuntimeConfig): BlobUploa
 			if (target !== root && !target.startsWith(`${root}${path.sep}`)) {
 				throw new Error("Shared-folder destination escapes its configured root");
 			}
-			await Bun.write(target, request.bytes, { createPath: true });
+			await runtime.write(target, request.bytes, { createPath: true });
 			return publication("shared-folder", request, publicUrl(publicBase, directory, filename));
 		},
 	};

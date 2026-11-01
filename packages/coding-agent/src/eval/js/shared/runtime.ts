@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Console } from "node:console";
 import * as fs from "node:fs";
@@ -171,7 +172,7 @@ export function shadowSnapshotDigest(snapshot: ShadowSnapshot): string {
 	// values-only digest would still match at verify time while projections made
 	// against the builtin no longer describe the cell. The template conversion
 	// avoids the mutable `String` global this function itself must survive.
-	return `${Bun.hash(JSON.stringify({ values: snapshot.values, initialGlobals: snapshot.initialGlobals }))}`;
+	return `${runtime.hash(JSON.stringify({ values: snapshot.values, initialGlobals: snapshot.initialGlobals }))}`;
 }
 
 const SHADOW_SNAPSHOT_MAX_DEPTH = 16;

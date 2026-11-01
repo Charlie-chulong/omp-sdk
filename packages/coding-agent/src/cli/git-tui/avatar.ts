@@ -12,7 +12,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as vcs from "@oh-my-pi/pi-natives/vcs";
-import { getAvatarCacheDir, logger } from "@oh-my-pi/pi-utils";
+import { encodeBase64, getAvatarCacheDir, logger } from "@oh-my-pi/pi-utils";
 
 const AVATAR_PX = 64;
 const FETCH_TIMEOUT_MS = 5_000;
@@ -98,7 +98,7 @@ export class AvatarLoader {
 		const missPath = path.join(this.#dir, `${key}.miss`);
 		try {
 			const bytes = await Bun.file(pngPath).bytes();
-			this.#memory.set(key, Buffer.from(bytes).toBase64());
+			this.#memory.set(key, encodeBase64(bytes));
 			return;
 		} catch {
 			// Not cached on disk; fall through to the network.
@@ -131,7 +131,7 @@ export class AvatarLoader {
 		try {
 			const png = await new Bun.Image(bytes).resize(AVATAR_PX, AVATAR_PX).png().toBuffer();
 			await Bun.write(pngPath, png);
-			this.#memory.set(key, png.toBase64());
+			this.#memory.set(key, encodeBase64(png));
 		} catch (err) {
 			logger.debug("avatar normalize failed", { error: err instanceof Error ? err.message : String(err) });
 			this.#memory.set(key, null);

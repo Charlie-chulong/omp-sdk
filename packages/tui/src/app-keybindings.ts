@@ -7,7 +7,7 @@ import { getActiveProfile, getAgentDir, getProfileRootDir } from "@oh-my-pi/pi-u
 import { isEnoent } from "@oh-my-pi/pi-utils/fs-error";
 import * as logger from "@oh-my-pi/pi-utils/logger";
 import { stringifyYamlConfig } from "@oh-my-pi/pi-utils/yaml-config";
-import { JSONC, YAML } from "bun";
+import { JSONC, YAML } from "@oh-my-pi/pi-utils/runtime";
 import { formatKeyHints } from "./key-hint-format";
 import {
 	type Keybinding,

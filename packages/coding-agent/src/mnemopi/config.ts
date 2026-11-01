@@ -1,9 +1,11 @@
-import { Database } from "bun:sqlite";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { MnemopiOptions } from "@oh-my-pi/pi-mnemopi";
 import { getMemoriesDir, logger, withLoopPhase } from "@oh-my-pi/pi-utils";
 import type { Settings } from "../config/settings";
+import { assertLocalRuntimeAvailable, isCoreSdk } from "../sdk-profile";
 
 import {
 	cfgMnemopiAutoRecall,
@@ -77,6 +79,16 @@ export function loadMnemopiConfig(settings: Settings, agentDir: string): Mnemopi
 	const recallBanks =
 		scoping === "global" ? scope.recallBanks : extendRecallWithLegacyBanks(scope.recallBanks, dbPath, cwd);
 	const llmMode = cfgMnemopiLlmMode.get(settings);
+	if (isCoreSdk()) {
+		if (!cfgMnemopiNoEmbeddings.get(settings) && !cfgMnemopiEmbeddingApiUrl.get(settings)?.trim()) {
+			assertLocalRuntimeAvailable(
+				"Local memory embeddings (set mnemopi.embeddingApiUrl to a remote endpoint or mnemopi.noEmbeddings to true)",
+			);
+		}
+		if (llmMode === "smol") {
+			assertLocalRuntimeAvailable("Local memory inference (set mnemopi.llmMode to remote or none)");
+		}
+	}
 	const embeddingOverride = cfgMnemopiEmbeddingModel.get(settings);
 	const embeddingVariant = cfgMnemopiEmbeddingVariant.get(settings);
 	// Map the variant explicitly rather than indexing an object with the raw config
@@ -211,7 +223,7 @@ function projectBank(configured: string | undefined, cwd: string): string {
  */
 export function projectBankSegment(projectRoot: string): string {
 	const project = sanitizeBankName(path.basename(projectRoot)) ?? "default";
-	return limitBankName(`${project}-${Bun.hash(projectRoot).toString(36)}`);
+	return limitBankName(`${project}-${runtime.hash(projectRoot).toString(36)}`);
 }
 
 /**
@@ -288,7 +300,7 @@ function sanitizeBankName(value: string | undefined): string | undefined {
 
 function limitBankName(name: string): string {
 	if (name.length <= 64) return name;
-	const hash = Bun.hash(name).toString(36);
+	const hash = runtime.hash(name).toString(36);
 	const prefixLength = Math.max(1, 63 - hash.length);
 	const prefix = name.slice(0, prefixLength).replace(/-+$/g, "") || "bank";
 	return `${prefix}-${hash}`;

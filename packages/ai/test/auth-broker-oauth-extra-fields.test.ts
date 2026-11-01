@@ -49,7 +49,7 @@ describe("auth-broker preserves extra OAuth credential fields", () => {
 		serverStore = await SqliteAuthCredentialStore.open(path.join(tempDir, "broker.db"));
 		serverStorage = new AuthStorage(serverStore);
 		await serverStorage.credentials.reload();
-		handle = startAuthBroker({
+		handle = await startAuthBroker({
 			storage: serverStorage,
 			bind: "127.0.0.1:0",
 			bearerTokens: [token],

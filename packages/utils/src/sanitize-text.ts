@@ -11,6 +11,7 @@
  * Fast path: well-formed input with no controls or ANSI returns the original
  * string after the control probe.
  */
+import { runtime } from "./runtime";
 
 import { isRecord } from "./type-guards";
 
@@ -34,7 +35,7 @@ function sanitizeWellFormedText(text: string): string {
 	CONTROL_RE.lastIndex = 0;
 	if (CONTROL_RE.exec(text) === null) return text;
 
-	const stripped = text.indexOf(ESC_CHAR) === -1 ? text : Bun.stripANSI(text);
+	const stripped = text.indexOf(ESC_CHAR) === -1 ? text : runtime.stripANSI(text);
 	CONTROL_RE.lastIndex = 0;
 	return stripped.replace(CONTROL_RE, "");
 }

@@ -5,7 +5,7 @@
  */
 import * as path from "node:path";
 import { getAgentDir, logger, normalizePathForComparison, parseFrontmatter, tryParseJson } from "@oh-my-pi/pi-utils";
-import { YAML } from "bun";
+import { YAML } from "@oh-my-pi/pi-utils/runtime";
 import { getManagedSkillsDir, MANAGED_SKILLS_PROVIDER_ID } from "../autolearn/managed-skills";
 import { registerProvider } from "../capability";
 import { type ContextFile, contextFileCapability } from "../capability/context-file";

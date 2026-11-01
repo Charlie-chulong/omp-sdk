@@ -13,7 +13,7 @@
  * depends on chat transports.
  */
 import { escapeXmlAttribute, escapeXmlText, prompt } from "@oh-my-pi/pi-utils";
-import { YAML } from "bun";
+import { YAML } from "@oh-my-pi/pi-utils/runtime";
 import * as AIError from "../error";
 import type { ImageContent, Usage } from "../types";
 import textJudgeRetryTemplate from "./text-judge-retry.md" with { type: "text" };

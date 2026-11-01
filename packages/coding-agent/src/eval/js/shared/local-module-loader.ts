@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import { createRequire, isBuiltin } from "node:module";
 import * as path from "node:path";
@@ -34,7 +35,7 @@ export class LocalModuleLoader {
 
 	constructor(sessionId: string) {
 		this.#context = vm.createContext(globalThis);
-		this.#sessionTag = Bun.hash(sessionId).toString(16);
+		this.#sessionTag = runtime.hash(sessionId).toString(16);
 	}
 
 	setPackageRoot(packageRoot: string | undefined): void {
@@ -368,7 +369,10 @@ function buildModuleSource(source: string, modulePath: string): string {
 
 function resolveImportSpecifier(baseDir: string, source: string, packageRoot: string | undefined): string {
 	if (/^[a-z][a-z0-9+.-]*:/i.test(source) || isBuiltin(source)) return source;
-	if (!isBareSpecifier(source)) return Bun.resolveSync(source, baseDir);
+	if (!isBareSpecifier(source))
+		return typeof Bun === "undefined"
+			? createRequire(path.join(baseDir, "__omp_resolve__.js")).resolve(source)
+			: Bun.resolveSync(source, baseDir);
 	let projectError: unknown;
 	try {
 		return resolveBareSpecifierWithinProject(source, baseDir);
@@ -386,7 +390,10 @@ function resolveImportSpecifier(baseDir: string, source: string, packageRoot: st
 }
 
 function resolveBareSpecifierWithinProject(source: string, baseDir: string): string {
-	const resolved = Bun.resolveSync(source, baseDir);
+	const resolved =
+		typeof Bun === "undefined"
+			? createRequire(path.join(baseDir, "__omp_resolve__.js")).resolve(source)
+			: Bun.resolveSync(source, baseDir);
 	if (!path.isAbsolute(resolved)) {
 		throw new Error(
 			`Refusing non-file resolution ${JSON.stringify(resolved)} for bare package ${JSON.stringify(source)} from ${baseDir}`,

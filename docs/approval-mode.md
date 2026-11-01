@@ -24,7 +24,23 @@ Configure with `tools.approvalMode`:
 | `write`             | `read`, `write`                                        | `exec`                      |
 | `yolo` (default)    | `read`, `write`, `exec`                                | none                        |
 
-`--approval-mode <mode>` overrides the configured mode for the session. `--auto-approve` and `--yolo` force yolo execution even when an explicit `--approval-mode` is also supplied; tool/user denies and explicit tool prompt policies still apply.
+`--approval-mode <mode>` sets the initial session mode. `--auto-approve` and `--yolo` initially select yolo even when an explicit `--approval-mode` is also supplied. These flags do not lock the mode after startup; tool/user denies and explicit tool prompt policies still apply.
+
+### Changing a running session
+
+Open `/permissions` to pick the current session's approval mode, or change it directly:
+
+```text
+/permissions always-ask
+/permissions yolo
+```
+
+Changes apply immediately while the agent is working or waiting for tool approval, without restarting or aborting the turn. Pending approvals are re-evaluated: a call the new mode allows can continue without answering its old prompt. Explicit tool/user policies, restricted folders, and provider safety checks still apply. Tools already executing are not stopped or rolled back.
+
+`/permissions` changes only the runtime setting. `/settings` → Interaction → Approvals → Tool Approval also updates the live mode, including sessions started with approval flags, and saves the selected global default. Collaboration guests cannot change the host's mode.
+
+SDK sessions expose `session.approvalMode` and `session.setApprovalMode(mode)`; RPC clients can send [`set_approval_mode`](./rpc.md#set_approval_mode-payload).
+
 
 ### Ask and remember (`always-ask-cached`)
 
@@ -203,7 +219,7 @@ omp acp --approval-mode yolo
 omp acp --config ./acp-yolo.yml   # file contains tools.approvalMode: yolo
 ```
 
-Precedence is the normal settings precedence: runtime flags (`--approval-mode`, `--auto-approve`, `--yolo`) override `--config` overlays, which override project config, which overrides global config. ACP does not currently define a `session/new`, `session/load`, or `session/resume` approval-policy field, so ACP clients that need per-session yolo should launch a separate `omp acp` process with one of the flags above or with a session-specific `--config` overlay.
+Startup settings keep their normal precedence: runtime flags (`--approval-mode`, `--auto-approve`, `--yolo`) override `--config` overlays, which override project config, which overrides global config. Use `/permissions <mode>` to change an existing ACP session without relaunching the server. Its additional permission gates check the live mode when each tool executes, not only when tools are registered.
 
 `tools.approvalMode: yolo` fully applies to ACP when explicitly configured or supplied by a runtime flag: it skips ordinary tier-based OMP prompts and the ACP client gate unless the resolved tool or user policy requires a prompt or denies the call. The schema default is also `yolo`, but without an explicit opt-in, unmatched bash commands and destructive file operations still require an ACP client grant.
 

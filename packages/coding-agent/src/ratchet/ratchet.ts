@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Ratchet: host-side state, statistics, and keep/revert gate for the
  * `/ratchet` eval hillclimb. Everything the model must not be able to argue
@@ -174,7 +175,7 @@ async function pathExists(absolute: string): Promise<boolean> {
 
 export async function loadState(cwd: string, flow: string): Promise<RatchetState | undefined> {
 	try {
-		return (await Bun.file(path.join(flowDir(cwd, flow), "_state.json")).json()) as RatchetState;
+		return (await runtime.file(path.join(flowDir(cwd, flow), "_state.json")).json()) as RatchetState;
 	} catch (err) {
 		if (isEnoent(err)) return undefined;
 		throw err;
@@ -188,7 +189,7 @@ export async function requireState(cwd: string, flow: string): Promise<RatchetSt
 }
 
 export async function saveState(cwd: string, state: RatchetState): Promise<void> {
-	await Bun.write(path.join(flowDir(cwd, state.flow), "_state.json"), `${JSON.stringify(state, null, 2)}\n`);
+	await runtime.write(path.join(flowDir(cwd, state.flow), "_state.json"), `${JSON.stringify(state, null, 2)}\n`);
 }
 
 // ---------------------------------------------------------------------------
@@ -364,7 +365,7 @@ async function listFiles(absolute: string): Promise<string[]> {
 }
 
 async function hashPaths(cwd: string, paths: readonly string[]): Promise<string> {
-	const hasher = new Bun.CryptoHasher("sha256");
+	const hasher = new runtime.CryptoHasher("sha256");
 	for (const rel of [...paths].sort()) {
 		const absolute = path.join(cwd, rel);
 		if (!(await pathExists(absolute))) {
@@ -373,7 +374,7 @@ async function hashPaths(cwd: string, paths: readonly string[]): Promise<string>
 		}
 		for (const file of await listFiles(absolute)) {
 			hasher.update(`${toPosix(path.relative(cwd, file))}\0`);
-			hasher.update(new Uint8Array(await Bun.file(file).arrayBuffer()));
+			hasher.update(new Uint8Array(await runtime.file(file).arrayBuffer()));
 			hasher.update("\0");
 		}
 	}
@@ -408,7 +409,7 @@ export async function stageDigest(cwd: string, state: RatchetState, stage: Ratch
 					.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
 					.map(([model, rate]) => [model, rate.in, rate.out, rate.cache_read ?? null, rate.cache_write ?? null]),
 			};
-			return new Bun.CryptoHasher("sha256").update(JSON.stringify(plan)).digest("hex");
+			return new runtime.CryptoHasher("sha256").update(JSON.stringify(plan)).digest("hex");
 		}
 	}
 }
@@ -464,7 +465,7 @@ interface VariantData {
 
 function parseJsonl(text: string, file: string): unknown[] {
 	try {
-		return Bun.JSONL.parse(text) as unknown[];
+		return runtime.JSONL.parse(text) as unknown[];
 	} catch (err) {
 		throw new RatchetError(`Malformed JSONL in ${file}: ${err instanceof Error ? err.message : String(err)}`);
 	}
@@ -472,7 +473,7 @@ function parseJsonl(text: string, file: string): unknown[] {
 
 async function readJsonl(file: string): Promise<unknown[]> {
 	try {
-		return parseJsonl(await Bun.file(file).text(), file);
+		return parseJsonl(await runtime.file(file).text(), file);
 	} catch (err) {
 		if (isEnoent(err)) return [];
 		throw err;
@@ -931,7 +932,7 @@ export async function gateVariant(
 	const done = plateau || (state.stop.rounds !== undefined && climbed >= state.stop.rounds);
 	await saveState(cwd, state);
 	const table = renderStatusTable(state);
-	await Bun.write(path.join(dir, "status.md"), `# ${state.flow}\n\n${table}\n`);
+	await runtime.write(path.join(dir, "status.md"), `# ${state.flow}\n\n${table}\n`);
 	return { variant, decision, reasons, warnings, deltas, best: state.best, plateau, done, table };
 }
 

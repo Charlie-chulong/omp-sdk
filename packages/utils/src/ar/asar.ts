@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { runtime } from "../runtime";
 import { readUInt32LE, writeUInt32LE } from "./bytes";
 import { ArchiveError } from "./error";
 import { assertArchiveMemberSize, assertEntryCount, assertIndexSize } from "./limits";
@@ -91,7 +92,7 @@ function parseIntegrity(value: unknown, entryPath: string, size: number): AsarIn
 
 function verifyIntegrity(bytes: Uint8Array, integrity: AsarIntegrity | undefined, memberPath: string): void {
 	if (!integrity) return;
-	const actual = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
+	const actual = new runtime.CryptoHasher("sha256").update(bytes).digest("hex");
 	if (actual !== integrity.hash) {
 		throw new ArchiveError(
 			`ASAR member '${formatArchivePathForError(memberPath)}' failed SHA256 integrity verification`,
@@ -152,7 +153,7 @@ class UnpackedAsarMemberSource implements MemberSource {
 		if (!this.#filePath) {
 			throw new ArchiveError(`Archive file '${label}' is unpacked and requires a filesystem-backed ASAR archive`);
 		}
-		const file = Bun.file(this.#filePath);
+		const file = runtime.file(this.#filePath);
 		const stat = await file.stat().catch(() => {
 			throw new ArchiveError(`Unpacked ASAR file '${label}' was not found`);
 		});

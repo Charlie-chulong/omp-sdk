@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * `application/vnd.amazon.eventstream` decoder.
  *
@@ -35,7 +36,7 @@ export interface EventStreamMessage {
 
 /** CRC32 (IEEE / zlib polynomial 0xEDB88320), matches `@aws-crypto/crc32`. */
 export function crc32(bytes: Uint8Array): number {
-	return Bun.hash.crc32(bytes) >>> 0;
+	return runtime.hash.crc32(bytes) >>> 0;
 }
 
 /**

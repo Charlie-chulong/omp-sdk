@@ -1,4 +1,4 @@
-import type { Database, SQLQueryBindings } from "bun:sqlite";
+import type { Database, SQLQueryBindings } from "@oh-my-pi/pi-utils/sqlite-driver";
 
 /** Bind parameters per statement; SQLite builds older than 3.32 cap a statement at 999. */
 const MAX_BINDS = 999;

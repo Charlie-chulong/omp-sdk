@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { AuthCredentialStore } from "./store";
 import type { AuthCredential, OAuthCredential } from "./types";
 import type { CredentialPool } from "./pool";
@@ -115,7 +116,7 @@ export function usageCacheIdentity(credential: UsageCredential): string {
 	if (!hasStableIdentifier) {
 		const secret = credential.apiKey?.trim() || credential.refreshToken?.trim() || credential.accessToken?.trim();
 		if (secret) {
-			parts.push(`secret:${Bun.hash(secret).toString(16)}`);
+			parts.push(`secret:${runtime.hash(secret).toString(16)}`);
 		} else {
 			parts.push("anonymous");
 		}
@@ -312,7 +313,7 @@ export class UsageCache {
 			})
 			.sort()
 			.join("\n");
-		return `reports:${Bun.hash(snapshot).toString(16)}`;
+		return `reports:${runtime.hash(snapshot).toString(16)}`;
 	}
 
 	/**

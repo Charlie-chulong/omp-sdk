@@ -1,3 +1,4 @@
+import { assertLocalRuntimeAvailable } from "../sdk-profile";
 import {
 	type ModelWorkerMessage,
 	ModelWorkerHost,
@@ -78,6 +79,7 @@ export const STT_WORKER_ARG = "__omp_worker_stt";
  * probe; production callers go through {@link spawnSttWorker}.
  */
 export function createSttSubprocess(): SpawnedSubprocess<SttWorkerOutbound> {
+	assertLocalRuntimeAvailable("Offline speech recognition");
 	return createWorkerSubprocess<SttWorkerOutbound>({
 		spawnCommand: resolveWorkerSpawnCmd(STT_WORKER_ARG),
 		env: tinyWorkerEnv(),
@@ -115,6 +117,7 @@ export class SttClient {
 	 * worker keeps the model loaded across calls — the model is never reloaded).
 	 */
 	async transcribe(modelKey: SttModelKey, audio: Float32Array, options: SttTranscribeOptions = {}): Promise<string> {
+		assertLocalRuntimeAvailable("Offline speech recognition");
 		options.signal?.throwIfAborted();
 		return this.#host.request<string>(
 			options.signal,
@@ -132,6 +135,7 @@ export class SttClient {
 	 * an aborted signal) tears the session down and resolves `stop()` with "".
 	 */
 	startStream(modelKey: SttModelKey, options: SttStreamOptions = {}): SttStreamHandle {
+		assertLocalRuntimeAvailable("Offline speech recognition");
 		const worker = this.#host.ensureWorker();
 		const id = this.#host.nextId();
 		const { promise, resolve, reject } = Promise.withResolvers<string>();
@@ -182,6 +186,7 @@ export class SttClient {
 	}
 
 	downloadModel(modelKey: SttModelKey, options: SttDownloadOptions = {}): Promise<SttDownloadResult> {
+		assertLocalRuntimeAvailable("Offline speech model download");
 		return this.#host.downloadModel(modelKey, options);
 	}
 

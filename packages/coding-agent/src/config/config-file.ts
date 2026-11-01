@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { OmpErrors, type Type } from "@oh-my-pi/omptype";
 import { getAgentDir, isEnoent, logger, stringifyYamlConfig } from "@oh-my-pi/pi-utils";
-import { JSONC, YAML } from "bun";
+import { JSONC, YAML } from "@oh-my-pi/pi-utils/runtime";
 import { writeFileAtomicallySync } from "../utils/atomic-file";
 
 /** Minimal subset of the AJV ConfigSchemaError shape this module actually relies on. */

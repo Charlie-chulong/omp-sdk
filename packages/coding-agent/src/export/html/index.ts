@@ -3,7 +3,8 @@ import * as path from "node:path";
 import { buildSessionTraceFromSnapshots } from "@oh-my-pi/omp-stats/trace";
 import type { SessionTrace } from "@oh-my-pi/omp-stats/types";
 import type { AgentState } from "@oh-my-pi/pi-agent-core";
-import { APP_NAME, isCompiledBinary, isEnoent, VERSION } from "@oh-my-pi/pi-utils";
+import { encodeBase64, APP_NAME, isCompiledBinary, isEnoent, VERSION } from "@oh-my-pi/pi-utils";
+import { runtime as platformRuntime } from "@oh-my-pi/pi-utils/runtime";
 import { getResolvedThemeColors, getThemeExportColors } from "@oh-my-pi/pi-tui/theme";
 import type { SessionEntry, SessionHeader } from "../../session/session-entries";
 import { SessionManager } from "../../session/session-manager";
@@ -23,11 +24,11 @@ export function getTemplate(): string {
 	const sourceCheckout =
 		!isCompiledBinary() &&
 		!process.env.PI_BUNDLED &&
-		!import.meta.dir.split(/[\\/]/).includes("node_modules") &&
-		fs.existsSync(path.join(import.meta.dir, "shell.html"));
+		!import.meta.dirname.split(/[\\/]/).includes("node_modules") &&
+		fs.existsSync(path.join(import.meta.dirname, "shell.html"));
 	let viewerScript: string;
 	if (sourceCheckout) {
-		const viewerPath = path.resolve(import.meta.dir, "../../../export-assets", viewerAsset.file);
+		const viewerPath = path.resolve(import.meta.dirname, "../../../export-assets", viewerAsset.file);
 		let viewer: string;
 		try {
 			viewer = fs.readFileSync(viewerPath, "utf8");
@@ -212,7 +213,7 @@ async function generateHtml(
 	themeName?: string,
 ): Promise<string> {
 	const themeStyles = palette === "theme" ? await generateThemeStyles(palette, themeNames, themeName) : "";
-	const sessionDataBase64 = Buffer.from(JSON.stringify(sessionData)).toBase64();
+	const sessionDataBase64 = encodeBase64(Buffer.from(JSON.stringify(sessionData)));
 
 	// Use function replacements so `$'`, `$&`, `$$`, `$n`, etc. in the
 	// substituted CSS/base64 are not interpreted as substitution patterns.
@@ -243,7 +244,7 @@ export async function exportSessionToHtml(
 	const html = await generateHtml(sessionData, palette, opts.themeNames, opts.themeName);
 	const outputPath = opts.outputPath || `${APP_NAME}-session-${path.basename(sessionFile, ".jsonl")}.html`;
 
-	await Bun.write(outputPath, html);
+	await platformRuntime.write(outputPath, html);
 	return outputPath;
 }
 
@@ -277,6 +278,6 @@ export async function exportFromFile(inputPath: string, options?: ExportOptions 
 	const html = await generateHtml(sessionData, palette, opts.themeNames, opts.themeName);
 	const outputPath = opts.outputPath || `${APP_NAME}-session-${path.basename(inputPath, ".jsonl")}.html`;
 
-	await Bun.write(outputPath, html);
+	await platformRuntime.write(outputPath, html);
 	return outputPath;
 }

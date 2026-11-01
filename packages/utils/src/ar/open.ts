@@ -1,5 +1,6 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { runtime } from "../runtime";
 import { formatBytes } from "../format";
 import { hasFsCode } from "../fs-error";
 import { UTF8_DECODER } from "./bytes";
@@ -195,7 +196,7 @@ export async function extractArchive(
 	for (const file of files) {
 		const extracted = await archive.readFile(file.path);
 		const outputPath = path.resolve(extractRoot, file.path);
-		await Bun.write(outputPath, extracted.bytes);
+		await runtime.write(outputPath, extracted.bytes);
 		const permissions = (file.mode ?? 0) & 0o777;
 		if (permissions) await fs.chmod(outputPath, permissions);
 		count++;

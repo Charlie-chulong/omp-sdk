@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { describe, expect, it } from "bun:test";
 import { VeracityConsolidator } from "@oh-my-pi/pi-mnemopi/core/veracity-consolidation";
 

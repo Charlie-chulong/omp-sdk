@@ -73,7 +73,10 @@ export interface KittyGraphicsFeatures {
  * `PI_NO_KITTY_PLACEHOLDERS=1` and `PI_KITTY_PLACEHOLDERS=0` remain hard
  * opt-outs; `PI_KITTY_PLACEHOLDERS=1` explicitly opts in anywhere else.
  */
-export function detectKittyUnicodePlaceholdersSupport(terminalId: string, env: NodeJS.ProcessEnv = Bun.env): boolean {
+export function detectKittyUnicodePlaceholdersSupport(
+	terminalId: string,
+	env: NodeJS.ProcessEnv = process.env,
+): boolean {
 	const offRaw = env.PI_NO_KITTY_PLACEHOLDERS?.trim().toLowerCase();
 	if (offRaw === "1" || offRaw === "true" || offRaw === "on" || offRaw === "yes" || offRaw === "y") return false;
 	const force = env.PI_KITTY_PLACEHOLDERS?.trim().toLowerCase();

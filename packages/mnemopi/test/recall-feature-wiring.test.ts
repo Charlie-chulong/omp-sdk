@@ -2,7 +2,7 @@
  * `polyphonicRecall` / `enhancedRecall` must change what `recallEnhanced` returns
  * (the surface hosts such as the coding-agent call), per memory instance.
  */
-import type { Database } from "bun:sqlite";
+import type { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

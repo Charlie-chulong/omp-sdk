@@ -23,7 +23,7 @@ import type { AgentMessage, AgentState } from "@oh-my-pi/pi-agent-core";
 import type { AssistantMessage, ImageContent, TextContent } from "@oh-my-pi/pi-ai";
 import { $which, logger } from "@oh-my-pi/pi-utils";
 import { DEFAULT_SHARE_URL } from "@oh-my-pi/pi-wire";
-import { $ } from "bun";
+import { $, runtime as platformRuntime } from "@oh-my-pi/pi-utils/runtime";
 import { obfuscateToolArguments } from "../secrets/message-transform";
 import type { SecretObfuscator } from "../secrets/obfuscator";
 import { SecretValueSet } from "../secrets/placeholder";
@@ -561,7 +561,7 @@ export async function sealToFit(key: CryptoKey, data: SessionData, maxBytes: num
 
 /** `[12B IV][AES-256-GCM(gzip(JSON))]` — decrypted and gunzipped by share-loader.js. */
 async function sealSessionData(key: CryptoKey, data: SessionData): Promise<Uint8Array<ArrayBuffer>> {
-	const compressed = Bun.gzipSync(new TextEncoder().encode(JSON.stringify(data)));
+	const compressed = platformRuntime.gzipSync(new TextEncoder().encode(JSON.stringify(data)));
 	const iv = new Uint8Array(IV_LENGTH);
 	crypto.getRandomValues(iv);
 	const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, compressed));
@@ -632,7 +632,7 @@ async function tryCreateGist(sealed: Uint8Array): Promise<{ id: string; url: str
 	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-share-"));
 	try {
 		const file = path.join(dir, GIST_FILENAME);
-		await Bun.write(file, Buffer.from(sealed).toString("base64"));
+		await platformRuntime.write(file, Buffer.from(sealed).toString("base64"));
 		const result = await $`gh gist create --public=false ${file}`.quiet().nothrow();
 		if (result.exitCode !== 0) {
 			logger.warn("share: gist creation failed; falling back to share server", {

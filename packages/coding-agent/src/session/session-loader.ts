@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -277,7 +278,7 @@ export async function visitEntriesFromFileStream(
 		}
 		bytesSinceYield = 0;
 		entriesSinceYield = 0;
-		await Bun.sleep(0);
+		await runtime.sleep(0);
 	};
 
 	const hasPayload = (bytes: Uint8Array, start: number, end: number): boolean => {
@@ -318,7 +319,7 @@ export async function visitEntriesFromFileStream(
 				if (cut !== -1) input = buffer.subarray(0, cut + 1);
 			}
 			const partial = input.length < buffer.length;
-			const { values, error, read, done } = Bun.JSONL.parseChunk(input);
+			const { values, error, read, done } = runtime.JSONL.parseChunk(input);
 			for (const value of values) {
 				if (recordsSeen >= maxRecords) {
 					stopped = true;
@@ -397,7 +398,7 @@ export async function visitEntriesFromFileStream(
 		// delivering its bytes (macOS) or ignores the bound and streams the whole
 		// file (Windows).
 		let unread = maxBytes;
-		for await (const streamed of Bun.file(filePath).stream()) {
+		for await (const streamed of runtime.file(filePath).stream()) {
 			if (stopped) break;
 			const chunk = streamed.byteLength > unread ? streamed.subarray(0, unread) : streamed;
 			unread -= chunk.byteLength;

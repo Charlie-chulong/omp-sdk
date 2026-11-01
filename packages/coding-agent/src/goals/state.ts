@@ -1,5 +1,6 @@
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import { stableStringifyJson } from "@oh-my-pi/pi-utils";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { type Goal } from "@oh-my-pi/pi-tui/tools/goal";
 import type { UsageStatistics } from "../session/session-entries";
 
@@ -55,7 +56,7 @@ export function goalContinuationActivity(messages: readonly AgentMessage[]): str
 	const digests: string[] = [];
 	const record = (value: unknown): void => {
 		const serialized = stableStringifyJson(value);
-		digests.push(`${serialized.length}:${Bun.hash(serialized).toString(16)}`);
+		digests.push(`${serialized.length}:${runtime.hash(serialized).toString(16)}`);
 	};
 	for (const message of messages) {
 		if (message.role === "assistant") {

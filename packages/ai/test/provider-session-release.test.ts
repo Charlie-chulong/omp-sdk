@@ -1,3 +1,4 @@
+import { encodeBase64 } from "@oh-my-pi/pi-utils";
 import { describe, expect, it } from "bun:test";
 import type { ServerWebSocket } from "bun";
 import { streamOpenAICodexResponses } from "@oh-my-pi/pi-ai/providers/openai-codex-responses";
@@ -61,7 +62,7 @@ describe("provider routing session release", () => {
 		};
 		const providerSessionState = new Map<string, ProviderSessionState>();
 		const token = (account: string) =>
-			`aaa.${Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: account } })).toBase64()}.bbb`;
+			`aaa.${encodeBase64(Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: account } })))}.bbb`;
 		const options = { apiKey: token("account-a"), providerSessionState, preferWebsockets: true };
 		const messages: Message[] = [{ role: "user", content: "First question", timestamp: 1 }];
 		const context = { systemPrompt: ["system prompt"], messages };

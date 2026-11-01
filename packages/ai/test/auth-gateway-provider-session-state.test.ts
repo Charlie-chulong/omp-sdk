@@ -151,7 +151,7 @@ async function startGateway(
 	} else {
 		storage.keys.setRuntime(provider, "sk-ant-api-test");
 	}
-	const handle = startAuthGateway({
+	const handle = await startAuthGateway({
 		bind: "127.0.0.1:0",
 		bearerTokens: ["test-token"],
 		storage,
@@ -220,7 +220,7 @@ it.each(["/v1/pi/stream", "/v1/chat/completions"])(
 			inferenceRegion: "us" as const,
 		};
 		await storage.credentials.set("factory-droid", credential);
-		const gateway = startAuthGateway({
+		const gateway = await startAuthGateway({
 			bind: "127.0.0.1:0",
 			bearerTokens: ["test-token"],
 			storage,
@@ -298,7 +298,7 @@ it.each(["/v1/pi/stream", "/v1/chat/completions"])(
 			refresh: "refresh-token",
 			expires: Date.now() + 3_600_000,
 		});
-		const gateway = startAuthGateway({
+		const gateway = await startAuthGateway({
 			bind: "127.0.0.1:0",
 			bearerTokens: ["test-token"],
 			storage,

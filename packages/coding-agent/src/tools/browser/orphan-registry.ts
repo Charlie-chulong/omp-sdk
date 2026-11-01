@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Durable ownership registry for targets in the project-shared broker-owned
  * Chromium (`omp.browser.headless`/`omp.browser.headed`).
@@ -80,7 +81,7 @@ async function flush(dir: string): Promise<void> {
 	const record: OwnershipFile = { pid: process.pid, updatedAt: Date.now(), targets: [...owned] };
 	const tmp = `${file}.${process.pid}.tmp`;
 	await fs.mkdir(dir, { recursive: true });
-	await Bun.write(tmp, JSON.stringify(record));
+	await runtime.write(tmp, JSON.stringify(record));
 	await fs.rename(tmp, file);
 }
 
@@ -194,7 +195,7 @@ export async function collectOrphanTargets(
 		const file = path.join(dir, entry);
 		let record: OwnershipFile;
 		try {
-			record = (await Bun.file(file).json()) as OwnershipFile;
+			record = (await runtime.file(file).json()) as OwnershipFile;
 		} catch {
 			continue; // torn or malformed file; a live owner will rewrite it
 		}
@@ -306,7 +307,7 @@ async function updateOwnershipFile(owner: OrphanOwner, targetIds: string[]): Pro
 	const tmp = `${owner.file}.${process.pid}.tmp`;
 	try {
 		const record: OwnershipFile = { pid: owner.pid, updatedAt: owner.updatedAt, targets: targetIds };
-		await Bun.write(tmp, JSON.stringify(record));
+		await runtime.write(tmp, JSON.stringify(record));
 		await fs.rename(tmp, owner.file);
 	} catch (error) {
 		await fs.rm(tmp, { force: true }).catch(() => undefined);

@@ -1,3 +1,4 @@
+import { decodeBase64Bytes } from "@oh-my-pi/pi-utils";
 import { type } from "@oh-my-pi/omptype";
 import * as AIError from "../error";
 import type {
@@ -223,13 +224,13 @@ export function parseRequest(body: unknown): VideoParsedRequest {
 
 /** Encode all provider/model routing needed to resolve a future poll without gateway state. */
 export function encodeGatewayJobId(identity: GatewayJobIdentity): string {
-	return new TextEncoder().encode(JSON.stringify(identity)).toBase64({ alphabet: "base64url", omitPadding: true });
+	return Buffer.from(JSON.stringify(identity)).toString("base64url");
 }
 
 /** Decode a stateless gateway job id, rejecting malformed or incomplete identities. */
 export function decodeGatewayJobId(id: string): GatewayJobIdentity {
 	try {
-		const json = new TextDecoder().decode(Uint8Array.fromBase64(id, { alphabet: "base64url" }));
+		const json = new TextDecoder().decode(decodeBase64Bytes(id, "base64url"));
 		const parsed = gatewayJobIdSchema(JSON.parse(json));
 		if (parsed instanceof type.errors) invalid("invalid video job id");
 		return parsed;

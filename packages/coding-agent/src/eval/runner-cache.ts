@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Shared on-disk staging for subprocess kernel runner scripts.
  *
@@ -43,10 +44,10 @@ export async function stageRunnerScript(dirName: string, ext: string, script: st
 		stagedPaths.delete(dirName);
 	}
 	const dir = await resolveStagingDir(dirName);
-	const hash = Bun.hash(script).toString(36);
+	const hash = runtime.hash(script).toString(36);
 	const target = path.join(dir, `runner-${hash}.${ext}`);
 	if (!fs.existsSync(target)) {
-		await Bun.write(target, script);
+		await runtime.write(target, script);
 	}
 	stagedPaths.set(dirName, target);
 	return target;

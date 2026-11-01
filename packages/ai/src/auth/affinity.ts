@@ -1,4 +1,4 @@
-import { logger } from "@oh-my-pi/pi-utils";
+import * as logger from "@oh-my-pi/pi-utils/logger";
 import { LRUCache } from "@oh-my-pi/pi-utils/lru";
 import { getEnvApiKey } from "../env-api-key";
 import type { AuthCredential, OAuthCredential, SessionRestrictionLease, SessionsApi } from "./types";

@@ -1,3 +1,5 @@
+import { Worker as NodeWorker } from "node:worker_threads";
+import { resolveNodeWorkerHost } from "../subprocess/worker-client";
 import { workerHostEntry } from "@oh-my-pi/pi-utils/worker-host";
 import type { TerminalOutputOptions } from "./terminal-output";
 import {
@@ -11,6 +13,22 @@ export async function renderTerminalOutputIsolated(
 	output: string,
 	options: TerminalOutputOptions,
 ): Promise<string[] | undefined> {
+	if (typeof Bun === "undefined") {
+		const worker = new NodeWorker(resolveNodeWorkerHost(), { argv: [TERMINAL_OUTPUT_WORKER_ARG] });
+		try {
+			const { promise, resolve, reject } = Promise.withResolvers<TerminalOutputWorkerResult>();
+			worker.once("message", resolve);
+			worker.once("error", reject);
+			worker.once("exit", code => reject(new Error(`Terminal output worker exited before responding (${code})`)));
+			const request: TerminalOutputWorkerRequest = { output, options };
+			worker.postMessage(request);
+			const result = await promise;
+			if (!result.ok) throw new Error(result.error);
+			return result.rows;
+		} finally {
+			await worker.terminate();
+		}
+	}
 	const hostEntry = workerHostEntry();
 	const worker = hostEntry
 		? new Worker(hostEntry, { type: "module", argv: [TERMINAL_OUTPUT_WORKER_ARG] })

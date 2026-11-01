@@ -1,7 +1,10 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { getTinyModelsCacheDir, isEnoent, logger, withFileLock } from "@oh-my-pi/pi-utils";
 import { withDownload } from "../downloads/activity";
+import { assertLocalRuntimeAvailable, isCoreSdk } from "../sdk-profile";
+import { assertNativeCapability } from "../native-capabilities";
 import { sha256File } from "../utils/file-hash";
 import { downloadFile } from "../utils/tools-manager";
 
@@ -91,7 +94,7 @@ export function getSmolLmModelDir(): string {
 
 async function readReadyMarker(dir: string): Promise<string | null> {
 	try {
-		return (await Bun.file(path.join(dir, READY_MARKER)).text()).trim();
+		return (await runtime.file(path.join(dir, READY_MARKER)).text()).trim();
 	} catch (error) {
 		if (isEnoent(error)) return null;
 		throw error;
@@ -140,6 +143,7 @@ async function fetchVerified(
 
 /** Whether the pinned weights are fully downloaded and verified (one small file read). */
 export async function smolLmWeightsReady(): Promise<boolean> {
+	if (isCoreSdk()) return false;
 	return (await readReadyMarker(getSmolLmModelDir())) === READY_STAMP;
 }
 
@@ -159,6 +163,8 @@ export interface EnsureSmolLmWeightsOptions {
  * match the pinned size/digest.
  */
 export async function ensureSmolLmWeights(options: EnsureSmolLmWeightsOptions = {}): Promise<string> {
+	assertLocalRuntimeAvailable("SmolLM word completion");
+	assertNativeCapability("smollm", "SmolLM word completion (choose ngram or apple instead)");
 	const { signal, onProgress } = options;
 	const dir = getSmolLmModelDir();
 	if ((await readReadyMarker(dir)) === READY_STAMP) return dir;
@@ -173,7 +179,7 @@ export async function ensureSmolLmWeights(options: EnsureSmolLmWeightsOptions = 
 			finished += file.size;
 		}
 		onProgress?.(finished, "verified");
-		await Bun.write(path.join(dir, READY_MARKER), `${READY_STAMP}\n`);
+		await runtime.write(path.join(dir, READY_MARKER), `${READY_STAMP}\n`);
 		// Engines read their weights at load, so a running one is unaffected.
 		for (const name of OBSOLETE_FILES) await fs.rm(path.join(dir, name), { force: true });
 		logger.debug("smollm weights: ready", { dir, files: SMOLLM_FILES.map(file => file.name) });
@@ -194,6 +200,8 @@ let weightsReady = false;
  * request, so the fetch starts on first use; cheap after that.
  */
 export function prefetchSmolLmWeights(): void {
+	if (isCoreSdk()) return;
+	assertNativeCapability("smollm", "SmolLM word completion (choose ngram or apple instead)");
 	if (weightsReady || prefetching || Date.now() < prefetchRetryAt) return;
 	prefetching = true;
 	void (async () => {

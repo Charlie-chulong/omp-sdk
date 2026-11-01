@@ -1,5 +1,6 @@
 import * as fs from "node:fs/promises";
 import { isEnoent } from "@oh-my-pi/pi-utils";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { type AgentRef, AgentRegistry } from "../../registry/agent-registry";
 import type { AgentSession } from "../../session/agent-session";
 import type { FileEntry, SessionMessageEntry } from "../../session/session-entries";
@@ -69,7 +70,7 @@ function addPruned(set: Set<string>, value: string, maxSize: number): void {
 
 export async function readRpcSubagentTranscript(sessionFile: string, fromByte = 0): Promise<RpcSubagentMessagesResult> {
 	let startByte = Number.isFinite(fromByte) ? Math.max(0, Math.trunc(fromByte)) : 0;
-	const file = Bun.file(sessionFile);
+	const file = runtime.file(sessionFile);
 	let size: number;
 	try {
 		({ size } = await fs.stat(sessionFile));

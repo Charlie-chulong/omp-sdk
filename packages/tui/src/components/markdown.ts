@@ -1,3 +1,4 @@
+import { runtimeColor } from "../runtime-color";
 import { LRUCache } from "@oh-my-pi/pi-utils/lru";
 import {
 	Lexer,
@@ -2083,7 +2084,7 @@ function collapseInlineHtml(tokens: Token[]): Token[] {
 // render a small chip painted with that color just before the code. The chip
 // glyph comes from the theme's symbol set (ASCII → Unicode → Nerd Font), so it
 // degrades gracefully; the color itself is exact 24-bit on truecolor terminals
-// and the nearest 256-color cell otherwise (Bun.color quantizes for us).
+// and the nearest 256-color cell otherwise (the runtime color adapter quantizes).
 
 /** Fallback chip when the theme supplies no `colorSwatch` symbol (Unicode default). */
 const DEFAULT_COLOR_SWATCH_GLYPH = "■";
@@ -2118,7 +2119,7 @@ function classifyHexColor(hex: string, strict: boolean): boolean {
  *  rule (Color.isLighter): YIQ brightness (r·299 + g·587 + b·114)/1000 ≥ 128
  *  → dark text, else light. */
 function swatchContrastFg(hex: string): string {
-	const rgba = Bun.color(`#${hex}`, "{rgba}");
+	const rgba = runtimeColor(`#${hex}`, "{rgba}");
 	if (!rgba) return "";
 	const light = (rgba.r * 299 + rgba.g * 587 + rgba.b * 114) / 1000 >= 128;
 	if (TERMINAL.trueColor) return light ? "\x1b[38;2;0;0;0m" : "\x1b[38;2;255;255;255m";
@@ -2132,7 +2133,7 @@ function swatchContrastFg(hex: string): string {
  *  a standalone \x1b[49m so line-level backgrounds re-open themselves via
  *  applyBackgroundToLine / Theme.bgFill. */
 function colorSwatch(hex: string, glyph: string, text: string): string {
-	const fg = Bun.color(`#${hex}`, TERMINAL.trueColor ? "ansi-16m" : "ansi-256");
+	const fg = runtimeColor(`#${hex}`, TERMINAL.trueColor ? "ansi-16m" : "ansi-256");
 	if (!fg) return "";
 	const bg = fg.replace("[38;", "[48;");
 	return `${fg}${glyph}\x1b[39m ${bg}${swatchContrastFg(hex)}${text}\x1b[39m\x1b[49m`;

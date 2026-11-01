@@ -1,4 +1,4 @@
-import { logger } from "@oh-my-pi/pi-utils";
+import * as logger from "@oh-my-pi/pi-utils/logger";
 import { classifyGatewayError } from "../../error/gateway";
 import { ValidationError } from "../../error/validation";
 import * as speechWire from "../../providers/speech-server";

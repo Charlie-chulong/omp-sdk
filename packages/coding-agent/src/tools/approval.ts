@@ -69,7 +69,7 @@ type ApprovalSubject = Pick<
 };
 
 /** Whether a runtime value names a supported approval mode. */
-function isApprovalMode(value: unknown): value is ApprovalMode {
+export function isApprovalMode(value: unknown): value is ApprovalMode {
 	return typeof value === "string" && APPROVAL_MODES.some(mode => mode === value);
 }
 
@@ -840,9 +840,16 @@ export async function requestApproval(
 	ui: Pick<ExtensionUIContext, "select" | "approve">,
 	tool: ApprovalSubject,
 	args: unknown,
-	options: { reason?: string; appendix?: readonly string[]; sessionSubject?: string; grants?: boolean } = {},
+	options: {
+		reason?: string;
+		appendix?: readonly string[];
+		sessionSubject?: string;
+		grants?: boolean;
+		signal?: AbortSignal;
+	} = {},
 ): Promise<ExtensionApprovalAnswer> {
 	const { reason, appendix = [], sessionSubject } = options;
+	options.signal?.throwIfAborted();
 	const header = approvalHeader(tool, reason);
 	const details = approvalDetails(tool, args);
 	const session = sessionSubject === undefined ? undefined : `Approve ${sessionSubject} for this session`;
@@ -850,6 +857,7 @@ export async function requestApproval(
 	const grants = options.grants ? approvalGrantChoices(tool, args, folder) : [];
 	// A directory answer names what it covers: the folder's own entries, listed in the prompt.
 	const listing = folder ? await approvalFolderListing(folder.key, APPROVAL_FOLDER_FULL_LISTING) : undefined;
+	options.signal?.throwIfAborted();
 	const folderBlock = approvalFolderPromptBlock(folder?.label, listing, APPROVAL_FOLDER_FULL_LISTING);
 	const full = [...header, ...details, ...(folderBlock ? [folderBlock] : []), ...appendix].join("\n");
 	if (ui.approve) {
@@ -861,12 +869,15 @@ export async function requestApproval(
 			...(compactBlock ? [compactBlock] : []),
 			...appendix,
 		].join("\n");
-		const answer = await ui.approve({
-			full,
-			compact,
-			...(session ? { session } : {}),
-			...(grants.length > 0 ? { grants } : {}),
-		});
+		const answer = await ui.approve(
+			{
+				full,
+				compact,
+				...(session ? { session } : {}),
+				...(grants.length > 0 ? { grants } : {}),
+			},
+			{ signal: options.signal },
+		);
 		if (answer === "once" || (answer === "session" && session)) return answer;
 		if (typeof answer === "object" && answer !== null && grants.some(grant => grant.scope === answer.grant)) {
 			return { grant: answer.grant, always: answer.always === true };
@@ -874,7 +885,10 @@ export async function requestApproval(
 		return "deny";
 	}
 	const choices = { ...(session ? { session } : {}), ...(grants.length > 0 ? { grants } : {}) };
-	return approvalAnswerForChoice(choices, await ui.select(full, approvalChoiceLabels(choices)));
+	return approvalAnswerForChoice(
+		choices,
+		await ui.select(full, approvalChoiceLabels(choices), { signal: options.signal }),
+	);
 }
 
 /** The approve-this-call-only label: "Approve", or "Approve Once" beside grants that remember more. */

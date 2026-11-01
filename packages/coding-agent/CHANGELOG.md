@@ -4,10 +4,25 @@
 
 ### Added
 
+- Added a headless Node.js 24+ SDK backend with persistent sessions, native tools, extension loading, full RPC hosting, and a shared worker host; Bun CLI behavior remains available.
+- Added a compact Node SDK profile for remote models and native tools without bundled local embedding, offline speech, or tiny helper inference runtimes.
+- Added Desktop-specific Node SDK builds with a reduced extension import surface while retaining independent generic SDK builds.
+- Added native capability inspection and actionable disabled-feature errors before downloads or native construction; caller-owned SDP live signaling remains available without native WebRTC.
+- Added Node SDK plugin-management commands and Desktop provider-helper imports without requiring an OMP executable or bundled Bun runtime.
 - Added queueable compaction: `/compact` sent with the follow-up key (Ctrl+Q) while the agent works now runs when it yields instead of interrupting it ([#17397](https://github.com/can1357/oh-my-pi/pull/17397) by [@H4vC](https://github.com/H4vC))
+
+### Changed
+
+- Reduced standalone binary size by disabling bundled bytecode, trading faster startup for smaller executables.
+- Reduced the packaged Node SDK footprint without removing browser or parser capabilities.
+- Desktop packaging now validates an isolated native addon and excludes full-native platform leaf packages, while generic SDK and Bun CLI defaults retain full native features.
 
 ### Fixed
 
+- Tool approval can now change during a running session through `/permissions`, `/settings`, or SDK/RPC controls, including sessions started with approval flags.
+- Fixed packaged Node SDK startup when no source checkout is present.
+- Fixed Node SDK sessions losing image generation and failing Desktop conversation creation when unrelated built-in tools are disabled.
+- Fixed Node SDK image reads, image questions, attachments, and binary exports failing when TypedArray Base64 methods are unavailable.
 - Startup prewalk now arms a later fallback candidate of the role named by prewalk.into when its first candidate is unavailable, matching /prewalk and /new ([#17373](https://github.com/can1357/oh-my-pi/pull/17373)).
 
 ## [18.14.0] - 2026-10-29

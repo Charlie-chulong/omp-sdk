@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -771,7 +772,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 			if (onPartial) {
 				const settled = await Promise.race([
 					fuzzy.then(() => true),
-					Bun.sleep(AT_PARTIAL_DELAY_MS).then(() => false),
+					runtime.sleep(AT_PARTIAL_DELAY_MS).then(() => false),
 				]);
 				if (!settled) {
 					const listing = await this.#getFileSuggestions(atPrefix);

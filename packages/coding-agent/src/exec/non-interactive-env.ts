@@ -110,7 +110,7 @@ function withoutCI(env: Readonly<Record<string, string>>): Record<string, string
 /** Builds the per-command environment for non-interactive child processes. */
 export function buildNonInteractiveEnv(
 	overrides?: Record<string, string>,
-	baseEnv: Record<string, string | undefined> = Bun.env,
+	baseEnv: Record<string, string | undefined> = process.env,
 	platform: NodeJS.Platform = process.platform,
 ): Record<string, string> {
 	// `PI_BASH_NO_CI` (and its legacy alias) opts out of the automatic `CI=true`

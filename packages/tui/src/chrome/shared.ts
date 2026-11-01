@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { TabBarTheme } from "../components/tab-bar";
 import { sanitizeDisplaySingleLine } from "../overlays/extensions/display-text";
 import { theme } from "../theme/index";
@@ -41,7 +42,7 @@ export function sanitizeHookStatusText(input: string): string {
 		const match = SGR_RE.exec(text);
 		// `sanitizeText` runs `Bun.stripANSI` only when an ESC is present; a chunk between SGR
 		// codes often has none, so strip explicitly to drop 8-bit (C1) sequence payloads.
-		const chunk = sanitizeDisplaySingleLine(Bun.stripANSI(text.slice(cursor, match ? match.index : text.length)));
+		const chunk = sanitizeDisplaySingleLine(runtime.stripANSI(text.slice(cursor, match ? match.index : text.length)));
 		for (const ch of chunk) {
 			if (WHITESPACE_RE.test(ch)) {
 				// Leading whitespace drops; ASCII space runs collapse even across SGR codes.

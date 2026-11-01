@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { ConflictBlock, ConflictEntry, ConflictScope } from "@oh-my-pi/pi-tui/tools/conflict-detect";
 /**
  * Detect and resolve unresolved git merge conflicts that surface in `read`
@@ -144,7 +145,7 @@ export async function scanFileForConflicts(
 	options: { maxBytes?: number } = {},
 ): Promise<ConflictFileScan> {
 	const maxBytes = options.maxBytes ?? SCAN_FILE_DEFAULT_MAX_BYTES;
-	const file = Bun.file(absolutePath);
+	const file = runtime.file(absolutePath);
 	const size = file.size;
 	const truncated = size > maxBytes;
 	const bytes = truncated ? new Uint8Array(await file.slice(0, maxBytes).arrayBuffer()) : await file.bytes();
@@ -332,7 +333,7 @@ async function findRegisteredBlocks(absolutePath: string, entries: readonly Conf
 		lineBytes = 0;
 		return line;
 	};
-	for await (const chunk of Bun.file(absolutePath).stream()) {
+	for await (const chunk of runtime.file(absolutePath).stream()) {
 		let start = 0;
 		for (let end = chunk.indexOf(10); ; end = chunk.indexOf(10, start)) {
 			const segment = chunk.subarray(start, end === -1 ? chunk.length : end);

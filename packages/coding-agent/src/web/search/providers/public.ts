@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { AuthStorage } from "@oh-my-pi/pi-ai";
 import type { SearchProviderId, SearchResponse, SearchSource } from "../types";
 import { SearchProviderError } from "../types";
@@ -147,9 +148,9 @@ export async function searchPublicWeb(
 		}),
 	);
 
-	await Promise.race([all, Bun.sleep(softMs)]);
+	await Promise.race([all, runtime.sleep(softMs)]);
 	if (!responses.some(response => response !== undefined) && failures.length < engineIds.length) {
-		await Promise.race([all, firstSuccess.promise, Bun.sleep(Math.max(0, hardMs - softMs))]);
+		await Promise.race([all, firstSuccess.promise, runtime.sleep(Math.max(0, hardMs - softMs))]);
 	}
 	straggler.abort();
 

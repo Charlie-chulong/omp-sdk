@@ -1,3 +1,4 @@
+import { runtimeColor } from "../runtime-color";
 import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
 import type { TspSpan } from "@oh-my-pi/pi-wire";
 import { formatDoubleTap, formatKeyHint, formatKeyHints, type KeyName } from "../app-keybindings";
@@ -75,7 +76,7 @@ function renderNewTag(phase: number, encoding: ColorEncoding): string {
 	let prev = "";
 	for (let i = 0; i < chars.length; i++) {
 		const hue = Math.round(((i / chars.length + wrapped) % 1) * 360);
-		const color = Bun.color(`hsl(${hue}, 95%, 60%)`, encoding) ?? "";
+		const color = runtimeColor(`hsl(${hue}, 95%, 60%)`, encoding) ?? "";
 		if (color !== prev) {
 			out += color;
 			prev = color;

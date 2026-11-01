@@ -3,7 +3,7 @@ import * as https from "node:https";
 import * as stream from "node:stream";
 import * as tls from "node:tls";
 import * as zlib from "node:zlib";
-import { logger } from "@oh-my-pi/pi-utils";
+import * as logger from "@oh-my-pi/pi-utils/logger";
 import type { FetchImpl } from "../types";
 
 /** `host/path` for logging; query strings can carry keys. */

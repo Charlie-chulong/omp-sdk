@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Snapcompact inline imaging: per-request transform that swaps the system
  * prompt, loaded context-file instructions, and/or large tool results for
@@ -834,7 +835,7 @@ export class SnapcompactInlineTransformer {
 
 		let systemPrompt = context.systemPrompt;
 		if (plan.systemPrompt && userIndex >= 0 && systemPromptTarget) {
-			const hash = Bun.hash(systemPromptTarget.text);
+			const hash = runtime.hash(systemPromptTarget.text);
 			let cached = this.#systemCache;
 			const generation = this.frameSink?.generation;
 			if (!cached || cached.hash !== hash || cached.shapeKey !== shapeKey || cached.generation !== generation) {
@@ -876,7 +877,7 @@ export class SnapcompactInlineTransformer {
 		shape: snapcompact.Shape,
 		shapeKey: string,
 	): Promise<ImageContent[]> {
-		const hash = Bun.hash(text);
+		const hash = runtime.hash(text);
 		const generation = this.frameSink?.generation;
 		const cached = cache.get(key);
 		if (cached && cached.hash === hash && cached.shapeKey === shapeKey && cached.generation === generation) {

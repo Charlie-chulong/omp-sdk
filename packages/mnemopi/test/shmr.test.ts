@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { afterEach, describe, expect, it, type Mock, spyOn } from "bun:test";
 import { initBeam } from "@oh-my-pi/pi-mnemopi/core/beam";
 import * as embeddings from "@oh-my-pi/pi-mnemopi/core/embeddings";

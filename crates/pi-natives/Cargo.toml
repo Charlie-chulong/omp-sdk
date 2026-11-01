@@ -15,11 +15,12 @@ workspace = true
 
 
 [features]
-# Off by default: the pipewire crate hard-links system libpipewire-0.3 via
-# pkg-config, which no CI/cross triple (musl, arm64) can satisfy, and the
-# Bazel-shipped addons build with crate_features = [] anyway. Linux devs who
-# want Wayland screencast opt in with `--features wayland-pipewire`.
-default = []
+# Keep the full addon as the default; Desktop builds explicitly disable defaults.
+default = ["smollm", "live-voice", "wasm-grammars"]
+smollm = ["pi-predict/smollm"]
+live-voice = ["pi-voice/live"]
+wasm-grammars = ["pi-ast/wasm"]
+# PipeWire hard-links a host library unavailable on shipping cross triples.
 wayland-pipewire = ["dep:pipewire"]
 
 [dependencies]
@@ -54,16 +55,16 @@ parking_lot.workspace = true
 pdf-inspector.workspace = true
 phf.workspace = true
 flume.workspace = true
-pi-ast = { workspace = true, features = ["wasm"] }
+pi-ast.workspace = true
 pi-builtins.workspace = true
 pi-diff.workspace = true
 pi-edit.workspace = true
 pi-walker.workspace = true
 pi-iso.workspace = true
-pi-predict.workspace = true
+pi-predict = { workspace = true, default-features = false }
 pi-shell.workspace = true
 pi-vfs.workspace = true
-pi-voice.workspace = true
+pi-voice = { workspace = true, default-features = false }
 portable-pty.workspace = true
 png.workspace = true
 rayon.workspace = true

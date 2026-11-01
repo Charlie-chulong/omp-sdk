@@ -19,7 +19,7 @@ async function bootGateway(): Promise<GatewayHarness> {
 	const storage = await AuthStorage.create(path.join(dir, "auth.db"));
 	storage.keys.setRuntime("openrouter", "test-key");
 	const mock = createMockModel({ provider: "openrouter", id: "mock/header-model" });
-	const handle = startAuthGateway({
+	const handle = await startAuthGateway({
 		bind: "127.0.0.1:0",
 		bearerTokens: ["gw-test-token"],
 		storage,

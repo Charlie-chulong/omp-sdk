@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as crypto from "node:crypto";
 import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
@@ -150,7 +151,7 @@ function providerInFlightRoot(): string {
 }
 
 function providerInFlightSegment(provider: string): string {
-	return Bun.SHA256.hash(provider, "base64url");
+	return runtime.SHA256.hash(provider, "base64url");
 }
 
 function providerInFlightDir(provider: string): string {
@@ -324,7 +325,7 @@ async function mkdirProviderInFlightLockDir(lockDir: string, signal?: AbortSigna
 			const maxMs = providerInFlightLockRetryTimings?.maxDelayMs ?? PROVIDER_INFLIGHT_LOCK_RETRY_MAX_MS;
 			const delayMs = Math.min(maxMs, initialMs * 2 ** failures);
 			failures++;
-			await untilAborted(signal, Bun.sleep(delayMs));
+			await untilAborted(signal, runtime.sleep(delayMs));
 		}
 	}
 }
@@ -462,7 +463,7 @@ async function tryAcquireProviderInFlightLease(
 async function signalProviderInFlightWaitersInDir(dir: string): Promise<void> {
 	try {
 		await fs.mkdir(dir, { recursive: true });
-		await Bun.write(path.join(dir, ".wakeup"), String(Date.now()));
+		await runtime.write(path.join(dir, ".wakeup"), String(Date.now()));
 	} catch {}
 }
 
@@ -522,7 +523,7 @@ async function removeProviderInFlightLeaseDir(leasePath: string): Promise<void> 
 			if (isEnoent(error)) return;
 			const code = (error as NodeJS.ErrnoException).code;
 			if (attempt < 2 && (code === "EBUSY" || code === "ENOTEMPTY" || code === "EPERM")) {
-				await Bun.sleep(25);
+				await runtime.sleep(25);
 				continue;
 			}
 			throw error;
@@ -1535,7 +1536,7 @@ function maxTokensWithThinkingBudget(
 	return Math.min(uncappedMaxTokens, modelMaxTokens ?? Number.POSITIVE_INFINITY);
 }
 export const OUTPUT_FALLBACK_BUFFER = 4000;
-const ANTHROPIC_USE_INTERLEAVED_THINKING = Bun.env.PI_NO_INTERLEAVED_THINKING !== "1";
+const ANTHROPIC_USE_INTERLEAVED_THINKING = process.env.PI_NO_INTERLEAVED_THINKING !== "1";
 
 export const ANTHROPIC_THINKING: Record<Effort, number> = {
 	minimal: 1024,

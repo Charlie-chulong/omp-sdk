@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { USER_AGENT, getInstallId } from "@oh-my-pi/pi-utils";
 import * as logger from "@oh-my-pi/pi-utils/logger";
 import { toClinePassPublicModelId } from "../cline-pass-model-id";
@@ -66,11 +67,6 @@ import {
 	mergeCopilotApiHeaders,
 	parseGitHubCopilotApiKey,
 } from "../wire/github-copilot";
-import {
-	SINGULARITYAPI_DEV_API_BASE_URL,
-	SINGULARITYAPI_TECH_API_BASE_URL,
-	normalizeSingularityApiBaseUrl,
-} from "../wire/singularityapi";
 import { isXiaomiTokenPlanKey } from "../wire/xiaomi-token-plan";
 import { createBundledReferenceMap, createReferenceResolver, toModelSpec } from "./bundled-references";
 import { getDefaultModelDiscoveryBaseUrl, resolveModelCacheProviderId } from "./cache-provider-id";
@@ -263,7 +259,7 @@ async function fetchCatalogPayload(
 	}
 	const bytes = new Uint8Array(await response.arrayBuffer());
 	const isZstd = bytes.length >= 4 && new DataView(bytes.buffer, bytes.byteOffset).getUint32(0, true) === ZSTD_MAGIC;
-	const text = new TextDecoder().decode(isZstd ? await Bun.zstdDecompress(bytes) : bytes);
+	const text = new TextDecoder().decode(isZstd ? await runtime.zstdDecompress(bytes) : bytes);
 	const payload: unknown = JSON.parse(text);
 	session.payload = payload;
 	session.etag = response.headers.get("etag");
@@ -3827,118 +3823,6 @@ export function openrouterModelManagerOptions(config?: OpenRouterModelManagerCon
 	};
 }
 
-const ZENMUX_OPENAI_BASE_URL = "https://zenmux.ai/api/v1";
-const ZENMUX_ANTHROPIC_BASE_URL = "https://zenmux.ai/api/anthropic";
-
-function normalizeZenMuxOpenAiBaseUrl(baseUrl?: string): string {
-	const value = baseUrl?.trim();
-	if (!value) {
-		return ZENMUX_OPENAI_BASE_URL;
-	}
-	const normalized = value.endsWith("/") ? value.slice(0, -1) : value;
-	if (normalized.endsWith("/api/anthropic")) {
-		return normalized.replace("/api/anthropic", "/api/v1");
-	}
-	return normalized;
-}
-
-function toZenMuxAnthropicBaseUrl(openAiBaseUrl: string): string {
-	try {
-		const parsed = new URL(openAiBaseUrl);
-		const trimmedPath = parsed.pathname.replace(/\/+$/g, "");
-		parsed.pathname = trimmedPath.endsWith("/api/v1")
-			? `${trimmedPath.slice(0, -"/api/v1".length)}/api/anthropic`
-			: "/api/anthropic";
-		return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
-	} catch {
-		return ZENMUX_ANTHROPIC_BASE_URL;
-	}
-}
-
-function isZenMuxAnthropicModel(entry: OpenAICompatibleModelRecord, modelId: string): boolean {
-	if (typeof entry.owned_by === "string" && entry.owned_by.toLowerCase() === "anthropic") {
-		return true;
-	}
-	return classifyModel("zenmux", modelId, { lenient: true }).class === "anthropic";
-}
-
-function getZenMuxPricingValue(pricings: Record<string, unknown> | undefined, key: string): number {
-	const bucket = pricings?.[key];
-	if (!Array.isArray(bucket)) {
-		return 0;
-	}
-	for (const item of bucket) {
-		if (!isRecord(item)) {
-			continue;
-		}
-		const value = toNumber(item.value);
-		if (value !== undefined) {
-			return value;
-		}
-	}
-	return 0;
-}
-
-function getZenMuxCacheWritePrice(pricings: Record<string, unknown> | undefined): number {
-	const oneHour = getZenMuxPricingValue(pricings, "input_cache_write_1_h");
-	if (oneHour > 0) {
-		return oneHour;
-	}
-	const fiveMinute = getZenMuxPricingValue(pricings, "input_cache_write_5_min");
-	if (fiveMinute > 0) {
-		return fiveMinute;
-	}
-	return getZenMuxPricingValue(pricings, "input_cache_write");
-}
-
-// ---------------------------------------------------------------------------
-// 10.5 ZenMux
-// ---------------------------------------------------------------------------
-
-export interface ZenMuxModelManagerConfig {
-	apiKey?: string;
-	baseUrl?: string;
-	fetch?: FetchImpl;
-}
-
-export function zenmuxModelManagerOptions(config?: ZenMuxModelManagerConfig): ModelManagerOptions<Api> {
-	const apiKey = config?.apiKey;
-	const openAiBaseUrl = normalizeZenMuxOpenAiBaseUrl(config?.baseUrl);
-	const anthropicBaseUrl = toZenMuxAnthropicBaseUrl(openAiBaseUrl);
-	return {
-		providerId: "zenmux",
-		fetchDynamicModels: () =>
-			fetchOpenAICompatibleModels<Api>({
-				api: "openai-completions",
-				provider: "zenmux",
-				baseUrl: openAiBaseUrl,
-				apiKey,
-				mapModel: (entry, defaults) => {
-					const pricings = isRecord(entry.pricings) ? entry.pricings : undefined;
-					const capabilities = isRecord(entry.capabilities) ? entry.capabilities : undefined;
-					const isAnthropicModel = isZenMuxAnthropicModel(entry, defaults.id);
-					return {
-						...defaults,
-						name: toModelName(entry.display_name, defaults.name),
-						api: isAnthropicModel ? "anthropic-messages" : "openai-completions",
-						baseUrl: isAnthropicModel ? anthropicBaseUrl : openAiBaseUrl,
-						reasoning: capabilities?.reasoning === true || defaults.reasoning,
-						input: toInputCapabilities(entry.input_modalities),
-						cost: {
-							input: getZenMuxPricingValue(pricings, "prompt"),
-							output: getZenMuxPricingValue(pricings, "completion"),
-							cacheRead: getZenMuxPricingValue(pricings, "input_cache_read"),
-							cacheWrite: getZenMuxCacheWritePrice(pricings),
-						},
-						contextWindow: toPositiveNumber(entry.context_length, defaults.contextWindow),
-						maxTokens: toPositiveNumber(entry.max_completion_tokens, defaults.maxTokens),
-					};
-				},
-				fetch: config?.fetch,
-			}),
-	};
-}
-
 // ---------------------------------------------------------------------------
 // 10.6 Kilo Gateway
 // ---------------------------------------------------------------------------
@@ -4433,7 +4317,7 @@ export interface LmStudioModelManagerConfig {
 
 export function lmStudioModelManagerOptions(config?: LmStudioModelManagerConfig): ModelManagerOptions<Api> {
 	const apiKey = config?.apiKey;
-	const baseUrl = config?.baseUrl ?? Bun.env.LM_STUDIO_BASE_URL ?? "http://127.0.0.1:1234/v1";
+	const baseUrl = config?.baseUrl ?? process.env.LM_STUDIO_BASE_URL ?? "http://127.0.0.1:1234/v1";
 	const references = createBundledReferenceMap<"openai-completions">("lm-studio" as any);
 	return {
 		providerId: "lm-studio",
@@ -4860,7 +4744,7 @@ export function coreWeaveModelManagerOptions(
 ): ModelManagerOptions<"openai-completions"> {
 	return createSimpleOpenAICompletionsOptions("coreweave", "https://api.inference.wandb.ai/v1", {
 		...config,
-		headers: () => coreWeaveProjectHeaders(Bun.env),
+		headers: () => coreWeaveProjectHeaders(process.env),
 	});
 }
 
@@ -5043,7 +4927,7 @@ export function moonshotModelManagerOptions(
 		// `MOONSHOT_BASE_URL` redirects discovery (and the streaming request that
 		// inherits this baseUrl) at the Kimi China platform `api.moonshot.cn`; an
 		// explicit `config.baseUrl` still wins. Mirrors LITELLM_BASE_URL/LM_STUDIO_BASE_URL. (#2883)
-		defaultBaseUrl: Bun.env.MOONSHOT_BASE_URL ?? "https://api.moonshot.ai/v1",
+		defaultBaseUrl: process.env.MOONSHOT_BASE_URL ?? "https://api.moonshot.ai/v1",
 		config,
 		requireApiKey: true,
 		mapModel: (entry, defaults, reference) => {
@@ -5116,7 +5000,7 @@ export interface SakanaModelManagerConfig {
 
 export function sakanaModelManagerOptions(config?: SakanaModelManagerConfig): ModelManagerOptions<"openai-responses"> {
 	const apiKey = config?.apiKey;
-	const baseUrl = normalizeSakanaBaseUrl(config?.baseUrl ?? Bun.env.SAKANA_BASE_URL ?? Bun.env.FUGU_BASE_URL);
+	const baseUrl = normalizeSakanaBaseUrl(config?.baseUrl ?? process.env.SAKANA_BASE_URL ?? process.env.FUGU_BASE_URL);
 	const references = createBundledReferenceMap<"openai-responses">("sakana");
 	return {
 		providerId: "sakana",
@@ -5247,7 +5131,7 @@ export interface AiandModelManagerConfig {
  */
 export function aiandModelManagerOptions(config?: AiandModelManagerConfig): ModelManagerOptions<"openai-completions"> {
 	const apiKey = config?.apiKey;
-	const baseUrl = normalizeAiandBaseUrl(config?.baseUrl ?? Bun.env.AIAND_BASE_URL);
+	const baseUrl = normalizeAiandBaseUrl(config?.baseUrl ?? process.env.AIAND_BASE_URL);
 	return {
 		providerId: "aiand",
 		dynamicModelsAuthoritative: true,
@@ -7783,17 +7667,6 @@ const MODELS_DEV_PROVIDER_DESCRIPTORS_SPECIALIZED: readonly ModelsDevProviderDes
 		defaultContextWindow: 128000,
 		defaultMaxTokens: 8192,
 	}),
-
-	// --- ZenMux ---
-	openAiCompletionsDescriptor("zenmux", "zenmux", ZENMUX_OPENAI_BASE_URL, {
-		filterModel: filterActiveToolCallModels,
-		resolveApi: modelId => {
-			if (apiRouteFor("zenmux", modelId)?.api === "anthropic-messages") {
-				return { api: "anthropic-messages" as const, baseUrl: ZENMUX_ANTHROPIC_BASE_URL };
-			}
-			return { api: "openai-completions" as const, baseUrl: ZENMUX_OPENAI_BASE_URL };
-		},
-	}),
 ];
 /** All provider descriptors for models.dev data mapping in generate-models.ts. */
 export const MODELS_DEV_PROVIDER_DESCRIPTORS: readonly ModelsDevProviderDescriptor[] = [
@@ -8086,155 +7959,4 @@ export function charmHyperModelManagerOptions(
 				fetch: config?.fetch,
 			}),
 	};
-}
-
-// ---------------------------------------------------------------------------
-// SingularityAPI
-// ---------------------------------------------------------------------------
-
-export interface SingularityApiModelManagerConfig {
-	apiKey?: string;
-	baseUrl?: string;
-	fetch?: FetchImpl;
-}
-
-interface SingularityApiCapability extends Record<string, unknown> {
-	endpoint?: unknown;
-	context_window_tokens?: unknown;
-	maximum_output_tokens?: unknown;
-	default_output_tokens?: unknown;
-	pricing?: unknown;
-}
-
-/** Endpoints that decide which transport serves a `/v1/models` row. */
-const SINGULARITYAPI_CHAT_ENDPOINT = "/v1/chat/completions";
-const SINGULARITYAPI_IMAGE_ENDPOINT = "/v1/images/generations";
-
-function singularityApiCapabilities(entry: OpenAICompatibleModelRecord): readonly SingularityApiCapability[] {
-	const capabilities = entry.capabilities;
-	if (!Array.isArray(capabilities)) return [];
-	return capabilities.filter((capability): capability is SingularityApiCapability => isRecord(capability));
-}
-
-function toSingularityApiRate(value: unknown): number {
-	const parsed = toNumber(value);
-	return parsed !== undefined && parsed >= 0 ? parsed : 0;
-}
-
-function resolveSingularityApiCost(capability: SingularityApiCapability | undefined): ModelSpec<Api>["cost"] {
-	const pricing = capability !== undefined && isRecord(capability.pricing) ? capability.pricing : undefined;
-	if (!pricing) return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-	return {
-		input: toSingularityApiRate(pricing.input_per_million_usd),
-		output: toSingularityApiRate(pricing.output_per_million_usd),
-		cacheRead: 0,
-		cacheWrite: 0,
-	};
-}
-
-/**
- * Map one `/v1/models` row onto its serving transport.
- *
- * The wire's own `capabilities` list decides the transport: a row that serves
- * chat completions is a chat model, and a row whose only surface is
- * `/v1/images/generations` is routed to `openai-images` so
- * `generateImage`-style dispatch can reach it. Without that assignment the row
- * kept the discovery default (`openai-completions`) while still being marked
- * as an image model, so it was offered as an image target and then rejected by
- * every image client. The gateway bills image requests per request, never by
- * tokens, so those rows carry no token tariff.
- */
-function mapSingularityApiModel(entry: OpenAICompatibleModelRecord, defaults: ModelSpec<Api>): ModelSpec<Api> {
-	const capabilities = singularityApiCapabilities(entry);
-	const capability = capabilities.find(candidate => candidate.endpoint === SINGULARITYAPI_CHAT_ENDPOINT);
-	if (
-		capability === undefined &&
-		capabilities.some(candidate => candidate.endpoint === SINGULARITYAPI_IMAGE_ENDPOINT)
-	) {
-		return {
-			...defaults,
-			api: "openai-images",
-			name: toModelName(entry.name, defaults.name),
-			kind: "image",
-			reasoning: false,
-			input: ["text", "image"],
-			supportsTools: false,
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-			contextWindow: null,
-			maxTokens: null,
-		};
-	}
-	return {
-		...defaults,
-		name: toModelName(entry.name, defaults.name),
-		contextWindow: toPositiveNumber(capability?.context_window_tokens, defaults.contextWindow),
-		maxTokens: toPositiveNumber(capability?.maximum_output_tokens, defaults.maxTokens),
-		cost: resolveSingularityApiCost(capability),
-	};
-}
-/**
- * Core options shared by both SingularityAPI products. `mapModel` is supplied
- * only by the universal gateway, whose rows publish capability metadata; the
- * lane roster answers with bare ids and keeps the discovery defaults.
- */
-function singularityApiModelManagerOptions(
-	providerId: "singularityapi-dev" | "singularityapi-tech",
-	canonical: string,
-	config: SingularityApiModelManagerConfig | undefined,
-	mapModel?: (entry: OpenAICompatibleModelRecord, defaults: ModelSpec<Api>) => ModelSpec<Api>,
-): ModelManagerOptions<Api> {
-	const apiKey = config?.apiKey;
-	const baseUrl = normalizeSingularityApiBaseUrl(config?.baseUrl, canonical);
-	return {
-		providerId,
-		cacheProviderId: resolveModelCacheProviderId(providerId, { apiKey, baseUrl }),
-		dynamicModelsAuthoritative: true,
-		...(apiKey && {
-			fetchDynamicModels: () =>
-				fetchOpenAICompatibleModels<Api>({
-					api: "openai-completions",
-					provider: providerId,
-					baseUrl,
-					apiKey,
-					...(mapModel && { mapModel }),
-					fetch: config?.fetch,
-				}),
-		}),
-	};
-}
-
-/**
- * `singularityapi-dev` — SingularityAPI's pay-as-you-go universal gateway
- * (`api.singularityapi.dev`): chat completions over a 300+ model catalog,
- * plus image generation for the rows that advertise it.
- * `GET /v1/models` publishes each row's per-endpoint capabilities — context
- * window, max output tokens, and per-million pricing as 12-decimal strings —
- * with `cache-control: no-store`, so discovery reads limits and tariffs
- * straight off the wire and the endpoint list picks each row's transport.
- * Rows without a reasoning vocabulary stay non-reasoning; reviewed KDL rules
- * own the ladders the gateway leaves implicit (DeepSeek Flash/Pro, GPT-5.6
- * flagships), because a model discovered as non-reasoning never sends a
- * `reasoning_effort` and the gateway requires one alongside tools.
- */
-export function singularityApiDevModelManagerOptions(
-	config?: SingularityApiModelManagerConfig,
-): ModelManagerOptions<Api> {
-	return singularityApiModelManagerOptions(
-		"singularityapi-dev",
-		SINGULARITYAPI_DEV_API_BASE_URL,
-		config,
-		mapSingularityApiModel,
-	);
-}
-
-/**
- * `singularityapi-tech` — SingularityAPI's slot-reserved DeepSeek lanes
- * (`api.singularityapi.tech`). `/v1/models` answers with bare `{id}` rows and
- * no capability metadata, so rows keep the discovery defaults and the
- * reviewed KDL rules own the wire shape, limits patch, and effort ladder.
- */
-export function singularityApiTechModelManagerOptions(
-	config?: SingularityApiModelManagerConfig,
-): ModelManagerOptions<Api> {
-	return singularityApiModelManagerOptions("singularityapi-tech", SINGULARITYAPI_TECH_API_BASE_URL, config);
 }

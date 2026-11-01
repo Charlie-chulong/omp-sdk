@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { type Component, Container, type HistoryBatch } from "../tui";
 import * as logger from "@oh-my-pi/pi-utils/logger";
 import { popLoopPhase, pushLoopPhase } from "@oh-my-pi/pi-utils";
@@ -184,7 +185,7 @@ function isPlainBlank(line: string): boolean {
 /** Letters and digits of `rows` in reading order: the content rewrapping preserves. */
 function contentOf(rows: readonly string[]): string {
 	let text = "";
-	for (const row of rows) text += Bun.stripANSI(row).replace(/[^\p{L}\p{N}]/gu, "");
+	for (const row of rows) text += runtime.stripANSI(row).replace(/[^\p{L}\p{N}]/gu, "");
 	return text;
 }
 
@@ -202,7 +203,7 @@ function rowSplit(scrollback: readonly string[], rows: number, width: number): R
 		if (TERMINAL.isImageLine(row)) images.push({ payload: iterm2ImagePayload(row) ?? row, offset: text.length });
 		text += contentOf([row]);
 	}
-	return { rows, width, hash: Bun.hash(committed.join("\n")), text, images };
+	return { rows, width, hash: runtime.hash(committed.join("\n")), text, images };
 }
 
 /**
@@ -1166,7 +1167,7 @@ export class TranscriptContainer extends Container {
 		if (
 			width === split.width &&
 			rendered.length >= split.rows &&
-			Bun.hash(rendered.slice(0, split.rows).join("\n")) === split.hash
+			runtime.hash(rendered.slice(0, split.rows).join("\n")) === split.hash
 		) {
 			count = split.rows;
 		} else {

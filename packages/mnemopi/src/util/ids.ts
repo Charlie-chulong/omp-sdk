@@ -1,5 +1,6 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 export function sha256Hex16(value: string | Uint8Array): string {
-	return new Bun.CryptoHasher("sha256").update(value).digest("hex").slice(0, 16);
+	return new runtime.CryptoHasher("sha256").update(value).digest("hex").slice(0, 16);
 }
 
 const idSeed = crypto.getRandomValues(new Uint32Array(2));

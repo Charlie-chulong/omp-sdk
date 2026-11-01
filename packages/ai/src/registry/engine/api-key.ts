@@ -3,7 +3,7 @@
  * optionally validate the key against a declared probe, return the key.
  */
 import type { CompiledApiKeyLogin, CompiledAuthValidation } from "@oh-my-pi/pi-catalog/compat/types";
-import { $env } from "@oh-my-pi/pi-utils";
+import { $env } from "@oh-my-pi/pi-utils/env";
 import * as AIError from "../../error";
 import {
 	validateAnthropicCompatibleApiKey,

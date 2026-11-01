@@ -1,4 +1,4 @@
-import type { Database } from "bun:sqlite";
+import type { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import type { QueryCache } from "../query-cache";
 
 export type JsonPrimitive = string | number | boolean | null;

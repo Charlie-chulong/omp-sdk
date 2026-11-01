@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
@@ -188,7 +189,7 @@ export class BrowserNetworkManager {
 				return;
 			}
 			if (route.options.delay !== undefined && route.options.delay > 0) {
-				await Bun.sleep(route.options.delay);
+				await runtime.sleep(route.options.delay);
 			}
 			if (request.isInterceptResolutionHandled()) return;
 			if (route.options.abort) {
@@ -377,7 +378,7 @@ export class BrowserNetworkManager {
 		}
 		const har = buildHarLog(entries);
 		await untilAborted(signal, () => fs.mkdir(path.dirname(destination), { recursive: true }));
-		await untilAborted(signal, () => Bun.write(destination, `${JSON.stringify(har, null, 2)}\n`));
+		await untilAborted(signal, () => runtime.write(destination, `${JSON.stringify(har, null, 2)}\n`));
 		return destination;
 	}
 

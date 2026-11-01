@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * MCP Server Manager.
  *
@@ -989,7 +990,7 @@ export class MCPManager {
 			const initialLoads = Promise.allSettled(connectionTasks.map(task => task.tracked.promise));
 			const windowMs = resolveMCPStartupTimeoutMs(startupTimeoutMs);
 			if (windowMs === 0) await initialLoads;
-			else await Promise.race([initialLoads, Bun.sleep(windowMs)]);
+			else await Promise.race([initialLoads, runtime.sleep(windowMs)]);
 
 			const cachedTools = new Map<string, MCPToolDefinition[]>();
 			const pendingTasks = connectionTasks.filter(task => task.tracked.status === "pending");
@@ -1670,7 +1671,7 @@ export class MCPManager {
 						attempt: attempt + 1,
 						error: msg,
 					});
-					await Bun.sleep(delays[attempt]);
+					await runtime.sleep(delays[attempt]);
 				} else if (scheduled) {
 					logger.debug("MCP scheduled reconnect attempt failed", { path: `mcp:${name}`, error: msg });
 				} else {

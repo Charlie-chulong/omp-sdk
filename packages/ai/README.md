@@ -72,7 +72,6 @@ Unified LLM API with automatic model discovery, provider configuration, token an
 - **Umans AI Coding Plan** (supports `/login umans` or `UMANS_AI_CODING_PLAN_API_KEY`)
 - **MiniMax Token Plan** (requires `MINIMAX_CODE_API_KEY` or `MINIMAX_CODE_CN_API_KEY`)
 - **Xiaomi MiMo** (requires `XIAOMI_API_KEY`)
-- **ZenMux** (requires `ZENMUX_API_KEY`)
 - **Qwen Portal** (supports `QWEN_OAUTH_TOKEN` or `QWEN_PORTAL_API_KEY`)
 - **QwenCloud Token Plan** (supports `/login alibaba-token-plan`, `ALIBABA_TOKEN_PLAN_API_KEY`, or `BAILIAN_TOKEN_PLAN_API_KEY`; interactive login first selects a region — International (Singapore, default), China (Beijing) for 百炼 Token Plan keys, or a custom base URL — since region keys are non-interchangeable, then optionally stores a `home.qwencloud.com` Cookie request header for best-effort 5-hour and 7-day quota reporting)
   To enable quota reporting, sign in to the Token Plan dashboard, copy the `Cookie` request-header value from a `home.qwencloud.com` request in browser developer tools, and paste it at the second login prompt. Press Enter to skip; the Cookie is sensitive and session-lived, so rerun login when it expires.
@@ -961,7 +960,6 @@ In Node.js environments, you can set environment variables to avoid passing API 
 | Umans AI Coding Plan  | `UMANS_AI_CODING_PLAN_API_KEY`                                                                                      |
 | MiniMax Code          | `MINIMAX_CODE_API_KEY` (international) or `MINIMAX_CODE_CN_API_KEY` (China)                                         |
 | Xiaomi MiMo           | `XIAOMI_API_KEY`                                                                                                    |
-| ZenMux                | `ZENMUX_API_KEY`                                                                                                    |
 | vLLM                  | `VLLM_API_KEY`                                                                                                      |
 | Cloudflare AI Gateway | `CLOUDFLARE_AI_GATEWAY_API_KEY` + `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_GATEWAY_ID`                                 |
 | Snowflake Cortex      | `SNOWFLAKE_PAT` + `SNOWFLAKE_ACCOUNT`                                                                               |
@@ -992,8 +990,6 @@ Provider endpoint defaults for the current OpenAI-compatible integrations:
 - Hugging Face Inference: `https://router.huggingface.co/v1`
 - Venice: `https://api.venice.ai/api/v1`
 - Xiaomi MiMo: `https://api.xiaomimimo.com/anthropic`
-- ZenMux (OpenAI): `https://zenmux.ai/api/v1`
-- ZenMux (Anthropic models): `https://zenmux.ai/api/anthropic`
 - Umans AI Coding Plan: `https://api.code.umans.ai`
 - vLLM: `http://127.0.0.1:8000/v1`
 - Ollama: local OpenAI-compatible runtime (`http://127.0.0.1:11434/v1`)

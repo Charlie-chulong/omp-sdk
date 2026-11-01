@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { afterEach, beforeEach, describe, expect, test, vi } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
@@ -76,7 +76,7 @@ describe("auth-broker wire surface", () => {
 		await store.saveOAuth("anthropic", mintOAuthCredential("a", Date.now() + 60_000));
 		storage = new AuthStorage(store);
 		await storage.credentials.reload();
-		handle = startAuthBroker({
+		handle = await startAuthBroker({
 			storage,
 			bind: "127.0.0.1:0",
 			bearerTokens: [token],
@@ -385,7 +385,7 @@ describe("auth-broker wire surface", () => {
 			},
 		]);
 
-		handle = startAuthBroker({
+		handle = await startAuthBroker({
 			storage: storage!,
 			bind: "127.0.0.1:0",
 			bearerTokens: [token],
@@ -711,7 +711,7 @@ describe("auth-broker wire surface", () => {
 	});
 
 	test("logs the forwarded peer when trustProxyHeaders is set", async () => {
-		const proxied = startAuthBroker({
+		const proxied = await startAuthBroker({
 			storage: storage!,
 			bind: "127.0.0.1:0",
 			bearerTokens: [token],
@@ -932,7 +932,7 @@ describe("auth-broker wire surface", () => {
 		const localStorage = new AuthStorage(localStore);
 		await localStorage.credentials.reload();
 		const localToken = "keepalive-bearer";
-		const localHandle = startAuthBroker({
+		const localHandle = await startAuthBroker({
 			storage: localStorage,
 			bind: "127.0.0.1:0",
 			bearerTokens: [localToken],

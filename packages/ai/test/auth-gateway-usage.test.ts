@@ -58,7 +58,7 @@ test("excluded providers stay out of usage and credential health", async () => {
 	});
 	const storage = new AuthStorage(store, { usageProviderResolver: () => undefined });
 	await storage.credentials.reload();
-	const handle = startAuthGateway({
+	const handle = await startAuthGateway({
 		bind: "127.0.0.1:0",
 		bearerTokens: [],
 		storage,

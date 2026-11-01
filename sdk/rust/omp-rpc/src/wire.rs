@@ -2680,6 +2680,30 @@ impl CacheWarmingMode {
 	}
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ApprovalMode {
+	#[serde(rename = "always-ask")]
+	AlwaysAsk,
+	#[serde(rename = "always-ask-cached")]
+	AlwaysAskCached,
+	#[serde(rename = "write")]
+	Write,
+	#[serde(rename = "yolo")]
+	Yolo,
+}
+
+impl ApprovalMode {
+	/// Wire value.
+	pub fn as_str(self) -> &'static str {
+		match self {
+			Self::AlwaysAsk => "always-ask",
+			Self::AlwaysAskCached => "always-ask-cached",
+			Self::Write => "write",
+			Self::Yolo => "yolo",
+		}
+	}
+}
+
 /// `set_event_filter` projection: `delta` replaces the accumulated snapshots with the block a start/end event touches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MessageUpdates {
@@ -3052,6 +3076,8 @@ pub struct SessionState {
 	pub model: Option<ModelInfo>,
 	#[serde(rename = "thinkingLevel", default, skip_serializing_if = "Option::is_none")]
 	pub thinking_level: Option<ThinkingLevel>,
+	#[serde(rename = "approvalMode", default = "default_session_state_approval_mode")]
+	pub approval_mode: ApprovalMode,
 	#[serde(rename = "isStreaming", default = "default_session_state_is_streaming")]
 	pub is_streaming: bool,
 	#[serde(rename = "isCompacting", default = "default_session_state_is_compacting")]
@@ -5204,6 +5230,16 @@ pub struct OpenSessionParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SetApprovalModeParams {
+	pub mode: ApprovalMode,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SetApprovalModeResult {
+	pub mode: ApprovalMode,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SetFastModeParams {
 	pub enabled: bool,
 }
@@ -5968,6 +6004,10 @@ fn default_queued_messages_state_live_steered() -> i64 {
 	serde_json::from_str("0").expect("valid wire default")
 }
 
+fn default_session_state_approval_mode() -> ApprovalMode {
+	serde_json::from_str("\"always-ask\"").expect("valid wire default")
+}
+
 fn default_session_state_is_streaming() -> bool {
 	serde_json::from_str("false").expect("valid wire default")
 }
@@ -6279,6 +6319,22 @@ impl Command for GetStateCommand {
 
 	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
 		serde_json::from_value::<SessionState>(data.unwrap_or_else(|| Value::Object(Map::new())))
+	}
+}
+
+/// Change session-only tool approval mode immediately, without interrupting an active turn.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SetApprovalModeCommand {
+	pub mode: ApprovalMode,
+}
+
+impl Command for SetApprovalModeCommand {
+	const NAME: &'static str = "set_approval_mode";
+	const TIMEOUT_MS: Option<u64> = None;
+	type Output = ApprovalMode;
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		serde_json::from_value::<SetApprovalModeResult>(data.unwrap_or_else(|| Value::Object(Map::new()))).map(|result| result.mode)
 	}
 }
 

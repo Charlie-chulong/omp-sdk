@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Resolve auth-broker connection configuration for the local omp client.
  *
@@ -194,7 +195,7 @@ export function createAuthStorageSettingsSync(scope: ScopeLike, authStorage: Aut
 		const brokerChanged = next.brokerUrl !== previous.brokerUrl || next.brokerToken !== previous.brokerToken;
 		const policiesChanged =
 			next.usageReservePct !== previous.usageReservePct ||
-			!Bun.deepEquals(next.accountPolicies, previous.accountPolicies);
+			!runtime.deepEquals(next.accountPolicies, previous.accountPolicies);
 		pending = pending.then(async () => {
 			if (brokerChanged) await applyBroker();
 			if (policiesChanged) await applyPolicies();

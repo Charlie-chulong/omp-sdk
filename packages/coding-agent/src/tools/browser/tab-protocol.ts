@@ -1,6 +1,7 @@
+import type { Transferable } from "node:worker_threads";
 import type { ImageContent, TextContent } from "@oh-my-pi/pi-ai";
 
-export type Transferable = Bun.Transferable;
+export type { Transferable } from "node:worker_threads";
 
 export interface ObservationEntry {
 	id: number;

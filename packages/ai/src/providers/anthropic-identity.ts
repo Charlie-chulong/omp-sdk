@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as nodeCrypto from "node:crypto";
 import { getInstallId } from "@oh-my-pi/pi-utils";
 import { claudeToolPrefix } from "./claude-code-fingerprint";
@@ -53,7 +54,7 @@ const CLAUDE_DEVICE_ID_ACCOUNT_HASH_DOMAIN = "omp-claude-device-id-v2";
 
 /** Derive the stable Claude device id for an installation and optional account. */
 export function deriveClaudeDeviceId(installId: string, accountId?: string): string {
-	const hash = new Bun.SHA256();
+	const hash = new runtime.SHA256();
 	if (accountId && accountId.length > 0) {
 		return hash
 			.update(CLAUDE_DEVICE_ID_ACCOUNT_HASH_DOMAIN)

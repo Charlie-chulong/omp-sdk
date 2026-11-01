@@ -95,7 +95,7 @@ export function isAzureAnthropicRoute(baseUrl?: string): boolean {
 
 /**
  * Known non-official URLs that enforce Anthropic thinking signatures on replay
- * (GitHub Copilot, ZenMux, Cloudflare AI Gateway `/anthropic`, Google Vertex
+ * (GitHub Copilot, Cloudflare AI Gateway `/anthropic`, Google Vertex
  * `publishers/anthropic`, AWS Bedrock, Azure Foundry).
  *
  * Runtime routing calls this with the effective URL because a model's resolved
@@ -104,7 +104,6 @@ export function isAzureAnthropicRoute(baseUrl?: string): boolean {
 export function isAnthropicSigningProxyUrl(baseUrl?: string): boolean {
 	return (
 		hostMatchesUrl(baseUrl, "githubCopilot") ||
-		hostMatchesUrl(baseUrl, "zenmux") ||
 		(baseUrl !== undefined &&
 			(CLOUDFLARE_ANTHROPIC_GATEWAY_URL_MARKER.test(baseUrl) ||
 				VERTEX_ANTHROPIC_URL_MARKER.test(baseUrl) ||

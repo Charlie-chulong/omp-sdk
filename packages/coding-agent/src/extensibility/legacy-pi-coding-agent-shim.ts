@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Compatibility shim for legacy extensions importing the package root of
  * `@oh-my-pi/pi-coding-agent` (or one of its aliased scopes like
@@ -12,7 +13,7 @@
  * the same module identity as a direct `@oh-my-pi/pi-coding-agent` import.
  */
 
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
@@ -1292,7 +1293,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 			try {
 				const stat = await fs.promises.stat(resolvedPath);
 				if (stat.isDirectory()) {
-					const glob = new Bun.Glob("**/*.md");
+					const glob = new runtime.Glob("**/*.md");
 					for await (const entry of glob.scan({ cwd: resolvedPath, absolute: false, onlyFiles: true })) {
 						files.push(path.join(resolvedPath, entry));
 					}
@@ -1317,7 +1318,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 			for (const filePath of files) {
 				try {
-					const raw = await Bun.file(filePath).text();
+					const raw = await runtime.file(filePath).text();
 					const { frontmatter, body } = parseFrontmatter(raw);
 					const rawDescription = frontmatter.description;
 					let description = typeof rawDescription === "string" ? rawDescription : "";
@@ -1643,7 +1644,7 @@ export function sessionEntryToContextMessages(entry: SessionEntry): AgentMessage
 export { CONFIG_DIR_NAME } from "@oh-my-pi/pi-utils";
 export { parseArgs } from "../cli/args";
 
-export * from "../index";
+export * from "#coding-agent-headless";
 export { formatBytes as formatSize } from "@oh-my-pi/pi-tui/render/render-utils";
 export { copyToClipboard } from "../utils/clipboard";
 export { Type } from "./legacy-typebox";

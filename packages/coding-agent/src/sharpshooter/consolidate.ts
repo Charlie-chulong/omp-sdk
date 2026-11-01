@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { type } from "@oh-my-pi/omptype";
@@ -211,7 +212,8 @@ async function readCurrentMemoryFiles(agentDir: string, cwd: string): Promise<Re
 	};
 	await Promise.all(
 		SHARPSHOOTER_MEMORY_FILES.map(async name => {
-			files[name] = await Bun.file(sharpshooterMemoryFilePath(agentDir, cwd, name))
+			files[name] = await runtime
+				.file(sharpshooterMemoryFilePath(agentDir, cwd, name))
 				.text()
 				.catch(() => "");
 		}),
@@ -222,7 +224,8 @@ async function readCurrentMemoryFiles(agentDir: string, cwd: string): Promise<Re
 async function readProjectDocs(cwd: string): Promise<string> {
 	const blocks: string[] = [];
 	for (const name of ["AGENTS.md", "CLAUDE.md"]) {
-		const content = await Bun.file(path.join(cwd, name))
+		const content = await runtime
+			.file(path.join(cwd, name))
 			.text()
 			.catch(() => "");
 		if (content.trim()) blocks.push(`--- ${name} ---\n${content.trim()}`);
@@ -287,7 +290,7 @@ async function applyReplacementFiles(bankDir: string, files: readonly Replacemen
 		tempPath: path.join(bankDir, `.${file.name}.${process.pid}.${crypto.randomUUID()}.tmp`),
 	}));
 	try {
-		await Promise.all(staged.map(file => Bun.write(file.tempPath, file.content)));
+		await Promise.all(staged.map(file => runtime.write(file.tempPath, file.content)));
 		for (const file of staged) await fs.rename(file.tempPath, path.join(bankDir, file.name));
 	} finally {
 		await Promise.all(staged.map(file => fs.rm(file.tempPath, { force: true }).catch(() => {})));

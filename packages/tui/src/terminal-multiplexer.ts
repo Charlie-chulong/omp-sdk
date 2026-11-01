@@ -52,7 +52,7 @@ export const TERMINAL_MULTIPLEXER_ENV_KEYS: readonly string[] = [
  */
 export function hasTerminalMultiplexerSession(
 	multiplexer: TerminalMultiplexer,
-	env: NodeJS.ProcessEnv = Bun.env,
+	env: NodeJS.ProcessEnv = process.env,
 ): boolean {
 	return MULTIPLEXERS_BY_ID[multiplexer].isInside(env);
 }
@@ -62,7 +62,7 @@ export function hasTerminalMultiplexerSession(
  * order. Nested sessions all appear; TERM is not consulted.
  */
 export function terminalMultiplexerSessions(
-	env: NodeJS.ProcessEnv = Bun.env,
+	env: NodeJS.ProcessEnv = process.env,
 ): TerminalMultiplexerModule<TerminalMultiplexer>[] {
 	return TERMINAL_MULTIPLEXERS.filter(multiplexer => multiplexer.isInside(env));
 }
@@ -73,7 +73,7 @@ export function terminalMultiplexerSessions(
  * path untrusted; TERM-only classification does not identify an active session.
  */
 export function isTerminalBackgroundQueryTrusted(
-	env: NodeJS.ProcessEnv = Bun.env,
+	env: NodeJS.ProcessEnv = process.env,
 	platform: NodeJS.Platform = process.platform,
 ): boolean {
 	return !TERMINAL_MULTIPLEXERS.some(
@@ -86,7 +86,7 @@ export function isTerminalBackgroundQueryTrusted(
  * This is classification's TERM fallback; session markers are not consulted.
  */
 export function terminalMultiplexerForTerm(
-	env: NodeJS.ProcessEnv = Bun.env,
+	env: NodeJS.ProcessEnv = process.env,
 ): TerminalMultiplexerModule<TerminalMultiplexer> | undefined {
 	const term = env.TERM?.toLowerCase() ?? "";
 	return TERMINAL_MULTIPLEXERS.find(
@@ -100,7 +100,7 @@ export function terminalMultiplexerForTerm(
  * {@link classifyTerminalMultiplexer}.
  */
 export function classifyTerminalMultiplexerModule(
-	env: NodeJS.ProcessEnv = Bun.env,
+	env: NodeJS.ProcessEnv = process.env,
 ): TerminalMultiplexerModule<TerminalMultiplexer> | undefined {
 	return (
 		SESSION_TIER.find(multiplexer => multiplexer.isInside(env)) ??
@@ -119,12 +119,12 @@ export function classifyTerminalMultiplexerModule(
  * `tmux`/`screen` TERM prefix comes next. Outer applications such as Orca rank
  * last so a multiplexer running inside them wins.
  */
-export function classifyTerminalMultiplexer(env: NodeJS.ProcessEnv = Bun.env): TerminalMultiplexer | null {
+export function classifyTerminalMultiplexer(env: NodeJS.ProcessEnv = process.env): TerminalMultiplexer | null {
 	return classifyTerminalMultiplexerModule(env)?.id ?? null;
 }
 
 /** True when the classified multiplexer owns the current screen grid. */
-export function isInsideTerminalMultiplexer(env: NodeJS.ProcessEnv = Bun.env): boolean {
+export function isInsideTerminalMultiplexer(env: NodeJS.ProcessEnv = process.env): boolean {
 	return classifyTerminalMultiplexerModule(env)?.ownsScreenGrid ?? false;
 }
 

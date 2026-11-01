@@ -1,11 +1,12 @@
 /** Shared SQLite opening, error attribution, and result-code classification for persistent stores. */
-import { Database } from "bun:sqlite";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { getDbBusyTimeoutMs } from "./env";
 import { withFileLockSync } from "./file-lock";
 import { isEnoent } from "./fs-error";
 import * as logger from "./logger";
+import { runtime } from "./runtime";
+import { Database } from "./sqlite-driver";
 
 const BUSY_MAX_ATTEMPTS = 4;
 const BUSY_BASE_DELAY_MS = 100;
@@ -166,7 +167,7 @@ async function openWithBusyRetries<T>(
 			if (!isSqliteBusyError(error) || attempt + 1 >= BUSY_MAX_ATTEMPTS) {
 				throw new SqliteAttemptFailure(error, identity);
 			}
-			await Bun.sleep(BUSY_BASE_DELAY_MS * 2 ** attempt);
+			await runtime.sleep(BUSY_BASE_DELAY_MS * 2 ** attempt);
 		}
 	}
 }

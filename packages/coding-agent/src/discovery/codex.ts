@@ -1,3 +1,4 @@
+import { TOML } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Codex Discovery Provider
  *
@@ -148,7 +149,7 @@ async function loadTomlConfig(_ctx: LoadContext, path: string): Promise<Record<s
 	if (!content) return null;
 
 	try {
-		return Bun.TOML.parse(content) as Record<string, unknown>;
+		return TOML.parse(content) as Record<string, unknown>;
 	} catch (error) {
 		logger.warn("Failed to parse TOML config", { path, error: String(error) });
 		return null;
@@ -209,7 +210,7 @@ function extractMCPServersFromToml(
 		const env: Record<string, string> = { ...config.env };
 		if (config.env_vars) {
 			for (const varName of config.env_vars) {
-				const value = Bun.env[varName];
+				const value = process.env[varName];
 				if (value !== undefined) {
 					env[varName] = value;
 				}
@@ -223,14 +224,14 @@ function extractMCPServersFromToml(
 		const headers: Record<string, string> = { ...config.http_headers };
 		if (config.env_http_headers) {
 			for (const [headerName, envVarName] of Object.entries(config.env_http_headers)) {
-				const value = Bun.env[envVarName];
+				const value = process.env[envVarName];
 				if (value !== undefined) {
 					headers[headerName] = value;
 				}
 			}
 		}
 		if (config.bearer_token_env_var) {
-			const token = Bun.env[config.bearer_token_env_var];
+			const token = process.env[config.bearer_token_env_var];
 			if (token) {
 				headers.Authorization = `Bearer ${token}`;
 			}

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as path from "node:path";
 import type { ApiKeyResolver, FetchImpl, ResolvedApiKey, UsageProvider } from "@oh-my-pi/pi-ai";
 import { type AuthApiKeyOptions, type AuthPeekOptions, oauthAccountKey } from "@oh-my-pi/pi-ai/auth-storage";
@@ -53,6 +54,7 @@ import { resolveProviderModelReference } from "../config/model-resolver";
 import { generateCodexAttestation } from "../live/attestation";
 import { redactUrlForLog } from "../mcp/json-rpc";
 import type { AuthStorage } from "../session/auth-storage";
+import { isCoreSdk } from "../sdk-profile";
 import { type ApiKeyResolverModel, type ApiKeyResolverOptions, createApiKeyResolver } from "./api-key-resolver";
 import type { ConfigError, ConfigFile } from "./config-file";
 import {
@@ -425,6 +427,7 @@ export class ModelRegistry {
 
 	/** Final pass over every published model list: catalog metrics, then implicit local providers last. */
 	#finalizeModels(models: Model<Api>[]): Model<Api>[] {
+		if (isCoreSdk()) models = models.filter(model => model.api !== "local-inference");
 		return this.#orderImplicitProvidersLast(applyCatalogMetrics(models, this.#catalogMetrics));
 	}
 
@@ -974,11 +977,11 @@ export class ModelRegistry {
 				const previousConfig = preservedRuntimeState.configuredProviders.get(providerId);
 				const currentConfig = configuredProviders.get(providerId);
 				const providerSettingsUnchanged =
-					Bun.deepEquals(
+					runtime.deepEquals(
 						preservedRuntimeState.providerOverrides.get(providerId),
 						this.#providerOverrides.get(providerId),
 					) &&
-					Bun.deepEquals(
+					runtime.deepEquals(
 						preservedRuntimeState.modelOverrides.get(providerId),
 						this.#modelOverrides.get(providerId),
 					) &&
@@ -986,7 +989,7 @@ export class ModelRegistry {
 				const discoveryIdentityUnchanged =
 					(previousConfig !== undefined &&
 						currentConfig !== undefined &&
-						Bun.deepEquals(previousConfig, currentConfig)) ||
+						runtime.deepEquals(previousConfig, currentConfig)) ||
 					(previousConfig === undefined && currentConfig === undefined && startupProviderIds.has(providerId));
 				if (providerSettingsUnchanged && discoveryIdentityUnchanged) {
 					preservedProviderIds.add(providerId);
@@ -1661,9 +1664,9 @@ export class ModelRegistry {
 		for (const provider of ["local", "web"]) {
 			if (!disabledProviders.has(provider)) this.#keylessProviders.add(provider);
 		}
-		const ollamaEndpointEnv = Bun.env.OLLAMA_BASE_URL?.trim()
+		const ollamaEndpointEnv = process.env.OLLAMA_BASE_URL?.trim()
 			? "OLLAMA_BASE_URL"
-			: Bun.env.OLLAMA_HOST?.trim()
+			: process.env.OLLAMA_HOST?.trim()
 				? "OLLAMA_HOST"
 				: undefined;
 		if (!configuredProviders.has("ollama") && !disabledProviders.has("ollama")) {
@@ -1682,17 +1685,17 @@ export class ModelRegistry {
 			this.#discoverableProviders.push({
 				provider: "llama.cpp",
 				api: "openai-responses",
-				baseUrl: Bun.env.LLAMA_CPP_BASE_URL || LLAMA_CPP_DEFAULT_BASE_URLS[0],
+				baseUrl: process.env.LLAMA_CPP_BASE_URL || LLAMA_CPP_DEFAULT_BASE_URLS[0],
 				discovery: { type: "llama.cpp" },
-				optional: !Bun.env.LLAMA_CPP_BASE_URL,
-				fallbackBaseUrls: Bun.env.LLAMA_CPP_BASE_URL ? undefined : LLAMA_CPP_DEFAULT_BASE_URLS.slice(1),
+				optional: !process.env.LLAMA_CPP_BASE_URL,
+				fallbackBaseUrls: process.env.LLAMA_CPP_BASE_URL ? undefined : LLAMA_CPP_DEFAULT_BASE_URLS.slice(1),
 			});
 			// Only mark as keyless if no API key is configured
 			if (this.authStorage.keys.source("llama.cpp") === undefined) {
 				this.#keylessProviders.add("llama.cpp");
 			}
 			this.#implicitLocalProviders.add("llama.cpp");
-			if (Bun.env.LLAMA_CPP_BASE_URL) this.#implicitProviderEndpointEnv.set("llama.cpp", "LLAMA_CPP_BASE_URL");
+			if (process.env.LLAMA_CPP_BASE_URL) this.#implicitProviderEndpointEnv.set("llama.cpp", "LLAMA_CPP_BASE_URL");
 		}
 		if (
 			process.platform === "darwin" &&
@@ -1714,13 +1717,13 @@ export class ModelRegistry {
 			this.#discoverableProviders.push({
 				provider: "lm-studio",
 				api: "openai-completions",
-				baseUrl: Bun.env.LM_STUDIO_BASE_URL || "http://127.0.0.1:1234/v1",
+				baseUrl: process.env.LM_STUDIO_BASE_URL || "http://127.0.0.1:1234/v1",
 				discovery: { type: "lm-studio" },
-				optional: !Bun.env.LM_STUDIO_BASE_URL,
+				optional: !process.env.LM_STUDIO_BASE_URL,
 			});
 			this.#keylessProviders.add("lm-studio");
 			this.#implicitLocalProviders.add("lm-studio");
-			if (Bun.env.LM_STUDIO_BASE_URL) this.#implicitProviderEndpointEnv.set("lm-studio", "LM_STUDIO_BASE_URL");
+			if (process.env.LM_STUDIO_BASE_URL) this.#implicitProviderEndpointEnv.set("lm-studio", "LM_STUDIO_BASE_URL");
 		}
 	}
 

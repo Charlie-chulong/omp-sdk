@@ -405,7 +405,7 @@ describe("relay extension self-update on a real relay", () => {
 		const events: string[] = [];
 		const settled = Promise.withResolvers<void>();
 		let outcomes = 0;
-		relay = startRelayServer({
+		relay = await startRelayServer({
 			port,
 			group: false,
 			extensionDir: dir,

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Shell environment snapshot for preserving user aliases, functions, and options.
  *
@@ -271,7 +272,7 @@ export async function getOrCreateSnapshot(
 		if (
 			performance.now() < failure.retryAt &&
 			rcFileStamp(rcFile) === failure.rcStamp &&
-			Bun.hash(JSON.stringify(env)) === failure.envStamp
+			runtime.hash(JSON.stringify(env)) === failure.envStamp
 		) {
 			return null;
 		}
@@ -287,7 +288,7 @@ export async function getOrCreateSnapshot(
 		} else {
 			failedSnapshots.set(cacheKey, {
 				rcStamp: rcFileStamp(rcFile),
-				envStamp: Bun.hash(JSON.stringify(env)),
+				envStamp: runtime.hash(JSON.stringify(env)),
 				retryAt: performance.now() + SNAPSHOT_FAILURE_RETRY_MS,
 			});
 		}
@@ -352,7 +353,7 @@ async function createSnapshot(
 				spawnEnv[key] = value;
 			}
 		}
-		const child = Bun.spawn([shell, "-c", script], {
+		const child = runtime.spawn([shell, "-c", script], {
 			cwd: getSafeProjectCwd(),
 			env: spawnEnv,
 			stdin: "ignore",

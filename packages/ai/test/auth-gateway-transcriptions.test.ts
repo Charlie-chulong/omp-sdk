@@ -1,3 +1,4 @@
+import { encodeBase64 } from "@oh-my-pi/pi-utils";
 import { afterEach, describe, expect, it, vi } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
@@ -85,7 +86,7 @@ async function boot(): Promise<Harness> {
 		});
 		return Response.json(UPSTREAM_RESULT);
 	};
-	const handle = startAuthGateway({
+	const handle = await startAuthGateway({
 		bind: "127.0.0.1:0",
 		bearerTokens: ["gw-token"],
 		storage,
@@ -165,7 +166,7 @@ describe("auth-gateway POST /v1/audio/transcriptions", () => {
 			headers: gatewayHeaders("application/json"),
 			body: JSON.stringify({
 				model: "openrouter/openai/whisper-large-v3",
-				input_audio: { data: AUDIO.toBase64(), format: "wav" },
+				input_audio: { data: encodeBase64(AUDIO), format: "wav" },
 				language: "ja",
 				response_format: "json",
 			}),

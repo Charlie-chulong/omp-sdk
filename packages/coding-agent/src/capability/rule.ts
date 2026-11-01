@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Rules Capability
  *
@@ -223,7 +224,7 @@ export function ruleAppliesToAgent(rule: Pick<Rule, "agents">, agentName: string
 		if (pattern === name) {
 			return true;
 		}
-		return new Bun.Glob(pattern).match(name);
+		return new runtime.Glob(pattern).match(name);
 	});
 }
 /**

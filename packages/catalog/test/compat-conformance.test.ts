@@ -26,11 +26,6 @@ const RUNTIME_ONLY_PROVIDERS = new Set([
 	// `bundle="never"` KDL seed; factoryDroidModelManagerOptions serves it
 	// offline and narrows it by account flags/org policy live.
 	"factory-droid",
-	// Both SingularityAPI rosters are live and credential-scoped (one key sees
-	// only its own product's models — the pay-as-you-go catalog or the reserved
-	// lanes), so no rows are frozen into the bundled catalog.
-	"singularityapi-dev",
-	"singularityapi-tech",
 	// Clef judges are a `bundle="always"` KDL seed that
 	// cloudflareWorkersAiModelManagerOptions serves at runtime; the bundled
 	// catalog gains the rows at the next regeneration.

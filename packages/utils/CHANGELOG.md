@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Node.js runtime adapters for shared file, process, HTTP, hashing, parsing, and SQLite operations while retaining native Bun implementations.
+
+### Changed
+
+- Updated Node image codecs to Sharp 0.35 so Desktop and SDK can share one image runtime.
+
+### Fixed
+
+- Node RPC processes retain exclusive stdin ownership without hanging on shutdown while input is idle.
+- Fixed binary Base64 encoding and decoding on Node.js 24 hosts without TypedArray Base64 APIs.
+
 ## [18.14.0] - 2026-10-29
 
 ### Added

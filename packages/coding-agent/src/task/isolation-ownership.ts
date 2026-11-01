@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Ownership marker for task-isolation sandboxes under `~/.omp/wt/`.
  *
@@ -8,7 +9,7 @@
  */
 import * as path from "node:path";
 import * as natives from "@oh-my-pi/pi-natives";
-import { $ } from "bun";
+import { $ } from "@oh-my-pi/pi-utils/runtime";
 
 const { IsoBackendKind } = natives;
 
@@ -42,7 +43,7 @@ async function processStartToken(pid: number): Promise<string | null> {
 	if (process.platform === "linux") {
 		let stat: string;
 		try {
-			stat = await Bun.file(`/proc/${pid}/stat`).text();
+			stat = await runtime.file(`/proc/${pid}/stat`).text();
 		} catch {
 			return null;
 		}
@@ -69,7 +70,7 @@ async function processStartToken(pid: number): Promise<string | null> {
 export async function writeIsolationOwner(baseDir: string, id: string): Promise<void> {
 	const startToken = await processStartToken(process.pid);
 	const owner: IsolationOwner = { pid: process.pid, id, ...(startToken ? { startToken } : {}) };
-	await Bun.write(path.join(baseDir, ISOLATION_OWNER_FILE), JSON.stringify(owner));
+	await runtime.write(path.join(baseDir, ISOLATION_OWNER_FILE), JSON.stringify(owner));
 }
 
 /**
@@ -86,7 +87,7 @@ export async function writeIsolationOwner(baseDir: string, id: string): Promise<
 export async function hasLiveIsolationOwner(baseDir: string): Promise<boolean> {
 	let decoded: unknown;
 	try {
-		decoded = await Bun.file(path.join(baseDir, ISOLATION_OWNER_FILE)).json();
+		decoded = await runtime.file(path.join(baseDir, ISOLATION_OWNER_FILE)).json();
 	} catch {
 		return false;
 	}
@@ -136,7 +137,7 @@ export function needsNativeTeardown(backend: unknown): backend is number {
  * without it (the workspace merely falls back to plain recursive removal).
  */
 export async function writeRetainedBackend(baseDir: string, backend: number): Promise<void> {
-	await Bun.write(
+	await runtime.write(
 		path.join(baseDir, RETAINED_BACKEND_FILE),
 		JSON.stringify({ backend, retainedAt: new Date().toISOString() }),
 	);
@@ -153,8 +154,8 @@ export async function writeRetainedBackend(baseDir: string, backend: number): Pr
  */
 export async function readRetainedMountBackend(dir: string): Promise<number | undefined> {
 	const sidecar = path.join(dir, RETAINED_BACKEND_FILE);
-	if (!(await Bun.file(sidecar).exists())) return undefined;
-	const decoded: unknown = await Bun.file(sidecar).json();
+	if (!(await runtime.file(sidecar).exists())) return undefined;
+	const decoded: unknown = await runtime.file(sidecar).json();
 	if (typeof decoded !== "object" || decoded === null || !("backend" in decoded)) {
 		throw new Error(`retained-mount metadata at ${sidecar} is malformed`);
 	}

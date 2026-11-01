@@ -1393,7 +1393,7 @@ describe("auth-gateway OpenAI Responses multimodal tool outputs", () => {
 		storage.keys.setRuntime("openai", "test-key");
 		const mock = createMockModel({ provider: "openai", id: "mock/file-id" });
 		mock.push({ content: ["unexpected provider call"] });
-		const gateway = startAuthGateway({
+		const gateway = await startAuthGateway({
 			bind: "127.0.0.1:0",
 			bearerTokens: ["test-token"],
 			storage,
@@ -1436,7 +1436,7 @@ describe("auth-gateway OpenAI Responses computer option bridge", () => {
 		storage.keys.setRuntime("openai", "test-key");
 		const mock = createMockModel({ provider: "openai", id: "mock/computer-options" });
 		mock.push({ content: ["ok"] });
-		const gateway = startAuthGateway({
+		const gateway = await startAuthGateway({
 			bind: "127.0.0.1:0",
 			bearerTokens: ["test-token"],
 			storage,

@@ -1,3 +1,4 @@
+import { encodeBase64 } from "@oh-my-pi/pi-utils";
 /**
  * Regression test for issue #4499: closing a cmux-backend tab while a
  * `tab.run(...)` helper call (internally a run action) is in flight rejected an orphaned
@@ -558,7 +559,7 @@ describe("browser tab-supervisor — cmux tab close mid-run (#4499)", () => {
 		spyOn(CmuxSocketClient.prototype, "connect").mockResolvedValue(undefined);
 		spyOn(CmuxSocketClient.prototype, "close").mockImplementation(() => undefined);
 		// A 2x capture of a 1000 CSS px wide viewport.
-		const png = encodeRawPng(new Uint8Array(2000 * 20 * 3), 2000, 20, 3).toBase64();
+		const png = encodeBase64(encodeRawPng(new Uint8Array(2000 * 20 * 3), 2000, 20, 3));
 		spyOn(CmuxSocketClient.prototype, "request").mockImplementation(
 			async (method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> => {
 				switch (method) {

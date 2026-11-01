@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Shell filesystem backed by the internal URL router.
  *
@@ -339,7 +340,7 @@ export class InternalUrlFilesystem {
 	async readPrefix(input: string, maxBytes: number): Promise<Uint8Array> {
 		try {
 			const node = await this.#node(input, true, false);
-			if (node.kind !== "virtual") return await Bun.file(node.path).slice(0, maxBytes).bytes();
+			if (node.kind !== "virtual") return await runtime.file(node.path).slice(0, maxBytes).bytes();
 			if (node.directory) throw new UrlFsError("EISDIR", `Is a directory: ${node.url}`);
 			return node.bytes.subarray(0, maxBytes);
 		} catch (error) {

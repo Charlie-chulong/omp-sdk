@@ -12,7 +12,7 @@
  *   5. AuthStorage appends one history row per limit, attributed to the
  *      fetched credential, whenever a fresh usage report lands.
  */
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { afterEach, beforeEach, describe, expect, it, setSystemTime, vi } from "bun:test";
 import { AuthStorage, SqliteAuthCredentialStore } from "@oh-my-pi/pi-ai/auth-storage";
 import type { UsageHistoryEntry, UsageReport } from "@oh-my-pi/pi-ai/usage";

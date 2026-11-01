@@ -21,8 +21,13 @@
  * table entry (`ToUnicodeEx` reports them as pending composition, not text), so those
  * chords keep reaching Alt bindings.
  */
-import { dlopen, FFIType, type Library, type Pointer, ptr } from "bun:ffi";
+import type { Library, Pointer } from "bun:ffi";
+import type * as BunFfi from "bun:ffi";
+import { createRequire } from "node:module";
 import { parseKittySequence } from "./keys";
+// bun:ffi exists only on Bun; headless Node never installs a Windows keyboard host.
+const bunFfi: typeof BunFfi | undefined =
+	typeof Bun !== "undefined" ? createRequire(import.meta.url)("bun:ffi") : undefined;
 
 const KITTY_MOD_SHIFT = 1;
 const KITTY_MOD_ALT = 2;
@@ -39,19 +44,32 @@ const MAPVK_VK_TO_VSC = 0;
 /** `ToUnicodeEx` flag: do not change the kernel keyboard state (keeps pending dead keys intact). */
 const TOUNICODE_NO_STATE_CHANGE = 0x4;
 
-const USER32_SYMBOLS = {
-	GetForegroundWindow: { args: [], returns: FFIType.ptr },
-	GetWindowThreadProcessId: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.u32 },
-	GetKeyboardLayout: { args: [FFIType.u32], returns: FFIType.ptr },
-	GetAsyncKeyState: { args: [FFIType.i32], returns: FFIType.i16 },
-	MapVirtualKeyExW: { args: [FFIType.u32, FFIType.u32, FFIType.ptr], returns: FFIType.u32 },
-	ToUnicodeEx: {
-		args: [FFIType.u32, FFIType.u32, FFIType.ptr, FFIType.ptr, FFIType.i32, FFIType.u32, FFIType.ptr],
-		returns: FFIType.i32,
-	},
-} as const;
+const USER32_SYMBOLS = bunFfi
+	? ({
+			GetForegroundWindow: { args: [], returns: bunFfi.FFIType.ptr },
+			GetWindowThreadProcessId: { args: [bunFfi.FFIType.ptr, bunFfi.FFIType.ptr], returns: bunFfi.FFIType.u32 },
+			GetKeyboardLayout: { args: [bunFfi.FFIType.u32], returns: bunFfi.FFIType.ptr },
+			GetAsyncKeyState: { args: [bunFfi.FFIType.i32], returns: bunFfi.FFIType.i16 },
+			MapVirtualKeyExW: {
+				args: [bunFfi.FFIType.u32, bunFfi.FFIType.u32, bunFfi.FFIType.ptr],
+				returns: bunFfi.FFIType.u32,
+			},
+			ToUnicodeEx: {
+				args: [
+					bunFfi.FFIType.u32,
+					bunFfi.FFIType.u32,
+					bunFfi.FFIType.ptr,
+					bunFfi.FFIType.ptr,
+					bunFfi.FFIType.i32,
+					bunFfi.FFIType.u32,
+					bunFfi.FFIType.ptr,
+				],
+				returns: bunFfi.FFIType.i32,
+			},
+		} as const)
+	: undefined;
 
-type User32 = Library<typeof USER32_SYMBOLS>;
+type User32 = Library<NonNullable<typeof USER32_SYMBOLS>>;
 
 /** AltGr layer of one keyboard layout: `"<baseCodepoint>:<shift 0|1>"` → produced text. */
 type AltGrTable = Map<string, string>;
@@ -63,8 +81,9 @@ let cachedLayout: { hkl: KeyboardLayoutHandle | null; table: AltGrTable } | unde
 
 function getUser32(): User32 | null {
 	if (user32 !== undefined) return user32;
+	if (!bunFfi || !USER32_SYMBOLS) return null;
 	try {
-		user32 = dlopen("user32.dll", USER32_SYMBOLS);
+		user32 = bunFfi.dlopen("user32.dll", USER32_SYMBOLS);
 	} catch {
 		user32 = null;
 	}
@@ -88,6 +107,7 @@ function isPrintableText(text: string): boolean {
  * of each virtual key — the same "base key" the kitty encoder reports.
  */
 function buildAltGrTable(lib: User32, hkl: KeyboardLayoutHandle): AltGrTable {
+	const { ptr } = bunFfi!;
 	const table: AltGrTable = new Map();
 	const keyState = new Uint8Array(256);
 	const buffer = new Uint16Array(8);

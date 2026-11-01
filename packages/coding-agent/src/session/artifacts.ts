@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Session-scoped artifact storage for truncated tool outputs.
  *
@@ -45,11 +46,11 @@ export async function writeArtifact(path: string, content: string): Promise<numb
 	const expectedBytes = Buffer.byteLength(content);
 	const tempPath = `${path}.tmp-${crypto.randomUUID()}`;
 	try {
-		const writtenBytes = await Bun.write(tempPath, content);
+		const writtenBytes = await runtime.write(tempPath, content);
 		if (writtenBytes !== expectedBytes) {
 			throw new Error(`Artifact write incomplete: wrote ${writtenBytes} of ${expectedBytes} bytes`);
 		}
-		const file = Bun.file(tempPath);
+		const file = runtime.file(tempPath);
 		if (file.size !== expectedBytes) {
 			throw new Error(`Artifact size mismatch: found ${file.size} of ${expectedBytes} bytes`);
 		}

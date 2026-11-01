@@ -1,3 +1,4 @@
+import { runtime as hostRuntime } from "@oh-my-pi/pi-utils/runtime";
 import {
 	HARNESS_FILENAME,
 	DEFAULT_HARNESS_COMMAND,
@@ -67,7 +68,7 @@ export function createInitExperimentTool(
 			const requiresHarness = !existing || isNewSegmentInit;
 
 			if (requiresHarness) {
-				const harnessExists = await Bun.file(path.join(ctx.cwd, HARNESS_FILENAME)).exists();
+				const harnessExists = await hostRuntime.file(path.join(ctx.cwd, HARNESS_FILENAME)).exists();
 				if (!harnessExists) {
 					return {
 						content: [

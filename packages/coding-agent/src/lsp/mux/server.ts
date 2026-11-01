@@ -104,7 +104,7 @@ class ServerInstance {
 		this.proc = ptree.spawn([params.command, ...params.args], {
 			cwd: params.cwd,
 			stdin: "pipe",
-			env: { ...Bun.env, ...params.env },
+			env: { ...process.env, ...params.env },
 		});
 	}
 

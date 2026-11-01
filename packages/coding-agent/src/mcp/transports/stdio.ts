@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * MCP stdio transport.
  *
@@ -190,7 +191,7 @@ async function resolveWindowsNpmShimCommand(
 
 	let content: string;
 	try {
-		content = await Bun.file(commandPath).text();
+		content = await runtime.file(commandPath).text();
 	} catch {
 		return null;
 	}
@@ -586,7 +587,7 @@ export class StdioTransport implements MCPTransport {
 		if (this.#connected) return;
 
 		const env = {
-			...Bun.env,
+			...process.env,
 			...this.config.env,
 		};
 		const cwd = this.config.cwd ?? getProjectDir();
@@ -607,7 +608,7 @@ export class StdioTransport implements MCPTransport {
 		// triggers macOS Apple Events TCC prompts uses the same shape; the
 		// one-object `{ cmd }` overload timed out before prompting for `mcpbridge`
 		// even with `detached: false` (#5085).
-		this.#process = Bun.spawn(spawnCommand.cmd, {
+		this.#process = runtime.spawn(spawnCommand.cmd, {
 			cwd,
 			env,
 			stdin: "pipe",

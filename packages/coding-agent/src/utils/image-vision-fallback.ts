@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Vision fallback for text-only models. When a user attaches an image to a model
  * that cannot accept image input, this:
@@ -98,7 +99,7 @@ function extensionForMime(mimeType: string): string {
 
 /** Content-addressed file name so re-pasting the same image reuses one artifact. */
 function imageFileName(image: ImageContent): string {
-	const hash = Bun.hash(image.data).toString(16);
+	const hash = runtime.hash(image.data).toString(16);
 	return `image-${hash}.${extensionForMime(image.mimeType)}`;
 }
 
@@ -107,7 +108,7 @@ async function saveImage(image: ImageContent, localRoot: string): Promise<string
 	const fileName = imageFileName(image);
 	const filePath = path.join(localRoot, fileName);
 	// Content-addressed: identical bytes overwrite themselves harmlessly. Bun.write creates parent dirs.
-	await Bun.write(filePath, Buffer.from(image.data, "base64"));
+	await runtime.write(filePath, Buffer.from(image.data, "base64"));
 	return `local://${fileName}`;
 }
 

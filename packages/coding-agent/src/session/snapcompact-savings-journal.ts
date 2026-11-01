@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Append-only journal of snapcompact tool-result savings.
  *
@@ -95,7 +96,7 @@ export async function readSnapcompactSavingsJournal(
 ): Promise<SnapcompactSavingsRecord[]> {
 	let text: string;
 	try {
-		text = await Bun.file(journalPath).text();
+		text = await runtime.file(journalPath).text();
 	} catch (err) {
 		if (isEnoent(err)) return [];
 		throw err;

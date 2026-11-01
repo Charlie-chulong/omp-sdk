@@ -1,3 +1,4 @@
+import { encodeBase64 } from "@oh-my-pi/pi-utils";
 import { afterAll, describe, expect, it } from "bun:test";
 import type { ImageContent, Message } from "@oh-my-pi/pi-ai";
 import { getBundledModels } from "@oh-my-pi/pi-catalog/models";
@@ -71,7 +72,7 @@ describe("eval prelude runtime", () => {
 			const original: ImageContent = {
 				type: "image",
 				mimeType: "image/png",
-				data: Buffer.from(pixels).toBase64(),
+				data: encodeBase64(Buffer.from(pixels)),
 				detail: "original",
 				url: "https://images.example/frame.png",
 				providerFile: { provider: "google", uri: "gs://frames/native.png" },

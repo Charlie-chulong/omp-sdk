@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Agent Plugins discovery provider (https://agent-plugins.org).
  *
@@ -88,7 +89,7 @@ async function listCandidateRoots(ctx: LoadContext): Promise<CandidateRoot[]> {
  * scopes, or local directories) from aliasing each other's state.
  */
 function pluginDataDir(home: string, manifestName: string, instanceKey: string): string {
-	const digest = new Bun.CryptoHasher("sha256").update(instanceKey).digest("hex").slice(0, 16);
+	const digest = new runtime.CryptoHasher("sha256").update(instanceKey).digest("hex").slice(0, 16);
 	return path.join(getPluginsDir(home), "data", `${manifestName}-${digest}`);
 }
 

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -76,7 +77,7 @@ export class BrowserTracingController {
 		try {
 			const trace = await this.#page.tracing.stop();
 			if (!trace) throw new ToolError("Chromium tracing stopped without producing trace data");
-			await Bun.write(destination, trace);
+			await runtime.write(destination, trace);
 			return destination;
 		} finally {
 			this.#traceActive = false;
@@ -107,7 +108,7 @@ export class BrowserTracingController {
 		await fs.promises.mkdir(path.dirname(destination), { recursive: true });
 		try {
 			const { profile } = await session.send("Profiler.stop");
-			await Bun.write(destination, JSON.stringify(profile));
+			await runtime.write(destination, JSON.stringify(profile));
 			return destination;
 		} finally {
 			await session.send("Profiler.disable").catch(() => undefined);

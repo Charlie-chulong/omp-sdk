@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Blob registry shared by the in-process broker and the daemon worker:
  * capability-token entries, lazy producers, a byte-budgeted RAM cache — and,
@@ -265,7 +266,7 @@ export class BlobRegistry {
 		// Unique per save: registries in this process or other daemons may share `indexPath`.
 		const tmpPath = `${persist.indexPath}.${process.pid}.${++asyncTmpCounter}.${Date.now()}.tmp`;
 		try {
-			await Bun.write(tmpPath, this.#serializeIndex());
+			await runtime.write(tmpPath, this.#serializeIndex());
 			if (seq === this.#saveSeq) {
 				fs.renameSync(tmpPath, persist.indexPath);
 			} else {
@@ -368,7 +369,7 @@ export class BlobRegistry {
 		if (existing) return existing;
 		const entry = this.#insert(key, mimeType, false);
 		if (this.#sessionStore) {
-			const sha = new Bun.SHA256().update(bytes).digest("hex");
+			const sha = new runtime.SHA256().update(bytes).digest("hex");
 			entry.sha = sha;
 			if (!(await this.#sessionStore.has(sha))) {
 				// A view, not a copy: the store only writes the bytes, reusing `sha`.
@@ -640,7 +641,7 @@ export class BlobRegistry {
 		// Disk-backed eager blobs stream from the content-addressed store —
 		// nothing resident in RAM.
 		if (entry.sha && this.#persist && this.#sessionStore) {
-			const file = Bun.file(path.join(this.#persist.blobsDir, entry.sha));
+			const file = runtime.file(path.join(this.#persist.blobsDir, entry.sha));
 			if (!(await file.exists())) {
 				// Session blob GC'd (conversation deleted): the link is dead; the
 				// owning session re-registers from history data on its next turn.
@@ -649,7 +650,7 @@ export class BlobRegistry {
 			}
 			headers["content-length"] = String(file.size);
 			this.#recordHit(entry, method, file.size);
-			return new Response(method === "HEAD" ? null : file, { status: 200, headers });
+			return new Response(method === "HEAD" ? null : file.stream(), { status: 200, headers });
 		}
 		const bytes = await this.materialize(entry);
 		// A lazy blob whose owning session died: 410 tells the provider the URL

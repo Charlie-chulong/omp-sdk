@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Protocol handler for `cfg://` URLs: the agent's view of omp settings.
  *
@@ -183,7 +184,7 @@ function treeComment(setting: AnySetting, value: unknown): string {
 	const choices = setting.enumValues;
 	if (choices) parts.push(choices.join("|"));
 	const fallback = setting.default;
-	if (!Bun.deepEquals(value, fallback)) parts.push(`default ${formatValue(setting, fallback)}`);
+	if (!runtime.deepEquals(value, fallback)) parts.push(`default ${formatValue(setting, fallback)}`);
 	const description = setting.ui?.description;
 	if (description) {
 		const sentence = description.match(/^.*?[.!?](?=\s|$)/s)?.[0] ?? description;
@@ -214,7 +215,7 @@ function renderTree(
 			opened.push(segments[depth]!);
 		}
 		const value = setting.get(settings);
-		if (!Bun.deepEquals(value, setting.default)) modified++;
+		if (!runtime.deepEquals(value, setting.default)) modified++;
 		const indent = "  ".repeat(segments.length - 1);
 		lines.push(`${indent}${segments.at(-1)}: ${formatValue(setting, value)}${treeComment(setting, value)}`);
 	}
@@ -251,10 +252,10 @@ function shadowingLayer(
 	if (!above.includes(owner)) return undefined;
 	const effective = setting.get(settings);
 	if (!isRecord(value) || !isRecord(effective)) {
-		return Bun.deepEquals(effective, value) ? undefined : owner;
+		return runtime.deepEquals(effective, value) ? undefined : owner;
 	}
 	for (const key in value) {
-		if (!Bun.deepEquals(effective[key], value[key])) return owner;
+		if (!runtime.deepEquals(effective[key], value[key])) return owner;
 	}
 	return undefined;
 }
@@ -279,8 +280,8 @@ function saveShadowingLayer(
 	for (const segment of setting.segments) global = isRecord(global) ? global[segment] : undefined;
 	for (const key in value) {
 		const current = effective[key];
-		if (current === undefined || Bun.deepEquals(current, value[key])) continue;
-		if (isRecord(global) && Bun.deepEquals(global[key], current)) continue;
+		if (current === undefined || runtime.deepEquals(current, value[key])) continue;
+		if (isRecord(global) && runtime.deepEquals(global[key], current)) continue;
 		return owner;
 	}
 	return undefined;
@@ -339,7 +340,7 @@ export class CfgProtocolHandler implements ProtocolHandler {
 		let modified = 0;
 		if (leaf) {
 			sections.push(renderLeaf(settings, leaf));
-			if (!Bun.deepEquals(leaf.get(settings), leaf.default)) modified++;
+			if (!runtime.deepEquals(leaf.get(settings), leaf.default)) modified++;
 		}
 		if (members.length > 0) {
 			const tree = renderTree(settings, members, path);
@@ -396,7 +397,7 @@ export class CfgProtocolHandler implements ProtocolHandler {
 			return { content: [{ type: "text", text }], details: { cfg: details } };
 		};
 
-		if (!save && Bun.deepEquals(previous, value)) return finish("unchanged");
+		if (!save && runtime.deepEquals(previous, value)) return finish("unchanged");
 		// Refuse before prompting: approving a session change a non-fallback env var overrides is a no-op.
 		// A fallback env var yields to the override the write adds, so it does not shadow.
 		if (!save && !leaf.envFallback && shadowingLayer(leaf, settings, value, ABOVE_SESSION)) {

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -71,7 +72,7 @@ export async function captureBrowserSession(
 				const session = cookies.find(cookie => cookie.name === name && cookie.value);
 				if (session) return session.value;
 			}
-			await untilAborted(waiting, () => Bun.sleep(250));
+			await untilAborted(waiting, () => runtime.sleep(250));
 		}
 	} catch (error) {
 		if (signal?.aborted) throw new LoginCancelledError();

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import {
 	anthropicApiVersionAcceptsSamplingParams,
 	isAnthropicSigningProxyUrl,
@@ -555,7 +556,7 @@ function createClaudeBillingHeader(firstUserMessageText: string): string {
 	// Uses chars from the first conversational wire user turn (not the system prompt).
 	const k = [4, 7, 20].map(i => firstUserMessageText[i] ?? "0").join("");
 	const version = getClaudeCodeVersion();
-	const versionSuffix = Bun.SHA256.hash(`59cf53e54c78${k}${version}`, "hex").slice(0, 3);
+	const versionSuffix = runtime.SHA256.hash(`59cf53e54c78${k}${version}`, "hex").slice(0, 3);
 	// cch=00000: placeholder replaced with the real attestation hash by wrapFetchForCch
 	// before the request hits the wire (see below).
 	return `${CLAUDE_BILLING_HEADER_PREFIX} cc_version=${version}.${versionSuffix}; cc_entrypoint=cli; ${CCH_PLACEHOLDER_STR};`;
@@ -593,7 +594,7 @@ function patchCch(body: Uint8Array): "patched" | "no-billing-header" | "unanchor
 	if (idx === -1 || idx - searchFrom > CCH_BILLING_SEARCH_WINDOW) return "unanchored";
 
 	// Hash the body with the placeholder in place (matches CC's in-place behaviour).
-	const h = Bun.hash.xxHash64(body, CCH_SEED);
+	const h = runtime.hash.xxHash64(body, CCH_SEED);
 	const cch = (h & 0xfffffn).toString(16).padStart(5, "0");
 
 	for (let i = 0; i < 5; i++) body[idx + 4 + i] = cch.charCodeAt(i);
@@ -2439,7 +2440,7 @@ const streamAnthropicOnce = (
 			const slowLane =
 				options?.credentialId !== undefined
 					? `cred:${options.credentialId}`
-					: `key:${Bun.hash(apiKey).toString(36)}`;
+					: `key:${runtime.hash(apiKey).toString(36)}`;
 			let slowWaitSinceMs: number | undefined;
 			let slowWaitAttempts = 0;
 			let sentSlow = false;
@@ -3680,7 +3681,7 @@ function experimentalBetasDisabled(model: Model<"anthropic-messages">): boolean 
 function carriesKillSwitchField(params: MessageCreateParamsStreaming): boolean {
 	const sanitized = structuredClone(params);
 	withholdKillSwitchFields(sanitized);
-	return !Bun.deepEquals(sanitized, params);
+	return !runtime.deepEquals(sanitized, params);
 }
 
 /**
@@ -3850,7 +3851,7 @@ export function buildAnthropicClientOptions(args: AnthropicClientOptionsArgs): A
 	// Two classifications feed the predicate: the effective URL, because Foundry
 	// and provider overrides can reroute a model without rebuilding its
 	// materialized compat, and non-official `compat.signingEndpoint`, because
-	// provider ids (e.g. ZenMux on a mirror URL) and explicit spec overrides on
+	// provider ids (e.g. GitHub Copilot on a mirror URL) and explicit spec overrides on
 	// opaque proxies are authoritative even when the URL isn't recognized.
 	// Stale-official compat never qualifies: a canonical model rerouted to an
 	// unrecognized proxy keeps `officialEndpoint: true` (see
@@ -6441,7 +6442,7 @@ function foldAnthropicRootCombinators(schema: Record<string, unknown>): Record<s
 					if (!Object.hasOwn(variant.properties, name)) continue;
 					const propertySchema = variant.properties[name];
 					const declarations = declared.get(name) ?? [];
-					if (!declarations.some(entry => Bun.deepEquals(entry, propertySchema)))
+					if (!declarations.some(entry => runtime.deepEquals(entry, propertySchema)))
 						declarations.push(propertySchema);
 					declared.set(name, declarations);
 				}

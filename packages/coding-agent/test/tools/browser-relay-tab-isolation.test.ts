@@ -82,7 +82,7 @@ async function launchRelayFixture(
 	log?: (message: string, data?: Record<string, unknown>) => void,
 ): Promise<RelayFixture> {
 	const port = await findFreeCdpPort();
-	const server = startRelayServer({ port, group: false, log });
+	const server = await startRelayServer({ port, group: false, log });
 	const extensionDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-relay-isolation-"));
 	const pages = Bun.serve({
 		port: 0,

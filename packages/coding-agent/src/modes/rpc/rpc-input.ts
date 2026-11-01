@@ -1,11 +1,12 @@
 import { readLines } from "@oh-my-pi/pi-utils";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 
 /**
- * Claims Bun's singleton stdin reader immediately and exposes a separately readable stream.
+ * Claims the process stdin reader immediately and exposes a separately readable stream.
  * RPC startup uses this before extension discovery so in-process modules cannot steal protocol input.
  */
 export function claimRpcInput(): ReadableStream<Uint8Array> {
-	const reader = Bun.stdin.stream().getReader();
+	const reader = runtime.file(0).stream().getReader();
 	let released = false;
 	const release = () => {
 		if (released) return;

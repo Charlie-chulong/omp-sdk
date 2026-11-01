@@ -1,3 +1,6 @@
+import { encodeBase64 } from "@oh-my-pi/pi-utils";
+import { Image } from "@oh-my-pi/pi-utils/runtime-image";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { inflateSync } from "node:zlib";
 import type { BoxEdges, ImageContent } from "@oh-my-pi/pi-ai";
 import { shortenPath } from "@oh-my-pi/pi-tui/render/render-utils";
@@ -112,7 +115,7 @@ function mayHaveAlpha(input: Uint8Array): boolean {
 	return false;
 }
 
-/** 8-bit RGBA pixels read back from `Bun.Image`. */
+/** 8-bit RGBA pixels read back from `Image`. */
 interface RgbaPixels {
 	width: number;
 	height: number;
@@ -120,11 +123,11 @@ interface RgbaPixels {
 }
 
 /**
- * `image`'s pixels when it decodes to RGBA. `Bun.Image` has no raw output, so this reads
+ * `image`'s pixels when it decodes to RGBA. `Image` has no raw output, so this reads
  * its uncompressed PNG, whose rows it leaves unfiltered; `undefined` for RGB output (no
  * alpha) or any other layout.
  */
-async function readRgba(image: Bun.Image): Promise<RgbaPixels | undefined> {
+async function readRgba(image: Image): Promise<RgbaPixels | undefined> {
 	const png = await image.png({ compressionLevel: 0 }).bytes();
 	let width = 0;
 	let height = 0;
@@ -158,11 +161,11 @@ async function readRgba(image: Bun.Image): Promise<RgbaPixels | undefined> {
 }
 
 /**
- * `input` with its color premultiplied by alpha, as an uncompressed PNG for `Bun.Image` to
+ * `input` with its color premultiplied by alpha, as an uncompressed PNG for `Image` to
  * resample, when some pixel is translucent; `undefined` when every pixel is opaque.
  */
 async function premultipliedPng(input: Uint8Array): Promise<Uint8Array | undefined> {
-	const source = await readRgba(new Bun.Image(input));
+	const source = await readRgba(new Image(input));
 	if (!source) return undefined;
 	const { pixels } = source;
 	let translucent = false;
@@ -233,7 +236,7 @@ function readImageHeaderDimensions(buffer: Uint8Array): ImageHeaderDimensions | 
  * or `"0"` MUST be treated as disabled.
  */
 function isWebPExcluded(): boolean {
-	const raw = Bun.env.OMP_NO_WEBP;
+	const raw = runtime.env.OMP_NO_WEBP;
 	if (raw === undefined) return false;
 	const v = raw.toLowerCase();
 	return v === "1" || v === "true";
@@ -246,11 +249,6 @@ function pickSmallest(...candidates: Array<{ buffer: Uint8Array; mimeType: strin
 } {
 	return candidates.reduce((best, c) => (c.buffer.length < best.buffer.length ? c : best));
 }
-
-/** Polyfill for Buffer.toBase64, technically since it derives from Uint8Array it should exist but Bun reasons... */
-Buffer.prototype.toBase64 = function (this: Buffer) {
-	return new Uint8Array(this.buffer, this.byteOffset, this.byteLength).toBase64();
-};
 
 interface EncodedCandidate {
 	buffer: Uint8Array;
@@ -275,7 +273,7 @@ function encodedResult(
 		height,
 		wasResized: true,
 		get data() {
-			data ??= best.buffer.toBase64();
+			data ??= encodeBase64(best.buffer);
 			return data;
 		},
 	};
@@ -294,7 +292,7 @@ function encodedResult(
  * The source is decoded and resized once per target size; the format/quality ladder
  * re-encodes from a lossless intermediate at that size.
  *
- * A source with translucent pixels keeps its alpha: it resizes premultiplied (`Bun.Image`
+ * A source with translucent pixels keeps its alpha: it resizes premultiplied (`Image`
  * resamples straight alpha, bleeding the color under transparent pixels into the edges)
  * and never becomes JPEG (which would show that color, usually black). Without WebP it
  * stays PNG and only the dimension ladder shrinks it.
@@ -304,7 +302,7 @@ function encodedResult(
  *
  * Set OMP_NO_WEBP to exclude WebP from encoding (llama.cpp STB doesn't decode it).
  *
- * Backed by `Bun.Image`: a chainable native pipeline that runs decode/transform/encode
+ * Backed by `Image`: a chainable native pipeline that runs decode/transform/encode
  * off the JS thread when the terminal (`.bytes()`) is awaited.
  */
 export async function resizeImage(
@@ -328,12 +326,12 @@ export async function resizeImage(
 		originalData = img.data;
 	}
 	const getOriginalData = (): string => {
-		originalData ??= inputBuffer.toBase64();
+		originalData ??= encodeBase64(inputBuffer);
 		return originalData;
 	};
 
 	try {
-		const { width: originalWidth, height: originalHeight, format } = await new Bun.Image(inputBuffer).metadata();
+		const { width: originalWidth, height: originalHeight, format } = await new Image(inputBuffer).metadata();
 		// Trust decoded bytes over caller metadata. A mislabeled WebP must not take
 		// the fast path when the target decoder explicitly excludes WebP.
 		const sourceMime = format ? `image/${format}` : (callerMime ?? "application/octet-stream");
@@ -404,10 +402,10 @@ export async function resizeImage(
 		// for ladder intermediates.
 		async function resizedPng(width: number, height: number, compressionLevel?: number): Promise<Uint8Array> {
 			if (!premultiplied) {
-				const image = new Bun.Image(inputBuffer).resize(width, height);
+				const image = new Image(inputBuffer).resize(width, height);
 				return (compressionLevel === undefined ? image.png() : image.png({ compressionLevel })).bytes();
 			}
-			const resized = await readRgba(new Bun.Image(premultiplied).resize(width, height));
+			const resized = await readRgba(new Image(premultiplied).resize(width, height));
 			if (!resized) throw new Error("resizeImage: a translucent resize lost its alpha channel");
 			unpremultiply(resized.pixels);
 			return encodeRawPng(resized.pixels, width, height, 4, compressionLevel);
@@ -427,7 +425,7 @@ export async function resizeImage(
 			height?: number,
 		): Promise<EncodedCandidate> {
 			const pipeline = () => {
-				const image = new Bun.Image(source);
+				const image = new Image(source);
 				return width === undefined || height === undefined ? image : image.resize(width, height);
 			};
 			const candidates = await Promise.all([
@@ -524,7 +522,7 @@ export async function resizeImage(
 	} catch {
 		const headerDimensions = readImageHeaderDimensions(inputBuffer);
 		const fallbackMimeType = callerMime ?? headerDimensions?.mimeType ?? "application/octet-stream";
-		// Bun.Image rejected the input — we cannot decode/re-encode it.
+		// Image rejected the input — we cannot decode/re-encode it.
 		// When the caller demanded WebP exclusion AND the source might be WebP,
 		// returning the original buffer would silently violate that contract,
 		// so surface an explicit error instead.
@@ -580,7 +578,7 @@ const FIT_JPEG_QUALITIES = [90, 80, 70, 60, 50, 40];
 export async function fitImage(img: ImageContent, bounds: ImageFitBounds): Promise<FittedImage> {
 	const { minSide = 1, maxSide = Infinity, minPixels = 1, maxPixels = Infinity, maxBytes = Infinity } = bounds;
 	const input = Buffer.from(img.data, "base64");
-	const { width, height } = await new Bun.Image(input).metadata();
+	const { width, height } = await new Image(input).metadata();
 	const area = width * height;
 	const ceiling = Math.min(maxSide / Math.max(width, height), Math.sqrt(maxPixels / area));
 	const floor = Math.max(minSide / Math.min(width, height), Math.sqrt(minPixels / area));
@@ -603,7 +601,7 @@ export async function fitImage(img: ImageContent, bounds: ImageFitBounds): Promi
 	const left = (canvasWidth - scaledWidth) >> 1;
 	const top = (canvasHeight - scaledHeight) >> 1;
 
-	const resized = new Bun.Image(input).resize(scaledWidth, scaledHeight);
+	const resized = new Image(input).resize(scaledWidth, scaledHeight);
 	let png: Uint8Array;
 	if (canvasWidth === scaledWidth && canvasHeight === scaledHeight) {
 		png = await resized.png().bytes();
@@ -617,12 +615,12 @@ export async function fitImage(img: ImageContent, bounds: ImageFitBounds): Promi
 	let mimeType = "image/png";
 	for (const quality of FIT_JPEG_QUALITIES) {
 		if (encoded.length <= maxBytes) break;
-		encoded = await new Bun.Image(png).jpeg({ quality }).bytes();
+		encoded = await new Image(png).jpeg({ quality }).bytes();
 		mimeType = "image/jpeg";
 	}
 	if (encoded.length > maxBytes) throw new Error(`fitImage: no encoding fits ${maxBytes} bytes`);
 	return {
-		image: { ...img, data: encoded.toBase64(), mimeType },
+		image: { ...img, data: encodeBase64(encoded), mimeType },
 		content: {
 			top: top / canvasHeight,
 			bottom: (top + scaledHeight) / canvasHeight,

@@ -1,6 +1,6 @@
+import { runtime, type RuntimeSubprocess } from "@oh-my-pi/pi-utils/runtime";
 import * as path from "node:path";
 import { getLogsDir, isCompiledBinary, logger, untilAborted, withTimeout, workerHostEntry } from "@oh-my-pi/pi-utils";
-import type { Subprocess } from "bun";
 import type { Browser, CDPSession } from "puppeteer-core";
 import { ToolAbortError } from "../tool-errors";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
@@ -63,7 +63,7 @@ export interface PuppeteerBrowserHandle extends BrowserHandleCommon {
 	userDataDir?: string;
 	/** Broker daemon backing this handle; dispose disconnects instead of closing, kill routes to the broker. */
 	sharedDaemon?: { name: string; projectDir: string };
-	subprocess?: Subprocess;
+	subprocess?: RuntimeSubprocess;
 	stealth: { browserSession: CDPSession | null; override: UserAgentOverride | null };
 }
 
@@ -334,7 +334,7 @@ async function openBrowserHandle(kind: BrowserKind, opts: AcquireBrowserOptions)
 	const reused = await findReusableCdp(exe, { signal: opts.signal, appArgs });
 	let cdpUrl: string;
 	let pid: number;
-	let subprocess: Subprocess | undefined;
+	let subprocess: RuntimeSubprocess | undefined;
 	if (reused) {
 		logger.debug("Reusing existing CDP endpoint for attach", { exe, pid: reused.pid, cdpUrl: reused.cdpUrl });
 		cdpUrl = reused.cdpUrl;
@@ -342,7 +342,7 @@ async function openBrowserHandle(kind: BrowserKind, opts: AcquireBrowserOptions)
 	} else {
 		const port = await findFreeCdpPort();
 		const launchArgs = [...appArgs, `--remote-debugging-port=${port}`];
-		const child = Bun.spawn([exe, ...launchArgs], {
+		const child = runtime.spawn([exe, ...launchArgs], {
 			cwd: opts.cwd,
 			stdout: "ignore",
 			stderr: "ignore",

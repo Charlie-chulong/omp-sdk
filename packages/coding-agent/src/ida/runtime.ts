@@ -1,6 +1,6 @@
 import { $env, logger } from "@oh-my-pi/pi-utils";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
-import { $ } from "bun";
+import { $ } from "@oh-my-pi/pi-utils/runtime";
 import { Settings } from "../config/settings";
 import {
 	enumeratePythonRuntimes,

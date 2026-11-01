@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { afterEach, describe, expect, test, vi } from "bun:test";
 import { AuthStorage, SqliteAuthCredentialStore } from "@oh-my-pi/pi-ai/auth-storage";
 import { PASTE_CODE_LOGIN_PROVIDERS } from "@oh-my-pi/pi-ai/registry";
@@ -14,7 +14,7 @@ import { getEnvApiKey } from "@oh-my-pi/pi-ai/env-api-key";
 const FIXTURE_SOURCE = "provider-registry-test";
 const ENV_KEYS = [
 	"COREWEAVE_API_KEY",
-	"ZENMUX_API_KEY",
+	"KILO_API_KEY",
 	"EXA_API_KEY",
 	"XAI_OAUTH_TOKEN",
 	"UMANS_AI_CODING_PLAN_API_KEY",
@@ -38,10 +38,10 @@ afterEach(() => {
 
 describe("provider registry auth surface", () => {
 	test("env-key map merges catalog names, registry defs, and legacy keys", () => {
-		Bun.env.ZENMUX_API_KEY = "zenmux-env";
+		Bun.env.KILO_API_KEY = "kilo-env";
 		Bun.env.EXA_API_KEY = "exa-env";
 		// Plain name derived from the catalog table's `envVars`.
-		expect(getEnvApiKey("zenmux")).toBe("zenmux-env");
+		expect(getEnvApiKey("kilo")).toBe("kilo-env");
 		Bun.env.UMANS_AI_CODING_PLAN_API_KEY = "umans-env";
 		expect(getEnvApiKey("umans")).toBe("umans-env");
 		Bun.env.LLAMA_CPP_API_KEY = "llama-env";
@@ -62,7 +62,7 @@ describe("provider registry auth surface", () => {
 
 	test("login list contains loginable providers and excludes env-only model providers", () => {
 		const ids = getOAuthProviders().map(provider => provider.id);
-		expect(ids).toContain("zenmux");
+		expect(ids).toContain("kilo");
 		expect(ids).toContain("kagi");
 		expect(ids).toContain("exa");
 		expect(ids).toContain("umans");
@@ -87,13 +87,13 @@ describe("provider registry auth surface", () => {
 				"zai-coding-plan",
 			].sort(),
 		);
-		expect(PASTE_CODE_LOGIN_PROVIDERS.has("zenmux")).toBe(false);
+		expect(PASTE_CODE_LOGIN_PROVIDERS.has("kilo")).toBe(false);
 	});
 
 	test("refresh dispatch returns api-key providers unchanged and routes real refreshers", async () => {
 		const creds: OAuthCredentials = { refresh: "r", access: "a", expires: Date.now() + 60_000 };
-		// zenmux has no refresher → returned as-is.
-		expect(await refreshOAuthToken("zenmux", creds)).toBe(creds);
+		// kilo has no refresher → returned as-is.
+		expect(await refreshOAuthToken("kilo", creds)).toBe(creds);
 
 		const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
 			new Response(

@@ -1,3 +1,5 @@
+import { decodeBase64Bytes, encodeBase64 } from "@oh-my-pi/pi-utils";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { type AwsCredentials, type SignedHeaders, signRequest } from "@oh-my-pi/pi-ai/providers/aws-sigv4";
 import type { BlobDestinationId } from "./destinations";
 import type { BlobUploader, RemoteDeleteAction } from "./publication";
@@ -331,7 +333,7 @@ async function hmacSha256Base64(key: Uint8Array, value: string): Promise<string>
 		"sign",
 	]);
 	const signature = await crypto.subtle.sign("HMAC", cryptoKey, strictBytes(encoder.encode(value)));
-	return new Uint8Array(signature).toBase64();
+	return encodeBase64(new Uint8Array(signature));
 }
 
 function azureCanonicalHeaders(headers: Readonly<Record<string, string>>): string {
@@ -387,7 +389,7 @@ async function azureHeaders(
 function createAzureUploader(config: DestinationRuntimeConfig): BlobUploader {
 	const destination = "azure-storage" as const;
 	const accountName = requireCredential(config, "accountName");
-	const accountKey = Uint8Array.fromBase64(requireCredential(config, "accountKey"));
+	const accountKey = decodeBase64Bytes(requireCredential(config, "accountKey"));
 	const container = requiredString(config, "container");
 	const prefix = configuredPrefix(config);
 	const cacheControl = optionString(config, "cacheControl");
@@ -468,7 +470,7 @@ async function b2Json(
 async function authorizeB2(config: DestinationRuntimeConfig): Promise<B2Authorization> {
 	const keyId = requireCredential(config, "applicationKeyId");
 	const applicationKey = requireCredential(config, "applicationKey");
-	const basic = encoder.encode(`${keyId}:${applicationKey}`).toBase64();
+	const basic = encodeBase64(encoder.encode(`${keyId}:${applicationKey}`));
 	const value = await b2Json(
 		config,
 		optionString(config, "authorizeEndpoint", "https://api.backblazeb2.com/b2api/v2/b2_authorize_account") ??
@@ -568,7 +570,7 @@ function createNativeB2Uploader(config: DestinationRuntimeConfig): BlobUploader 
 					headers: {
 						authorization: uploadTarget.authorizationToken,
 						"content-type": uploadRequest.mimeType,
-						"x-bz-content-sha1": new Bun.CryptoHasher("sha1").update(uploadRequest.bytes).digest("hex"),
+						"x-bz-content-sha1": new runtime.CryptoHasher("sha1").update(uploadRequest.bytes).digest("hex"),
 						"x-bz-file-name": encodePath(key),
 						...(cacheControl ? { "x-bz-info-b2-cache-control": encodeURIComponent(cacheControl) } : {}),
 					},

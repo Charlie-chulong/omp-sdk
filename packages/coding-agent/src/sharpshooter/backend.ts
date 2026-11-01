@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { rm } from "node:fs/promises";
 import { logger } from "@oh-my-pi/pi-utils";
 import type { MemoryBackend, MemoryBackendSearchItem, MemoryBackendStatus } from "../memory-backend/types";
@@ -54,7 +55,7 @@ async function readMemoryFile(
 	cwd: string,
 	name: (typeof SHARPSHOOTER_MEMORY_FILES)[number],
 ): Promise<SharpshooterFileSnapshot> {
-	const file = Bun.file(sharpshooterMemoryFilePath(agentDir, cwd, name));
+	const file = runtime.file(sharpshooterMemoryFilePath(agentDir, cwd, name));
 	if (!(await file.exists())) return { name, content: "", lines: 0, bytes: 0 };
 	const content = await file.text();
 	const normalized = content.trimEnd();

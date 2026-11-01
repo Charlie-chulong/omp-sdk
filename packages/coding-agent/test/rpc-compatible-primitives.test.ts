@@ -273,6 +273,32 @@ describe("RPC Pi-compatible primitives (live server)", () => {
 	});
 	afterAll(() => server.close());
 
+	test("approval mode round-trips and invalid wire values leave it unchanged", async () => {
+		const { send, next } = server;
+		for (const mode of ["yolo", "always-ask"]) {
+			send({ type: "set_approval_mode", id: "approval-set", mode });
+			expect(await next()).toEqual({
+				id: "approval-set",
+				type: "response",
+				command: "set_approval_mode",
+				success: true,
+				data: { mode },
+			});
+			send({ type: "get_state", id: "approval-state" });
+			expect((await next()).data).toMatchObject({ approvalMode: mode });
+		}
+		for (const mode of ["sometimes", undefined]) {
+			send({ type: "set_approval_mode", id: "approval-invalid", mode });
+			expect(await next()).toMatchObject({
+				id: "approval-invalid",
+				command: "set_approval_mode",
+				success: false,
+			});
+			send({ type: "get_state", id: "approval-unchanged" });
+			expect((await next()).data).toMatchObject({ approvalMode: "always-ask" });
+		}
+	}, 60000);
+
 	test("rejects invalid cache warming modes and accepts a subsequent session-scoped mode change", async () => {
 		const { send, next } = server;
 		send({ type: "set_cache_warming", id: "bad-warming", mode: "always" });

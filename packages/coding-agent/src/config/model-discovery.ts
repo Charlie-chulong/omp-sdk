@@ -158,12 +158,12 @@ function normalizeOllamaHostEnv(value: string | undefined): string | undefined {
 }
 
 export function getImplicitOllamaBaseUrl(): string {
-	const baseUrl = Bun.env.OLLAMA_BASE_URL?.trim();
-	return baseUrl || normalizeOllamaHostEnv(Bun.env.OLLAMA_HOST) || DEFAULT_OLLAMA_BASE_URL;
+	const baseUrl = process.env.OLLAMA_BASE_URL?.trim();
+	return baseUrl || normalizeOllamaHostEnv(process.env.OLLAMA_HOST) || DEFAULT_OLLAMA_BASE_URL;
 }
 
 export function getOllamaContextLengthOverride(): number | undefined {
-	const value = Bun.env.OLLAMA_CONTEXT_LENGTH?.trim();
+	const value = process.env.OLLAMA_CONTEXT_LENGTH?.trim();
 	if (!value) return undefined;
 	const parsed = Number(value);
 	return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;

@@ -1,3 +1,4 @@
+import { encodeBase64 } from "@oh-my-pi/pi-utils";
 import { describe, expect, it, vi } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
@@ -39,7 +40,7 @@ async function withGateway(
 	if (options.seedCredentials !== false) {
 		for (const model of models) storage.keys.setRuntime(model.provider, `key-${model.provider}`);
 	}
-	const handle = startAuthGateway({
+	const handle = await startAuthGateway({
 		bind: "127.0.0.1:0",
 		bearerTokens: ["gateway-token"],
 		storage,
@@ -362,6 +363,6 @@ describe("auth gateway images", () => {
 			});
 		};
 		const result = await generateImage(model, { prompt: "paint" }, { apiKey: "test-key", fetch: fetchStub });
-		expect(result.images).toEqual([{ data: bytes.toBase64(), mimeType: "image/webp" }]);
+		expect(result.images).toEqual([{ data: encodeBase64(bytes), mimeType: "image/webp" }]);
 	});
 });

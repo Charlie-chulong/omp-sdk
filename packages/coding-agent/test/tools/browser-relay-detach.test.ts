@@ -287,7 +287,7 @@ describe("relay tabs Chrome detaches omp from", () => {
 		// Puppeteer exposes a target's CDP id only on the private field.
 		const target = page.target() as unknown as { _targetId: string };
 		const port = await findFreeCdpPort();
-		relay = startRelayServer({ port, group: false });
+		relay = await startRelayServer({ port, group: false });
 		extension = await ChromeBackedExtension.connect(port, chromium.wsEndpoint(), target._targetId, pageUrl);
 		tool = {
 			cwd: "/tmp",

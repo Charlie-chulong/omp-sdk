@@ -10,6 +10,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { isEnoent, parseFrontmatter } from "@oh-my-pi/pi-utils";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { SKILL_DEFAULT_IGNORES, SKILL_LIMITS, SKILL_NAME_MAX, SKILL_NAME_RE } from "@oh-my-pi/pi-wire/skillshare";
 import { validateAgentSkillFrontmatter } from "../discovery/agent-plugin-format";
 import { CREDENTIAL_PATTERNS } from "../secrets/patterns";
@@ -36,7 +37,7 @@ export interface PackResult {
 	version: string;
 	description: string;
 	files: PackedFile[];
-	/** Owns a plain `ArrayBuffer` so it feeds `Bun.gunzipSync`/`fetch` bodies directly. */
+	/** Owns a plain `ArrayBuffer` so it feeds gzip APIs and `fetch` bodies directly. */
 	tgz: Uint8Array<ArrayBuffer>;
 	integrity: string;
 	/** Ships executables or anything under `scripts/`. */
@@ -58,7 +59,7 @@ const encoder = new TextEncoder();
 
 async function readSkillFile(dir: string): Promise<string> {
 	try {
-		return await Bun.file(path.join(dir, SKILL_FILE)).text();
+		return await runtime.file(path.join(dir, SKILL_FILE)).text();
 	} catch (error) {
 		if (isEnoent(error)) throw new Error(`no ${SKILL_FILE} in ${dir}`);
 		throw error;
@@ -237,7 +238,7 @@ function isIgnored(rules: readonly IgnoreRule[], relPath: string, baseName: stri
 async function loadIgnoreRules(dir: string): Promise<IgnoreRule[]> {
 	let custom: string[] = [];
 	try {
-		custom = (await Bun.file(path.join(dir, IGNORE_FILE)).text()).split("\n");
+		custom = (await runtime.file(path.join(dir, IGNORE_FILE)).text()).split("\n");
 	} catch (error) {
 		if (!isEnoent(error)) throw error;
 	}
@@ -345,11 +346,11 @@ export async function packSkill(dir: string): Promise<PackResult> {
 	const entries: TarEntry[] = [];
 	const secrets: SecretFinding[] = [];
 	for (const file of state.files) {
-		const content = await Bun.file(file.absolute).bytes();
+		const content = await runtime.file(file.absolute).bytes();
 		entries.push({ path: file.path, content, executable: file.executable });
 		scanSecrets(file.path, content, secrets);
 	}
-	const tgz = Bun.gzipSync(writeTar(entries));
+	const tgz = runtime.gzipSync(writeTar(entries));
 	if (tgz.length > SKILL_LIMITS.tarballBytes) {
 		throw new Error(`skill package is ${tgz.length} bytes compressed; the limit is ${SKILL_LIMITS.tarballBytes}`);
 	}
@@ -363,7 +364,7 @@ export async function packSkill(dir: string): Promise<PackResult> {
 		description,
 		files,
 		tgz,
-		integrity: `sha512-${new Bun.CryptoHasher("sha512").update(tgz).digest("base64")}`,
+		integrity: `sha512-${new runtime.CryptoHasher("sha512").update(tgz).digest("base64")}`,
 		hasScripts: files.some(file => file.executable || file.path.startsWith("scripts/")),
 		secrets,
 	};
@@ -379,7 +380,7 @@ function nextVersion(current: string | undefined, kind: string): string {
 		if (!SEMVER_RE.test(explicit)) {
 			throw new Error(`expected patch, minor, major, or a semantic version; got ${JSON.stringify(kind)}`);
 		}
-		if (current !== undefined && SEMVER_RE.test(current) && Bun.semver.order(explicit, current) <= 0) {
+		if (current !== undefined && SEMVER_RE.test(current) && runtime.semver.order(explicit, current) <= 0) {
 			throw new Error(`new version ${explicit} must be greater than the current ${current}`);
 		}
 		return explicit;
@@ -486,6 +487,6 @@ export async function bumpVersion(dir: string, kind: "patch" | "minor" | "major"
 	if (check?.version !== version) {
 		throw new Error(`${SKILL_FILE}: could not rewrite "metadata.version" (unexpected frontmatter layout)`);
 	}
-	await Bun.write(skillPath, updated);
+	await runtime.write(skillPath, updated);
 	return version;
 }

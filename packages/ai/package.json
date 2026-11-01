@@ -37,6 +37,7 @@
 	"main": "./src/index.ts",
 	"types": "./src/index.ts",
 	"exports": {
+		"./package.json": "./package.json",
 		".": {
 			"types": "./src/index.ts",
 			"import": "./src/index.ts"
@@ -157,10 +158,16 @@
 		"@oh-my-pi/pi-catalog": "catalog:",
 		"@oh-my-pi/pi-natives": "catalog:",
 		"@oh-my-pi/pi-utils": "catalog:",
-		"@oh-my-pi/pi-wire": "catalog:"
+		"@oh-my-pi/pi-wire": "catalog:",
+		"undici": "^7.16.0",
+		"ws": "^8.18.3",
+		"https-proxy-agent": "^7.0.6",
+		"set-cookie-parser": "^2.7.1"
 	},
 	"devDependencies": {
-		"@types/bun": "catalog:"
+		"@types/bun": "catalog:",
+		"@types/ws": "^8.18.1",
+		"@types/set-cookie-parser": "^2.4.10"
 	},
 	"engines": {
 		"bun": ">=1.4.4"

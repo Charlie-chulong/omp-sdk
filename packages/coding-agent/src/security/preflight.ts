@@ -1,3 +1,4 @@
+import { runtime as platformRuntime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as vcs from "@oh-my-pi/pi-natives/vcs";
@@ -78,8 +79,8 @@ export function pathIsWithin(candidate: string, root: string): boolean {
 }
 
 async function hashFile(filePath: string): Promise<{ sha256: string; size: number }> {
-	const bytes = new Uint8Array(await Bun.file(filePath).arrayBuffer());
-	return { sha256: Bun.SHA256.hash(bytes, "hex"), size: bytes.byteLength };
+	const bytes = new Uint8Array(await platformRuntime.file(filePath).arrayBuffer());
+	return { sha256: platformRuntime.SHA256.hash(bytes, "hex"), size: bytes.byteLength };
 }
 
 function normalizeRelativePath(input: string): string {
@@ -151,7 +152,7 @@ async function digestWorkingTree(
 		.map(normalizeRelativePath)
 		.filter(candidate => pathMatchesSecurityScope(candidate, includePaths, excludePaths))
 		.sort();
-	const hasher = new Bun.CryptoHasher("sha256");
+	const hasher = new platformRuntime.CryptoHasher("sha256");
 	for (const relativePath of files) {
 		if (signal?.aborted) throw signal.reason;
 		const absolutePath = path.resolve(repositoryRoot, relativePath);
@@ -168,7 +169,7 @@ async function digestWorkingTree(
 			hasher.update("symlink\0");
 			hasher.update(await fs.readlink(absolutePath));
 		} else if (stats.isFile()) {
-			hasher.update(new Uint8Array(await Bun.file(absolutePath).arrayBuffer()));
+			hasher.update(new Uint8Array(await platformRuntime.file(absolutePath).arrayBuffer()));
 		} else {
 			hasher.update("unsupported\0");
 		}
@@ -207,7 +208,7 @@ async function normalizeTarget(
 			headRevision,
 			includePaths,
 			excludePaths,
-			treeDigest: `omp-security-diff/v1:sha256:${Bun.SHA256.hash(
+			treeDigest: `omp-security-diff/v1:sha256:${platformRuntime.SHA256.hash(
 				canonicalSecurityJson({ baseRevision, headRevision, includePaths, excludePaths, rawDiff }),
 				"hex",
 			)}`,
@@ -280,7 +281,7 @@ export interface PreparedSecurityOutput {
 
 export async function prepareSecurityOutputDirectory(
 	output: SecurityOutputPlan,
-	archiveSuffix: string = Bun.randomUUIDv7(),
+	archiveSuffix: string = platformRuntime.randomUUIDv7(),
 ): Promise<PreparedSecurityOutput> {
 	const root = path.resolve(output.root);
 	const stats = await fs.lstat(root);
@@ -351,7 +352,7 @@ async function buildPlanMaterial(
 		output,
 		model,
 		account,
-		configFingerprint: `omp-security-config/v1:sha256:${Bun.SHA256.hash(canonicalSecurityJson(request.config), "hex")}`,
+		configFingerprint: `omp-security-config/v1:sha256:${platformRuntime.SHA256.hash(canonicalSecurityJson(request.config), "hex")}`,
 		workflowFingerprint: request.workflowFingerprint,
 	};
 }
@@ -361,7 +362,7 @@ export async function createSecurityScanPlan(
 	adapter: SecurityGitAdapter = DEFAULT_SECURITY_GIT_ADAPTER,
 ): Promise<SecurityScanPlan> {
 	const material = await buildPlanMaterial(request, adapter);
-	const fingerprint = `omp-security-plan/v1:sha256:${Bun.SHA256.hash(canonicalSecurityJson(material), "hex")}`;
+	const fingerprint = `omp-security-plan/v1:sha256:${platformRuntime.SHA256.hash(canonicalSecurityJson(material), "hex")}`;
 	return parseSecurityScanPlan({
 		documentType: "omp-security.scan-plan",
 		schemaVersion: "1.0",

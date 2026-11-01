@@ -1,3 +1,6 @@
+import { createModelWebSocket } from "@oh-my-pi/pi-ai/utils/model-websocket";
+import type { ModelWebSocket } from "@oh-my-pi/pi-ai/utils/model-websocket";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { type AuthStorage, type OAuthAccess, withOAuthAccess } from "@oh-my-pi/pi-ai";
 import { getProxyForUrl, wrapFetchForProxy } from "@oh-my-pi/pi-ai/utils/proxy";
 import {
@@ -7,6 +10,7 @@ import {
 	OPENAI_HEADERS,
 } from "@oh-my-pi/pi-catalog/wire/codex";
 import { LiveWebRtcPeer } from "@oh-my-pi/pi-natives";
+import { assertNativeCapability } from "../native-capabilities";
 import { generateCodexAttestation } from "./attestation";
 import {
 	buildLiveSessionPayload,
@@ -123,7 +127,7 @@ export class CodexLiveTransport {
 	#peer: LiveWebRtcPeer | undefined;
 	#sdpAnswer: string | undefined;
 	readonly #realtimeSessionId = crypto.randomUUID();
-	#sideband: Bun.WebSocket | undefined;
+	#sideband: ModelWebSocket | undefined;
 	#state: Lifecycle = "idle";
 	#connectPromise: Promise<void> | undefined;
 	#closePromise: Promise<void> | undefined;
@@ -185,6 +189,10 @@ export class CodexLiveTransport {
 	}
 
 	#createPeer(): LiveWebRtcPeer {
+		assertNativeCapability("liveVoice", "Native WebRTC/Opus live voice");
+		if (typeof LiveWebRtcPeer !== "function") {
+			throw new Error("Native live voice is enabled but LiveWebRtcPeer is missing. Rebuild the full native addon.");
+		}
 		return new LiveWebRtcPeer(
 			(error, payload) => {
 				if (error) {
@@ -262,7 +270,7 @@ export class CodexLiveTransport {
 			} catch (cause) {
 				failure = cause instanceof Error ? cause : new Error(String(cause));
 				if (this.#options.signal?.aborted) throw abortReason(this.#options.signal);
-				if (attempt + 1 < SIDEBAND_CONNECT_ATTEMPTS) await Bun.sleep(200 * 2 ** attempt);
+				if (attempt + 1 < SIDEBAND_CONNECT_ATTEMPTS) await runtime.sleep(200 * 2 ** attempt);
 			}
 		}
 		throw failure;
@@ -273,8 +281,8 @@ export class CodexLiveTransport {
 		const options = {
 			headers: liveSessionHeaders(access, this.#options.sessionId, this.#realtimeSessionId, attestation),
 			proxy: getProxyForUrl(LIVE_PROVIDER, new URL(url)),
-		} satisfies Bun.WebSocketOptions;
-		const socket: Bun.WebSocket = Reflect.construct(WebSocket, [url, options]);
+		};
+		const socket = createModelWebSocket(url, options);
 		socket.binaryType = "nodebuffer";
 		const { promise, resolve, reject } = Promise.withResolvers<void>();
 		let opened = false;

@@ -200,11 +200,11 @@ describe("ModelBrowser search ranking", () => {
 	test("MRU breaks ties between equally good matches", () => {
 		// Same model id under two providers: match quality is identical, so
 		// the recently used provider must win over alphabetical order.
-		const browser = makeBrowser([makeModel("g0i", "gpt-5.5"), makeModel("zenmux", "gpt-5.5")], ["zenmux/gpt-5.5"]);
+		const browser = makeBrowser([makeModel("g0i", "gpt-5.5"), makeModel("nanogpt", "gpt-5.5")], ["nanogpt/gpt-5.5"]);
 
 		browser.setQuery("gpt-5.5");
 
-		expect(browser.getSelected()?.selector).toBe("zenmux/gpt-5.5");
+		expect(browser.getSelected()?.selector).toBe("nanogpt/gpt-5.5");
 	});
 
 	test("a configured role provider outranks punctuation-biased fuzzy scores", () => {

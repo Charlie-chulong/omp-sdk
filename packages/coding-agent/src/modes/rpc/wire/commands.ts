@@ -86,6 +86,13 @@ export const rpcCommands: readonly RpcCommandSpec[] = [
 
 	{ name: "get_state", doc: "Snapshot the session state.", result: "SessionState" },
 	{
+		name: "set_approval_mode",
+		doc: "Change session-only tool approval mode immediately, without interrupting an active turn.",
+		params: { mode: "ApprovalMode" },
+		result: { mode: "ApprovalMode" },
+		unwrap: "mode",
+	},
+	{
 		name: "set_fast_mode",
 		doc: "Enable or disable fast mode for the session.",
 		params: { enabled: "boolean" },

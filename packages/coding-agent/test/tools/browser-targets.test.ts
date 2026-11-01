@@ -207,7 +207,7 @@ describe("browser targets with the relay", () => {
 	it("lists the user's Chrome pages, skipping discarded ones", async () => {
 		for (const key of ENV_KEYS) delete process.env[key];
 		const port = await findFreeCdpPort();
-		relay = startRelayServer({ port });
+		relay = await startRelayServer({ port });
 		extension = await connectExtension(port, [
 			snapshot(1, { url: "https://mail.example/", title: "Mail", active: true }),
 			snapshot(2, { url: "https://docs.example/", title: "Docs" }),

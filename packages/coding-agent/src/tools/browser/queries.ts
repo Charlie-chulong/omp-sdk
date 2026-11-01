@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { untilAborted } from "@oh-my-pi/pi-utils";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import type { ElementHandle, Page } from "puppeteer-core";
@@ -307,7 +308,7 @@ export async function waitForPageText(
 			const candidate = content.trim();
 			if (opts.exact ? candidate === text : candidate.includes(text)) return;
 		}
-		await untilAborted(opts.signal, () => Bun.sleep(Math.min(100, Math.max(1, deadline - Date.now()))));
+		await untilAborted(opts.signal, () => runtime.sleep(Math.min(100, Math.max(1, deadline - Date.now()))));
 	}
 	throw new ToolError(`tab.waitForText(${JSON.stringify(text)}) timed out after ${opts.timeout}ms`);
 }

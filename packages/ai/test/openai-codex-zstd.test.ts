@@ -1,3 +1,4 @@
+import { encodeBase64 } from "@oh-my-pi/pi-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import { streamOpenAICodexResponses } from "@oh-my-pi/pi-ai/providers/openai-codex-responses";
 import type { Context, FetchImpl, Model } from "@oh-my-pi/pi-ai/types";
@@ -21,10 +22,10 @@ afterEach(() => {
 });
 
 function createCodexTestToken(accountId = "acc_test"): string {
-	const payload = Buffer.from(
+	const payload = encodeBase64(Buffer.from(
 		JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: accountId } }),
 		"utf8",
-	).toBase64();
+	));
 	return `aaa.${payload}.bbb`;
 }
 

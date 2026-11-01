@@ -1,3 +1,4 @@
+import { encodeBase64 } from "@oh-my-pi/pi-utils";
 import { afterEach, describe, expect, it } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
@@ -461,7 +462,7 @@ describe("TernTab screenshots", () => {
 		const shot = tab.screenshot();
 		const captureId = await captureAsked.promise;
 		await tab.setViewport({ width: 1200, height: 700, deviceScaleFactor: 2 });
-		daemon.answer(captureId, { ok: { data: encodeRawPng(new Uint8Array(1200 * 700 * 3), 1200, 700, 3).toBase64() } });
+		daemon.answer(captureId, { ok: { data: encodeBase64(encodeRawPng(new Uint8Array(1200 * 700 * 3), 1200, 700, 3)) } });
 		await shot;
 		const text = output
 			.finish()

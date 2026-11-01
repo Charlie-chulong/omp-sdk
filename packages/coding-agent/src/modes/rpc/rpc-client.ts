@@ -9,6 +9,7 @@ import type { AgentEvent, AgentMessage, AgentToolResult, ThinkingLevel } from "@
 import type { CompactionResult } from "@oh-my-pi/pi-agent-core/compaction";
 import type { ImageContent, Model } from "@oh-my-pi/pi-ai";
 import { isRecord, ptree, readJsonl } from "@oh-my-pi/pi-utils";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { LogoutAccount } from "@oh-my-pi/pi-tui/overlays/logout-account-selector";
 import type { TodoPhase } from "@oh-my-pi/pi-tui/tools/todo";
 import type { FileSink } from "bun";
@@ -16,6 +17,7 @@ import type { BashResult } from "../../exec/bash-executor";
 import type { AgentSessionEvent, SessionStats } from "../../session/agent-session";
 import type { CacheWarmingMode } from "../../session/cache-warmer";
 import type { SessionEntry, SessionTreeNode } from "../../session/session-entries";
+import type { ApprovalMode } from "../../tools/approval";
 import { MAX_RPC_FRAME_BYTES, MAX_RPC_REASSEMBLED_BYTES, RpcFrameDecoder, type RpcProtocolVersion } from "./rpc-frame";
 import type { RpcGoalOp, RpcGoalResult } from "./rpc-goal";
 import {
@@ -410,7 +412,7 @@ export class RpcClient {
 						: [...(this.options.command ?? ["bun", cliPath]), ...args],
 					{
 						cwd: this.options.cwd,
-						env: { ...Bun.env, ...this.options.env },
+						env: { ...runtime.env, ...this.options.env },
 						stdin: "pipe",
 					},
 				);
@@ -467,7 +469,7 @@ export class RpcClient {
 				// nonzero exits), so give it a bounded head start: the exit watcher
 				// below was registered first and rejects with the real stderr text
 				// instead of an empty "Stderr:" (flaked under full-suite load).
-				await Promise.race([child.exited.catch(() => {}), Bun.sleep(250)]);
+				await Promise.race([child.exited.catch(() => {}), runtime.sleep(250)]);
 				if (readySettled) return;
 				readySettled = true;
 				readyReject(new Error(`Agent output stream ended before ready. Stderr: ${child.peekStderr()}`));
@@ -478,7 +480,7 @@ export class RpcClient {
 					exitCode => ({ exitCode }),
 					cause => ({ cause }),
 				),
-				Bun.sleep(100).then(() => null),
+				runtime.sleep(100).then(() => null),
 			]);
 			const error =
 				exitResult === null
@@ -832,6 +834,7 @@ export class RpcClient {
 		const state = this.#getData<RpcSessionState>(response);
 		return {
 			...state,
+			approvalMode: state.approvalMode ?? "always-ask",
 			fastModeEnabled: state.fastModeEnabled === true,
 			fastModeActive: state.fastModeActive === true,
 			slowModeSupported: state.slowModeSupported === true,
@@ -842,6 +845,12 @@ export class RpcClient {
 					? state.tokensPerSecond
 					: null,
 		};
+	}
+
+	/** Change approval mode for this session, including during an active turn. */
+	async setApprovalMode(mode: ApprovalMode): Promise<ApprovalMode> {
+		const response = await this.#send({ type: "set_approval_mode", mode });
+		return this.#getData<{ mode: ApprovalMode }>(response).mode;
 	}
 
 	/**

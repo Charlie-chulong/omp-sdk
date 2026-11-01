@@ -10,7 +10,7 @@ export const wmuxMultiplexer = {
 	precedence: "session",
 	sessionEnvKeys: ["WMUX", "WMUX_SURFACE_ID"],
 	ownsScreenGrid: true,
-	isInside(env: NodeJS.ProcessEnv = Bun.env): boolean {
+	isInside(env: NodeJS.ProcessEnv = process.env): boolean {
 		return env.WMUX === "1" || Boolean(env.WMUX_SURFACE_ID);
 	},
 } as const satisfies TerminalMultiplexerModule;

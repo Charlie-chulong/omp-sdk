@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { subprocessToolRegistry } from "./subprocess-tool-registry";
 import { isTaskToolDetails } from "@oh-my-pi/pi-tui/tools/task";
 import { taskSubprocessRenderer } from "@oh-my-pi/pi-tui/tools/subprocess";
@@ -385,7 +386,8 @@ async function resolveTaskFile(session: ToolSession, item: TaskItem): Promise<Re
 		const file = await fs.open(filePath, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
 		try {
 			if (!(await file.stat()).isFile()) throw new Error("must resolve to a regular file");
-			const bytes = await Bun.file(file.fd)
+			const bytes = await runtime
+				.file(file.fd)
 				.slice(0, MAX_TASK_FILE_BYTES + 1)
 				.bytes();
 			if (bytes.byteLength > MAX_TASK_FILE_BYTES) throw new Error("exceeds the 4 MiB limit");
@@ -396,7 +398,7 @@ async function resolveTaskFile(session: ToolSession, item: TaskItem): Promise<Re
 				throw new Error("contains invalid UTF-8");
 			}
 			if (!task.trim()) throw new Error("must contain non-empty task instructions");
-			return { ...item, task, taskFileSha256: new Bun.CryptoHasher("sha256").update(bytes).digest("hex") };
+			return { ...item, task, taskFileSha256: new runtime.CryptoHasher("sha256").update(bytes).digest("hex") };
 		} finally {
 			await file.close();
 		}

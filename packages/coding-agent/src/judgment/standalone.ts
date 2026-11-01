@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Judge for commands that run outside an agent session (`omp find`, `omp stats`,
  * the git TUI's AI staging): project settings, a fresh auth store, the model
@@ -30,7 +31,7 @@ export async function openStandaloneJudge(cwd: string, purpose: string): Promise
 			judge: resolveJudge({
 				settings,
 				registry,
-				sessionId: Bun.randomUUIDv7(),
+				sessionId: runtime.randomUUIDv7(),
 				purpose,
 				cache: sharedJudgmentCache(),
 			}),

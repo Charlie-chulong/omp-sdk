@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { AgentToolResult } from "@oh-my-pi/pi-agent-core";
 import type { TextContent } from "@oh-my-pi/pi-ai";
 import { TempDir } from "@oh-my-pi/pi-utils";
@@ -73,7 +74,8 @@ const archiveReaderCache = new LRUCache<string, CachedArchiveReader>({
 
 async function openArchiveCached(absolutePath: string): Promise<ArchiveReader> {
 	// A vanished or unreadable archive is reported by the opener, as it always has been.
-	const stat = await Bun.file(absolutePath)
+	const stat = await runtime
+		.file(absolutePath)
 		.stat()
 		.catch(() => null);
 	if (!stat) return openArchive(absolutePath);
@@ -116,7 +118,7 @@ export async function resolveArchiveReadPath(
 		let suffixResolution: { from: string; to: string } | undefined;
 
 		try {
-			const stat = await Bun.file(absolutePath).stat();
+			const stat = await runtime.file(absolutePath).stat();
 			if (stat.isDirectory()) continue;
 			return {
 				absolutePath,
@@ -130,7 +132,7 @@ export async function resolveArchiveReadPath(
 			if (!suffixMatch) continue;
 
 			try {
-				const retryStat = await Bun.file(suffixMatch.absolutePath).stat();
+				const retryStat = await runtime.file(suffixMatch.absolutePath).stat();
 				if (retryStat.isDirectory()) continue;
 
 				absolutePath = suffixMatch.absolutePath;
@@ -254,7 +256,7 @@ export async function readArchive(
 			// an owned name rather than any untrusted archive path.
 			await using scratch = await TempDir.create("@omp-read-archive-pdf-");
 			const pdfPath = scratch.join("member.pdf");
-			await Bun.write(pdfPath, entry.bytes);
+			await runtime.write(pdfPath, entry.bytes);
 			throwIfAborted(signal);
 			const result = await readPdfPage({
 				readPath,

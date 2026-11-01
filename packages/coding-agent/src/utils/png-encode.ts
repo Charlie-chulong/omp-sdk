@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { deflateSync, constants as zlibConstants } from "node:zlib";
 
 export const PNG_SIGNATURE = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a);
@@ -38,6 +39,6 @@ function pngChunk(type: string, data: Uint8Array): Buffer {
 	chunk.writeUInt32BE(data.length, 0);
 	chunk.write(type, 4, 4, "ascii");
 	chunk.set(data, 8);
-	chunk.writeUInt32BE(Bun.hash.crc32(chunk.subarray(4, 8 + data.length)), 8 + data.length);
+	chunk.writeUInt32BE(runtime.hash.crc32(chunk.subarray(4, 8 + data.length)), 8 + data.length);
 	return chunk;
 }

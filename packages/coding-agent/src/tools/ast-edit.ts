@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { AstEditToolDetails } from "@oh-my-pi/pi-tui/tools/ast-edit";
 import { type } from "@oh-my-pi/omptype";
 import type {
@@ -352,7 +353,7 @@ export class AstEditTool implements AgentTool<typeof astEditSchema, AstEditToolD
 					const snapshotPath = await resultSnapshotPath(relativePath, this.session.cwd, resolveContext);
 					if (snapshotPath === undefined) continue;
 					try {
-						const fullText = normalizeToLF(await Bun.file(snapshotPath).text());
+						const fullText = normalizeToLF(await runtime.file(snapshotPath).text());
 						const tag = snapshotStore.recordSnapshot(snapshotPath, fullText);
 						hashContexts.set(relativePath, { tag });
 					} catch {
@@ -476,7 +477,7 @@ export class AstEditTool implements AgentTool<typeof astEditSchema, AstEditToolD
 								const appliedPath = await resultSnapshotPath(relativePath, this.session.cwd, applyContext);
 								if (appliedPath === undefined) continue;
 								try {
-									const fullText = normalizeToLF(await Bun.file(appliedPath).text());
+									const fullText = normalizeToLF(await runtime.file(appliedPath).text());
 									const freshTag = snapshotStore.recordSnapshot(appliedPath, fullText);
 									freshTagLines.push(formatHashlineHeader(relativePath, freshTag));
 								} catch {

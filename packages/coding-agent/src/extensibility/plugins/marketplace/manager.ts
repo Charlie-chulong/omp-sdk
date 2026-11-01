@@ -1,3 +1,5 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
+import { compareVersions } from "@oh-my-pi/pi-utils";
 /**
  * MarketplaceManager — orchestrates registry, fetcher, resolver, and cache.
  *
@@ -95,7 +97,12 @@ export type VersionChange = "upgrade" | "reinstall" | "downgrade";
 export function classifyVersionChange(from: string, to: string): VersionChange {
 	if (to === from) return "reinstall";
 	try {
-		const order = Bun.semver.order(to, from);
+		if (
+			typeof Bun === "undefined" &&
+			![to, from].every(version => /^[vV]?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version))
+		)
+			return "upgrade";
+		const order = typeof Bun !== "undefined" ? Bun.semver.order(to, from) : compareVersions(to, from);
 		return order > 0 ? "upgrade" : order < 0 ? "downgrade" : "reinstall";
 	} catch {
 		return "upgrade";
@@ -168,7 +175,7 @@ export class MarketplaceManager {
 		);
 
 		// Persist the fetched catalog so subsequent reads don't require re-fetching.
-		await Bun.write(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
+		await runtime.write(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
 
 		const now = new Date().toISOString();
 		const entry: MarketplaceRegistryEntry = {
@@ -229,7 +236,7 @@ export class MarketplaceManager {
 
 		// Overwrite the cached catalog and migrate legacy home-relative registry entries.
 		const catalogPath = path.resolve(expandTilde(existing.catalogPath));
-		await Bun.write(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
+		await runtime.write(catalogPath, `${JSON.stringify(catalog, null, 2)}\n`);
 
 		const updatedEntry: MarketplaceRegistryEntry = {
 			...existing,
@@ -563,12 +570,12 @@ export class MarketplaceManager {
 			if (!pathIsWithin(cachePath, sourcePath)) {
 				throw new Error(`Plugin "${entry.name}" lspServers path escapes the plugin directory`);
 			}
-			const content = await Bun.file(sourcePath).text();
-			await Bun.write(targetPath, content);
+			const content = await runtime.file(sourcePath).text();
+			await runtime.write(targetPath, content);
 			return;
 		}
 
-		await Bun.write(targetPath, `${JSON.stringify({ servers: lspServers }, null, 2)}\n`);
+		await runtime.write(targetPath, `${JSON.stringify({ servers: lspServers }, null, 2)}\n`);
 	}
 
 	async #writeEmbeddedDapConfig(entry: MarketplacePluginEntry, cachePath: string): Promise<void> {
@@ -583,13 +590,13 @@ export class MarketplaceManager {
 			const extension = path.extname(sourcePath).toLowerCase();
 			const targetFilename = extension === ".yaml" || extension === ".yml" ? `.dap${extension}` : ".dap.json";
 			const targetPath = path.join(cachePath, targetFilename);
-			const content = await Bun.file(sourcePath).text();
-			await Bun.write(targetPath, content);
+			const content = await runtime.file(sourcePath).text();
+			await runtime.write(targetPath, content);
 			return;
 		}
 
 		const targetPath = path.join(cachePath, ".dap.json");
-		await Bun.write(targetPath, `${JSON.stringify({ adapters: dapAdapters }, null, 2)}\n`);
+		await runtime.write(targetPath, `${JSON.stringify({ adapters: dapAdapters }, null, 2)}\n`);
 	}
 
 	/**
@@ -613,8 +620,14 @@ export class MarketplaceManager {
 		if (!pluginDir) return undefined;
 		const readVersion = async (file: string): Promise<string | undefined> => {
 			try {
-				const content = await Bun.file(path.join(pluginDir, file)).json();
-				return typeof content?.version === "string" && content.version ? content.version : undefined;
+				const content = await runtime.file(path.join(pluginDir, file)).json();
+				return content &&
+					typeof content === "object" &&
+					"version" in content &&
+					typeof content.version === "string" &&
+					content.version
+					? content.version
+					: undefined;
 			} catch {
 				// Missing or invalid — try next source
 				return undefined;
@@ -1024,7 +1037,7 @@ export class MarketplaceManager {
 
 	async #loadRuntimeConfig(scope: "user" | "project"): Promise<PluginRuntimeConfig> {
 		try {
-			return normalizePluginRuntimeConfig(await Bun.file(this.#runtimeLockPath(scope)).json());
+			return normalizePluginRuntimeConfig(await runtime.file(this.#runtimeLockPath(scope)).json());
 		} catch (err) {
 			if (isEnoent(err)) return normalizePluginRuntimeConfig({});
 			logger.warn("Failed to load marketplace plugin runtime config", {
@@ -1041,7 +1054,7 @@ export class MarketplaceManager {
 
 	async #resolvePluginPackageName(installPath: string, fallbackName: string): Promise<string> {
 		try {
-			const pkg: { name?: unknown } = await Bun.file(path.join(installPath, "package.json")).json();
+			const pkg: { name?: unknown } = await runtime.file(path.join(installPath, "package.json")).json();
 			const name = typeof pkg.name === "string" && pkg.name.length > 0 ? pkg.name : fallbackName;
 			return assertRuntimePackageName(name);
 		} catch (err) {
@@ -1139,9 +1152,9 @@ export class MarketplaceManager {
 	async #readRuntimeDependencyNames(scope: "user" | "project"): Promise<Set<string>> {
 		const names = new Set<string>();
 		try {
-			const pkg: { dependencies?: Record<string, unknown> } = await Bun.file(
-				path.join(this.#runtimeRoot(scope), "package.json"),
-			).json();
+			const pkg: { dependencies?: Record<string, unknown> } = await runtime
+				.file(path.join(this.#runtimeRoot(scope), "package.json"))
+				.json();
 			if (pkg.dependencies && typeof pkg.dependencies === "object") {
 				for (const dep in pkg.dependencies) names.add(dep);
 			}
@@ -1302,7 +1315,7 @@ export class MarketplaceManager {
 	async #readCatalog(entry: MarketplaceRegistryEntry): Promise<MarketplaceCatalog> {
 		const catalogPath = path.resolve(expandTilde(entry.catalogPath));
 		try {
-			const content = await Bun.file(catalogPath).text();
+			const content = await runtime.file(catalogPath).text();
 			return parseMarketplaceCatalog(content, catalogPath);
 		} catch (err) {
 			if (isEnoent(err)) {

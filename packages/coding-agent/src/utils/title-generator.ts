@@ -1,7 +1,8 @@
 /**
  * Generate session titles using a smol, fast model.
  */
-import { dlopen, FFIType, ptr } from "bun:ffi";
+import type * as BunFfi from "bun:ffi";
+import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as url from "node:url";
@@ -64,6 +65,8 @@ function getWindowsConsoleTitleApi(): WindowsConsoleTitleApi | null {
 	if (process.platform !== "win32") return null;
 	if (windowsConsoleTitleApi !== undefined) return windowsConsoleTitleApi;
 	try {
+		if (typeof Bun === "undefined") return (windowsConsoleTitleApi = null);
+		const { dlopen, FFIType, ptr } = createRequire(import.meta.url)("bun:ffi") as typeof BunFfi;
 		const kernel32 = dlopen("kernel32.dll", {
 			SetConsoleTitleW: { args: [FFIType.ptr], returns: FFIType.bool },
 			GetConsoleTitleW: { args: [FFIType.ptr, FFIType.u32], returns: FFIType.u32 },

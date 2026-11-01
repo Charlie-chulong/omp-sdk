@@ -1,3 +1,4 @@
+import { runtime, type RuntimeFile } from "@oh-my-pi/pi-utils/runtime";
 /**
  * In-session fallbacks for permission-denied file writes and deletes.
  *
@@ -129,7 +130,6 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { isEnoent, isFsError, logger } from "@oh-my-pi/pi-utils";
-import type { BunFile } from "bun";
 import type { ExtensionContext } from "../extensibility/extensions/types";
 import { resolveSyscallTarget } from "./path-utils";
 
@@ -302,7 +302,7 @@ export function withFileMutationSession<T>(sessionId: string | undefined, fn: ()
  * created on the way, so an `ENOENT` here means the file genuinely is not there and
  * must propagate — `edit`'s `REM` turns it into a `NotFoundError`.
  */
-export async function deleteFileWithFallback(dst: string, file?: BunFile): Promise<void> {
+export async function deleteFileWithFallback(dst: string, file?: Pick<RuntimeFile, "unlink">): Promise<void> {
 	try {
 		if (file) {
 			await file.unlink();
@@ -399,7 +399,7 @@ async function classifyWriteFailure(dst: string, error: unknown): Promise<WriteF
 	return { kind: "retry" };
 }
 
-export async function writeFileWithFallback(dst: string, content: string, file?: BunFile): Promise<void> {
+export async function writeFileWithFallback(dst: string, content: string, file?: RuntimeFile): Promise<void> {
 	// Attempt 0 is the plain write. The single retry is reachable only when the
 	// first failure turned out to be a parent-directory race this call repaired,
 	// which bounds the loop at two writes.
@@ -408,7 +408,7 @@ export async function writeFileWithFallback(dst: string, content: string, file?:
 			if (file) {
 				await file.write(content);
 			} else {
-				await Bun.write(dst, content);
+				await runtime.write(dst, content);
 			}
 			return;
 		} catch (error) {

@@ -378,6 +378,8 @@ export type QueuedMessageQueue = "steering" | "followUp";
 
 export type CacheWarmingMode = "off" | "streaming" | "idle";
 
+export type ApprovalMode = "always-ask" | "always-ask-cached" | "write" | "yolo";
+
 /** `set_event_filter` projection: `delta` replaces the accumulated snapshots with the block a start/end event touches. */
 export type MessageUpdates = "full" | "delta";
 
@@ -485,6 +487,7 @@ export interface SessionState {
 	sessionId: string;
 	model?: ModelInfo;
 	thinkingLevel?: ThinkingLevel;
+	approvalMode?: ApprovalMode;
 	isStreaming?: boolean;
 	isCompacting?: boolean;
 	steeringMode?: QueueMode;
@@ -1565,6 +1568,14 @@ export interface OpenSessionParams {
 	modelId?: string;
 }
 
+export interface SetApprovalModeParams {
+	mode: ApprovalMode;
+}
+
+export interface SetApprovalModeResult {
+	mode: ApprovalMode;
+}
+
 export interface SetFastModeParams {
 	enabled: boolean;
 }
@@ -1893,6 +1904,7 @@ export interface RpcWireCommands {
 	new_session: { params: NewSessionParams; result: CancellationResult };
 	open_session: { params: OpenSessionParams; result: OpenSessionResult };
 	get_state: { params: undefined; result: SessionState };
+	set_approval_mode: { params: SetApprovalModeParams; result: SetApprovalModeResult };
 	set_fast_mode: { params: SetFastModeParams; result: FastModeResult };
 	set_slow_mode: { params: SetSlowModeParams; result: SetSlowModeResult };
 	goal: { params: GoalParams; result: GoalResult };

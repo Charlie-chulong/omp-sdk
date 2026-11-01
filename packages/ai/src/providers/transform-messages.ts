@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { resolveCatalogPolicy } from "@oh-my-pi/pi-catalog/compat/catalog-policy";
 import { carriesReasoning } from "@oh-my-pi/pi-catalog/compat/reasoning-carry";
@@ -605,7 +606,7 @@ function targetReplaysPlaintextReasoning(model: Model, compat: Model["compat"]):
 }
 
 function fallbackAnthropicToolCallId(originalId: string): string {
-	return `toolu_${Bun.hash(originalId).toString(36)}`;
+	return `toolu_${runtime.hash(originalId).toString(36)}`;
 }
 
 function normalizeAnthropicTargetToolCallId<TApi extends Api>(

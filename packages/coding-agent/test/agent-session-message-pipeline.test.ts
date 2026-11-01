@@ -48,7 +48,7 @@ import { convertToLlm, wrapSteeringForModel } from "@oh-my-pi/pi-coding-agent/se
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import { EventBus } from "@oh-my-pi/pi-coding-agent/utils/event-bus";
 import { requestBodyText } from "@oh-my-pi/pi-ai/utils/request-body";
-import { TempDir } from "@oh-my-pi/pi-utils";
+import { encodeBase64, TempDir } from "@oh-my-pi/pi-utils";
 import { createAssistantMessage } from "./helpers/agent-session-setup";
 
 function createAgent(): Agent {
@@ -827,7 +827,7 @@ describe("AgentSession message pipeline", () => {
 			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
 			"base64",
 		);
-		const webpData = Buffer.from(await new Bun.Image(seed).resize(2, 2).webp({ quality: 90 }).bytes()).toBase64();
+		const webpData = encodeBase64(Buffer.from(await new Bun.Image(seed).resize(2, 2).webp({ quality: 90 }).bytes()));
 		const historicalImage: ImageContent = {
 			type: "image",
 			data: webpData,
@@ -954,7 +954,7 @@ describe("AgentSession message pipeline", () => {
 			// metadata, so exercise that runtime shape through the real provider path.
 			const corrupt = {
 				type: "image",
-				data: Buffer.from("RIFF0000WEBPbroken-attachment").toBase64(),
+				data: encodeBase64(Buffer.from("RIFF0000WEBPbroken-attachment")),
 			} as unknown as ImageContent;
 
 			await session.sendUserMessage([{ type: "text", text: "inspect this" }, corrupt]);

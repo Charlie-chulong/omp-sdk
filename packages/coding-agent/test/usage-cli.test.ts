@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import * as path from "node:path";
 import { stripVTControlCharacters } from "node:util";
@@ -2371,7 +2371,7 @@ describe("omp usage reset", () => {
 			"openai-codex",
 			oauth("broker-codex", { email: "fleet@example.test", accountId: "acct-fleet" }),
 		);
-		const handle = startAuthBroker({
+		const handle = await startAuthBroker({
 			storage: brokerStorage,
 			bind: "127.0.0.1:0",
 			bearerTokens: ["reset-bearer"],

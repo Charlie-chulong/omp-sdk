@@ -82,7 +82,7 @@ describe("omp browser-relay install", () => {
 		// After reinstalling, a Chrome restart re-reads manifest.json but keeps running the old service worker.
 		const port = await findFreeCdpPort();
 		const hello = Promise.withResolvers<void>();
-		relay = startRelayServer({
+		relay = await startRelayServer({
 			port,
 			group: false,
 			log: message => {

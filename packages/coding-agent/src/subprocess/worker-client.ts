@@ -1,6 +1,9 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+import { nodeWorkerHostEntry } from "@oh-my-pi/pi-utils/worker-host";
 import {
 	$env,
 	$which,
@@ -149,9 +152,9 @@ export function resolveExecutablePath(): string {
 export function resolveCliEntryCmd(): string[] {
 	const executable = resolveExecutablePath();
 	if (isCompiledBinary()) return [executable];
-	const hostEntry = workerHostEntry();
+	const hostEntry = workerHostEntry() ?? (typeof Bun === "undefined" ? resolveNodeWorkerHost() : null);
 	if (hostEntry) return [executable, hostEntry];
-	return [executable, path.resolve(import.meta.dir, "..", "cli.ts")];
+	return [executable, path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "cli.ts")];
 }
 
 /**
@@ -161,19 +164,29 @@ export function resolveCliEntryCmd(): string[] {
  * without a pinned cwd there: they share the parent's foreground process
  * group, and terminal cwd heuristics (kitty's new_tab_with_cwd) read the
  * newest process in that group, so anchoring them to the install dir leaks
- * into newly opened terminal tabs. With no declared host entry (bun test, SDK
- * embedding) fall back to a cwd-relative `src/cli.ts`, which Bun subprocess
- * IPC handles more reliably under `bun test`.
+ * into newly opened terminal tabs. Bun test/embedding without a declared host
+ * retains the cwd-relative source CLI fallback. Node always re-enters the
+ * registered or packaged Node host, never the Bun-only source CLI.
  */
 export function resolveWorkerSpawnCmd(workerArg: string): WorkerSpawnCommand {
 	const executable = resolveExecutablePath();
 	if (isCompiledBinary()) return { cmd: [executable, workerArg] };
-	const hostEntry = workerHostEntry();
-	if (hostEntry) {
-		return { cmd: [executable, hostEntry, workerArg] };
+	if (typeof Bun === "undefined") {
+		return { cmd: [executable, "--experimental-vm-modules", resolveNodeWorkerHost(), workerArg] };
 	}
-	const packageRoot = path.resolve(import.meta.dir, "..", "..");
+	const hostEntry = workerHostEntry();
+	if (hostEntry) return { cmd: [executable, hostEntry, workerArg] };
+	const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 	return { cmd: [executable, "src/cli.ts", workerArg], cwd: packageRoot };
+}
+
+/** Resolve the shared Node worker selector host, never the Bun-only source CLI. */
+export function resolveNodeWorkerHost(): string {
+	const declared = workerHostEntry() ?? nodeWorkerHostEntry();
+	if (declared) return declared;
+	const packaged = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "dist", "node", "host.mjs");
+	if (!fs.existsSync(packaged)) throw new Error(`Node worker host is missing: ${packaged}`);
+	return packaged;
 }
 
 /**
@@ -194,6 +207,7 @@ export function workerEnvFromParent(overlay?: Record<string, string>): Record<st
 	if (overlay) {
 		for (const key in overlay) merged[key] = overlay[key];
 	}
+	if (typeof Bun === "undefined" && process.versions.electron) merged.ELECTRON_RUN_AS_NODE = "1";
 	return merged;
 }
 
@@ -268,7 +282,7 @@ export function createWorkerSubprocess<Outbound>(options: {
 		stderrDrainStarted = true;
 		void drainStderrCapture(stderrCapture, options.exitLabel, stderrTail).finally(() => stderrDrained.resolve());
 	};
-	const proc = Bun.spawn({
+	const proc = runtime.spawn({
 		cmd: options.spawnCommand.cmd,
 		cwd: options.spawnCommand.cwd,
 		detached: options.detached,
@@ -281,7 +295,7 @@ export function createWorkerSubprocess<Outbound>(options: {
 		ipc(message) {
 			for (const handler of inbound) handler(message as Outbound);
 		},
-		onExit(_proc, exitCode, signalCode) {
+		onExit(_proc, exitCode, signalCode, error) {
 			unregisterFault();
 			startStderrDrain();
 			if (exitCode === 0 && !options.reportCleanExit) return;
@@ -290,13 +304,20 @@ export function createWorkerSubprocess<Outbound>(options: {
 			// `kill -9`) is a real worker death that must fault in-flight
 			// requests so callers don't await forever.
 			if (exitCode === null && intentionalExit.value) return;
-			const reason = exitCode !== null ? `code ${exitCode}` : `signal ${signalCode ?? "unknown"}`;
+			const reason = error
+				? error.message
+				: exitCode !== null
+					? `code ${exitCode}`
+					: `signal ${signalCode ?? "unknown"}`;
 			// The stderr target is drained only after exit so idle unref'd
 			// workers do not keep the parent alive; wait for that drain before
 			// surfacing the error so the tail is complete.
 			void stderrDrained.promise.finally(() => {
 				const suffix = stderrTail.suffix();
-				const err = new Error(`${options.exitLabel} exited with ${reason}${suffix}`);
+				const err = new Error(
+					`${options.exitLabel} exited with ${reason}${suffix}`,
+					error ? { cause: error } : undefined,
+				);
 				for (const handler of errors) handler(err);
 			});
 		},

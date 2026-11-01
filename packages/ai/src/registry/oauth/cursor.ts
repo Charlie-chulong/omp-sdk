@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as AIError from "../../error";
 import type { FetchImpl } from "../../types";
 import { isRecord } from "../../utils";
@@ -52,7 +53,7 @@ export async function pollCursorAuth(
 	let consecutiveErrors = 0;
 
 	for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
-		await Bun.sleep(delay);
+		await runtime.sleep(delay);
 
 		try {
 			const response = await fetch(`${CURSOR_POLL_URL}?uuid=${uuid}&verifier=${verifier}`);

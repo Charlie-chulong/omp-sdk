@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { AnnotationOverlay } from "@oh-my-pi/pi-tui/overlays/annotation-overlay";
@@ -27,7 +28,7 @@ const DRAFT_FILE = /^draft-([0-9a-f]{64})\.json$/;
 const OPEN_DRAFTS = new Set<string>();
 
 function hash(value: string): string {
-	return new Bun.CryptoHasher("sha256").update(value).digest("hex");
+	return new runtime.CryptoHasher("sha256").update(value).digest("hex");
 }
 
 function draftDirectory(artifactsDir: string, sessionId: string): string {

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import {
@@ -171,7 +172,7 @@ function resolveCollision(
 	const candidateCustom = candidate._source?.provider === CUSTOM_DIR_PROVIDER_ID;
 	const bareCustom = bareSkill?._source?.provider === CUSTOM_DIR_PROVIDER_ID;
 	const identical = existingEntries
-		.filter(([_, e]) => e.body === candidateBody && Bun.deepEquals(e.frontmatter, candidateFrontmatter))
+		.filter(([_, e]) => e.body === candidateBody && runtime.deepEquals(e.frontmatter, candidateFrontmatter))
 		.map(([name]) => name);
 
 	if (bareSkill && ((bareInstalled && !candidateInstalled) || (candidateCustom && !bareCustom))) {
@@ -363,13 +364,13 @@ export async function loadSkills(options: LoadSkillsOptions = {}): Promise<LoadS
 	// Check if skill name matches any of the include patterns
 	function matchesIncludePatterns(name: string): boolean {
 		if (includeSkills.length === 0) return true;
-		return includeSkills.some(pattern => new Bun.Glob(pattern).match(name));
+		return includeSkills.some(pattern => new runtime.Glob(pattern).match(name));
 	}
 
 	// Check if skill name matches any of the ignore patterns
 	function matchesIgnorePatterns(name: string): boolean {
 		if (ignoredSkills.length === 0) return false;
-		return ignoredSkills.some(pattern => new Bun.Glob(pattern).match(name));
+		return ignoredSkills.some(pattern => new runtime.Glob(pattern).match(name));
 	}
 
 	const disabledSkillNames = new Set(
@@ -839,7 +840,7 @@ export type SkillPromptInput = Pick<ParsedSkillInvocation, "args"> & Partial<Pic
 
 /** Read a skill's instruction body before rendering user-provided arguments. */
 export async function loadSkillPromptBody(skill: Pick<Skill, "filePath">): Promise<string> {
-	const content = await Bun.file(skill.filePath).text();
+	const content = await runtime.file(skill.filePath).text();
 	// Only the body is used: keep HTML comments (`repair: false`) and leave YAML
 	// diagnostics to the loader, which already parsed this frontmatter.
 	return parseFrontmatter(content, { source: skill.filePath, repair: false, level: "off" }).body.trim();

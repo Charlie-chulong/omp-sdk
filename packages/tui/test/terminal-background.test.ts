@@ -1,3 +1,4 @@
+import { encodeBase64 } from "@oh-my-pi/pi-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import { MacAppearanceObserver, MacOSAppearance, rasterizeSvg } from "@oh-my-pi/pi-natives";
 import { TranscriptContainer } from "@oh-my-pi/pi-tui/chrome/transcript-container";
@@ -69,7 +70,7 @@ async function translucentImage(requestRender: () => void): Promise<Image> {
 		1,
 	);
 	return new Image(
-		png.toBase64(),
+		encodeBase64(png),
 		"image/png",
 		{ fallbackColor: text => text },
 		{ maxWidthCells: 8, maxHeightCells: 2, requestRender },

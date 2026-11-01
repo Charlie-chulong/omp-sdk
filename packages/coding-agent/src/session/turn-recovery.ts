@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import {
 	type Agent,
 	AgentBusyError,
@@ -1440,7 +1441,7 @@ export class TurnRecovery {
 				left.model === right.model &&
 				left.stopReason === right.stopReason &&
 				left.errorMessage === right.errorMessage &&
-				Bun.hash(JSON.stringify(left.content)) === Bun.hash(JSON.stringify(right.content)))
+				runtime.hash(JSON.stringify(left.content)) === runtime.hash(JSON.stringify(right.content)))
 		);
 	}
 
@@ -2398,7 +2399,7 @@ export class TurnRecovery {
 				const { systemPrompt, tools } = this.#host.agent.state;
 				const requestSurfaceUnchanged =
 					this.#host.resolveActiveEditMode() === previousEditMode &&
-					Bun.deepEquals(systemPrompt, previousSystemPrompt) &&
+					runtime.deepEquals(systemPrompt, previousSystemPrompt) &&
 					tools.length === previousTools.length &&
 					tools.every((tool, index) => tool === previousTools[index]);
 				if (

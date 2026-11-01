@@ -358,7 +358,7 @@ export class SvgFigure implements Component {
 			}
 		}
 		if (this.#disposed) return;
-		const data = png?.toBase64();
+		const data = png ? Buffer.from(png.buffer, png.byteOffset, png.byteLength).toString("base64") : undefined;
 		const size = data ? getImageDimensions(data, "image/png") : null;
 		if (data && size) {
 			this.#show(attempt, data, size.widthPx, size.heightPx);

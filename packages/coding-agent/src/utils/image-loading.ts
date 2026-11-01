@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import {
 	MAX_IMAGE_INPUT_BYTES,
@@ -10,7 +11,7 @@ import {
 import * as path from "node:path";
 import type { Context, ImageContent, Message, Model, ProviderPayload, TextContent } from "@oh-my-pi/pi-ai";
 import { rasterizeSvg } from "@oh-my-pi/pi-natives";
-import { $which, isRecord, logger, readImageMetadata } from "@oh-my-pi/pi-utils";
+import { encodeBase64, $which, isRecord, logger, readImageMetadata } from "@oh-my-pi/pi-utils";
 import { LRUCache } from "@oh-my-pi/pi-utils/lru";
 import { resolveReadPath } from "../tools/path-utils";
 import { formatDimensionNote, type ImageResizeOptions, resizeImage } from "./image-resize";
@@ -68,7 +69,7 @@ function modelBoundaryImageCacheKey(image: ImageContent, resize: ImageResizeOpti
 		resize?.maxBytes,
 		resize?.jpegQuality,
 	]);
-	return `${resizeKey}:${image.mimeType}:${image.data.length}:${image.data.slice(0, 32)}:${image.data.slice(-32)}:${String(Bun.hash(image.data))}`;
+	return `${resizeKey}:${image.mimeType}:${image.data.length}:${image.data.slice(0, 32)}:${image.data.slice(-32)}:${String(runtime.hash(image.data))}`;
 }
 
 async function memoizedStbImageNormalization(
@@ -346,14 +347,14 @@ export async function loadImageInput(options: LoadImageInputOptions): Promise<Lo
 	const mimeType = metadata?.mimeType;
 	if (!mimeType) return null;
 
-	const stat = await Bun.file(resolvedPath).stat();
+	const stat = await runtime.file(resolvedPath).stat();
 	if (stat.size > maxBytes) {
 		throw new ImageInputTooLargeError(stat.size, maxBytes);
 	}
 
 	const inputBuffer = await fs.readFile(resolvedPath);
 	return loadInMemoryImageInput({
-		image: { type: "image", data: inputBuffer.toBase64(), mimeType },
+		image: { type: "image", data: encodeBase64(inputBuffer), mimeType },
 		bytes: inputBuffer,
 		resolvedPath,
 		textNotePrefix: "Read image file",
@@ -370,7 +371,7 @@ export async function loadSvgImageInput(options: LoadImageInputOptions): Promise
 	if (extension !== ".svg" && extension !== ".svgz") return null;
 
 	const maxBytes = options.maxBytes ?? MAX_IMAGE_INPUT_BYTES;
-	const stat = await Bun.file(resolvedPath).stat();
+	const stat = await runtime.file(resolvedPath).stat();
 	if (stat.size > maxBytes) {
 		throw new ImageInputTooLargeError(stat.size, maxBytes);
 	}
@@ -389,7 +390,7 @@ export async function loadSvgImageInput(options: LoadImageInputOptions): Promise
 	}
 
 	return loadInMemoryImageInput({
-		image: { type: "image", data: png.toBase64(), mimeType: "image/png" },
+		image: { type: "image", data: encodeBase64(png), mimeType: "image/png" },
 		bytes: png,
 		resolvedPath,
 		textNotePrefix: "Read SVG file",
@@ -408,7 +409,7 @@ export async function loadHeifImageInput(
 	const resolvedPath = options.resolvedPath ?? resolveReadPath(options.path, options.cwd);
 	const sourceMimeType = options.detectedMimeType ?? "image/heif";
 	const maxBytes = options.maxBytes ?? MAX_IMAGE_INPUT_BYTES;
-	const stat = await Bun.file(resolvedPath).stat();
+	const stat = await runtime.file(resolvedPath).stat();
 	if (stat.size > maxBytes) {
 		throw new ImageInputTooLargeError(stat.size, maxBytes);
 	}
@@ -426,7 +427,7 @@ export async function loadHeifImageInput(
 	}
 
 	return loadInMemoryImageInput({
-		image: { type: "image", data: jpeg.toBase64(), mimeType: "image/jpeg" },
+		image: { type: "image", data: encodeBase64(jpeg), mimeType: "image/jpeg" },
 		bytes: jpeg,
 		resolvedPath,
 		textNotePrefix: "Read image file",

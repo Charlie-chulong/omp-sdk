@@ -1,4 +1,4 @@
-import { isRecord } from "@oh-my-pi/pi-utils";
+import { encodeBase64, isRecord } from "@oh-my-pi/pi-utils";
 
 /**
  * High-performance, zero-builder protobuf wire codecs for @oh-my-pi/pi-catalog.
@@ -503,7 +503,7 @@ function scalarValue(kind: ScalarKind): ValueCodec<unknown> {
 				requireBytes,
 				(value, writer) => writer.bytes(value),
 				reader => reader.bytes(),
-				value => value.toBase64(),
+				value => encodeBase64(value),
 				value => value.byteLength === 0,
 			);
 		case "double":

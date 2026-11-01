@@ -1,3 +1,4 @@
+import { runtime as platformRuntime } from "@oh-my-pi/pi-utils/runtime";
 import type { IsoBackendKind } from "@oh-my-pi/pi-natives";
 import type { IsolationHandle, WorktreeBaseline } from "../task/worktree";
 import { captureBaseline, cleanupIsolation, ensureIsolation, getRepoRoot } from "../task/worktree";
@@ -39,7 +40,7 @@ export interface SecurityRemediationDependencies {
 }
 
 function createRemediationId(): string {
-	return `security-remediation-${Bun.randomUUIDv7().replaceAll("-", "")}`;
+	return `security-remediation-${platformRuntime.randomUUIDv7().replaceAll("-", "")}`;
 }
 
 function repoBaselineDirty(baseline: WorktreeBaseline): string[] {

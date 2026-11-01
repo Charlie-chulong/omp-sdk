@@ -196,7 +196,7 @@ export async function whileDrawing<T>(
 /**
  * Capture a page or element screenshot without crossing the worker boundary.
  * Puppeteer hands back a plain `Uint8Array`, not a Node `Buffer`: encode it with
- * `.toBase64()`, never `.toString("base64")` (which serializes decimal bytes).
+ * `encodeBase64(bytes)`, never `.toString("base64")` (which serializes decimal bytes).
  */
 export async function captureScreenshotBuffer(
 	page: Page,

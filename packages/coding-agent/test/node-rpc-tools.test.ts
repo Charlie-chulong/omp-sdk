@@ -1,0 +1,72 @@
+import { describe, expect, test } from "bun:test";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { pathToFileURL } from "node:url";
+import { RpcClient } from "@oh-my-pi/pi-coding-agent/modes/rpc/rpc-client";
+import { TempDir } from "@oh-my-pi/pi-utils";
+
+const packageDir = path.resolve(import.meta.dir, "..");
+
+// Exercise built artifacts in real Node processes, as Desktop does.
+for (const artifact of ["node", "node-desktop"]) {
+	const entry = path.join(packageDir, "dist", artifact, "rpc.mjs");
+	describe.skipIf(!fs.existsSync(entry))(`${artifact} RPC tool policy`, () => {
+		for (const scenario of [
+			{ name: "keeps images when an unrelated built-in is disabled", denied: ["ast_edit"], args: [], image: true },
+			{ name: "honors an explicit image denial", denied: ["generate_image"], args: [], image: false },
+			{
+				name: "does not expand an explicit whitelist",
+				denied: ["ast_edit"],
+				args: ["--tools", "read"],
+				image: false,
+			},
+			{ name: "does not expand no-tools", denied: ["ast_edit"], args: ["--no-tools"], image: false },
+		]) {
+			test(scenario.name, async () => {
+				using root = TempDir.createSync("@node-rpc-tools-");
+				const config = root.join("config.yml");
+				await Bun.write(config, "generate_image:\n  enabled: true\n");
+				const options = {
+					cwd: root.path(),
+					agentDir: root.join("agent"),
+					model: "openai/gpt-4o-mini",
+					noSession: true,
+					configFiles: [config],
+					disallowedTools: scenario.denied,
+					extraArgs: [
+						"--no-extensions",
+						"--no-lsp",
+						"--no-context-files",
+						"--no-skills",
+						"--no-rules",
+						...scenario.args,
+					],
+				};
+				using client = new RpcClient({
+					command: () => [
+						"node",
+						"--input-type=module",
+						"-e",
+						`import { startNodeRpcHost } from ${JSON.stringify(pathToFileURL(entry).href)}; await startNodeRpcHost(${JSON.stringify(options)});`,
+					],
+					cwd: root.path(),
+					env: {
+						HOME: root.path(),
+						PI_CONFIG_DIR: ".omp",
+						PI_CODING_AGENT_DIR: root.join("agent"),
+						PI_PROFILE: "",
+						XDG_DATA_HOME: root.join("data"),
+						XDG_STATE_HOME: root.join("state"),
+						XDG_CACHE_HOME: root.join("cache"),
+						OPENAI_API_KEY: "test-no-network",
+					},
+				});
+				await client.start();
+				const state = await client.getState();
+				const names = state.dumpTools?.map(tool => tool.name) ?? [];
+				expect(names.includes("generate_image")).toBe(scenario.image);
+				for (const denied of scenario.denied) expect(names).not.toContain(denied);
+			});
+		}
+	});
+}

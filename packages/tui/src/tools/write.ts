@@ -1,3 +1,4 @@
+import { visibleWidth } from "../utils";
 import * as path from "node:path";
 import { sanitizeText } from "@oh-my-pi/pi-utils";
 import type { HighlightStream } from "@oh-my-pi/pi-natives";
@@ -397,7 +398,7 @@ function wrapWritePreviewRows(lines: string[], width: number): string[] {
 		const gutter = /^(\x1b\[[0-9;]*m)( *\d+ )(\x1b\[[0-9;]*m)(.*)$/.exec(line);
 		if (!gutter) return line;
 		const prefix = `${gutter[1]}${gutter[2]}${gutter[3]}`;
-		return wrapPrefixedLine(prefix, " ".repeat(Bun.stringWidth(gutter[2]!)), gutter[4] ?? "", width);
+		return wrapPrefixedLine(prefix, " ".repeat(visibleWidth(gutter[2]!)), gutter[4] ?? "", width);
 	});
 }
 

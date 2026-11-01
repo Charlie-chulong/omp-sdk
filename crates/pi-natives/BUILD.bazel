@@ -135,7 +135,7 @@ rust_shared_library(
         ],
         "//conditions:default": [":oauth_callback_relay"],
     }),
-    crate_features = [],
+    crate_features = ["smollm", "live-voice", "wasm-grammars"],
     edition = "2024",
     proc_macro_deps = all_crate_deps(proc_macro = True),
     rustc_env = select({

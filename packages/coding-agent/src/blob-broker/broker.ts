@@ -1,3 +1,5 @@
+import type { RuntimeServer } from "@oh-my-pi/pi-utils/runtime";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Blob URL backends: give outgoing images an externally fetchable URL.
  *
@@ -90,7 +92,7 @@ export function isUploaderKind(kind: BlobDestinationId): boolean {
 export class LocalBlobBackend implements BlobBackend {
 	#config: BlobBrokerWorkerConfig;
 	#store: BlobRegistry;
-	#server: Bun.Server<undefined> | undefined;
+	#server: RuntimeServer | undefined;
 	#exposure: { baseUrl: string; stop(): void } | undefined;
 	#startPromise: Promise<string | null> | undefined;
 	#upload: ((hash: string, request: BlobUploadRequest) => Promise<BlobPublication | null>) | undefined;
@@ -132,7 +134,7 @@ export class LocalBlobBackend implements BlobBackend {
 
 	async #start(): Promise<string | null> {
 		try {
-			this.#server = Bun.serve({
+			this.#server = await runtime.serve({
 				hostname: this.#config.bindHost,
 				port: 0,
 				fetch: request => {

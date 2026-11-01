@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * CDP façade over `chrome.debugger`.
  *
@@ -1087,7 +1088,7 @@ export class RelayBridge {
 			// Chrome fails the root session's command in flight before it reports the detach. Hold the failure
 			// until the detach is reported, so the client gets `OMP.debuggerDetached` first and knows why.
 			if (realSessionId === undefined && tab.attached && DETACHED_COMMAND_ERROR.test(message)) {
-				await Promise.race([tab.chromeDetach.promise, Bun.sleep(CHROME_DETACH_REPORT_MS)]);
+				await Promise.race([tab.chromeDetach.promise, runtime.sleep(CHROME_DETACH_REPORT_MS)]);
 			}
 			this.#replyError(conn, msg, message);
 			return false;

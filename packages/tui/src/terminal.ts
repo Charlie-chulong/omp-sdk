@@ -1,5 +1,6 @@
-import { dlopen, FFIType, ptr } from "bun:ffi";
+import type * as BunFfi from "bun:ffi";
 import * as fs from "node:fs";
+import { createRequire } from "node:module";
 import { TtyWriter } from "@oh-my-pi/pi-natives";
 import { $env, isBunTestRuntime, isTerminalHeadless, isWsl } from "@oh-my-pi/pi-utils/env";
 import * as logger from "@oh-my-pi/pi-utils/logger";
@@ -36,6 +37,9 @@ import { setTmuxPaneApcTitles, tmuxSessionSpeaksTsp } from "./tmux";
 import { setHangulCompatibilityJamoWidth } from "./utils";
 import { translateWindowsAltGrSequence } from "./windows-altgr";
 import { Win32InputModeDecoder, Win32PasteMarkerNormalizer } from "./windows-input-mode";
+// bun:ffi exists only on Bun; Node headless never initializes Windows console guards.
+const bunFfi: typeof BunFfi | undefined =
+	typeof Bun !== "undefined" ? createRequire(import.meta.url)("bun:ffi") : undefined;
 
 export { writeTerminalSequence, writeThroughActiveTerminal } from "./active-terminal";
 
@@ -100,7 +104,7 @@ function completeTspInput(buffered: string): string | undefined {
 	return `${TSP_PREFIX}${buffered.slice(TSP_OSC_PREFIX.length, -terminator)}\x1b\\`;
 }
 
-function shouldPollWindowsTerminalAppearance(env: NodeJS.ProcessEnv = Bun.env): boolean {
+function shouldPollWindowsTerminalAppearance(env: NodeJS.ProcessEnv = process.env): boolean {
 	if (process.platform !== "win32") return false;
 	if (!env.WT_SESSION) return false;
 	return !env.TERM_PROGRAM || env.TERM_PROGRAM.toLowerCase() === "windows_terminal";
@@ -416,7 +420,8 @@ function ensureWindowsConsoleUtf8(): void {
 let lastWarnedCodepage = 0;
 
 function createConsoleCodepageGuard(): (() => void) | null {
-	if (process.platform !== "win32") return null;
+	if (process.platform !== "win32" || !bunFfi) return null;
+	const { dlopen, FFIType } = bunFfi;
 	try {
 		const kernel32 = dlopen("kernel32.dll", {
 			GetConsoleOutputCP: { args: [], returns: FFIType.u32 },
@@ -1301,7 +1306,8 @@ export class ProcessTerminal implements Terminal {
 	 * so modified keys (for example Shift+Tab) arrive as VT escape sequences.
 	 */
 	#enableWindowsVTInput(): void {
-		if (process.platform !== "win32") return;
+		if (process.platform !== "win32" || !bunFfi) return;
+		const { dlopen, FFIType, ptr } = bunFfi;
 		this.#restoreWindowsVTInput();
 		try {
 			const kernel32 = dlopen("kernel32.dll", {
@@ -2655,7 +2661,7 @@ export class ProcessTerminal implements Terminal {
 
 	get columns(): number {
 		if (this.#inBandResizeActive && this.#reportedColumns) return this.#reportedColumns;
-		return process.stdout.columns || Number(Bun.env.COLUMNS) || 80;
+		return process.stdout.columns || Number(process.env.COLUMNS) || 80;
 	}
 	/**
 	 * With the output pump, a backlog bound at or below
@@ -2725,7 +2731,7 @@ export class ProcessTerminal implements Terminal {
 
 	get rows(): number {
 		if (this.#inBandResizeActive && this.#reportedRows) return this.#reportedRows;
-		return process.stdout.rows || Number(Bun.env.LINES) || 24;
+		return process.stdout.rows || Number(process.env.LINES) || 24;
 	}
 
 	moveBy(lines: number): void {

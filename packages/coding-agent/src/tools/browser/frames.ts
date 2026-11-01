@@ -1,8 +1,9 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { Snowflake, untilAborted } from "@oh-my-pi/pi-utils";
+import { encodeBase64, Snowflake, untilAborted } from "@oh-my-pi/pi-utils";
 import type { ElementHandle, ElementScreenshotOptions, Frame, Page } from "puppeteer-core";
 import { formatScreenshot, resizeImage } from "../../utils/image-resize";
 import { throwIfAborted } from "../tool-errors";
@@ -396,7 +397,7 @@ export async function captureFrameScreenshot(
 		await handle.dispose().catch(() => undefined);
 	}
 	const resized = await resizeImage(
-		{ type: "image", data: buffer.toBase64(), mimeType: "image/png" },
+		{ type: "image", data: encodeBase64(buffer), mimeType: "image/png" },
 		{ maxWidth: 1024, maxHeight: 1024, maxBytes: 150 * 1024, jpegQuality: 70, excludeWebP: session.excludeWebP },
 	);
 	const saveFullRes = !!session.browserScreenshotDir;
@@ -410,7 +411,7 @@ export async function captureFrameScreenshot(
 			)
 		: path.join(os.tmpdir(), `omp-frame-sshots-${Snowflake.next()}.${ext}`);
 	await fs.promises.mkdir(path.dirname(dest), { recursive: true });
-	await Bun.write(dest, savedBuffer);
+	await runtime.write(dest, savedBuffer);
 	screenshots.push({
 		dest,
 		mimeType: savedMimeType,

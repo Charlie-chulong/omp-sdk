@@ -9,7 +9,7 @@ export const cmuxMultiplexer = {
 	// CMUX_SOCKET_PATH is a CLI socket override and can be set outside a CMUX terminal.
 	sessionEnvKeys: ["CMUX_WORKSPACE_ID", "CMUX_SURFACE_ID", "CMUX_REMOTE_TRANSPORT"],
 	ownsScreenGrid: true,
-	isInside(env: NodeJS.ProcessEnv = Bun.env): boolean {
+	isInside(env: NodeJS.ProcessEnv = process.env): boolean {
 		return Boolean(env.CMUX_WORKSPACE_ID || env.CMUX_SURFACE_ID || env.CMUX_REMOTE_TRANSPORT);
 	},
 	/**

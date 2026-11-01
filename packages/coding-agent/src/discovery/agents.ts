@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Agent Dirs (.agent/.agents) Provider
  *
@@ -57,7 +58,7 @@ const HOST_PROBE_TIMEOUT_MS = 500;
  */
 export function runHostProbe(cmd: string[], timeoutMs = HOST_PROBE_TIMEOUT_MS): string | undefined {
 	try {
-		const result = Bun.spawnSync(cmd, {
+		const result = runtime.spawnSync(cmd, {
 			stdout: "pipe",
 			stderr: "ignore",
 			timeout: timeoutMs,

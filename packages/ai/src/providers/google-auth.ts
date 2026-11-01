@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Application Default Credentials (ADC) resolution for Vertex AI.
  *
@@ -16,7 +17,7 @@
 import { Buffer } from "node:buffer";
 import * as os from "node:os";
 import * as path from "node:path";
-import { $envpos, isEnoent, logger } from "@oh-my-pi/pi-utils";
+import { decodeBase64Bytes, $envpos, isEnoent, logger } from "@oh-my-pi/pi-utils";
 import * as AIError from "../error";
 import type { FetchImpl } from "../types";
 import { raceWithSignal } from "../utils/abort";
@@ -70,7 +71,7 @@ function getRefreshSkewMs(): number {
 /** gcloud's user ADC file: `%APPDATA%\gcloud\…` on Windows, `~/.config/gcloud/…` elsewhere. */
 export function userAdcPath(
 	platform: typeof process.platform = process.platform,
-	appData: string | undefined = Bun.env.APPDATA,
+	appData: string | undefined = process.env.APPDATA,
 ): string {
 	const gcloudDir =
 		platform === "win32" && appData ? path.join(appData, "gcloud") : path.join(os.homedir(), ".config", "gcloud");
@@ -79,7 +80,7 @@ export function userAdcPath(
 
 async function readJsonFile<T>(filePath: string): Promise<T | undefined> {
 	try {
-		return (await Bun.file(filePath).json()) as T;
+		return (await runtime.file(filePath).json()) as T;
 	} catch (err) {
 		if (isEnoent(err)) return undefined;
 		throw err;
@@ -87,7 +88,7 @@ async function readJsonFile<T>(filePath: string): Promise<T | undefined> {
 }
 
 async function loadAdcCredentials(): Promise<{ source: string; creds: AdcFileCredentials } | undefined> {
-	const gacPath = Bun.env.GOOGLE_APPLICATION_CREDENTIALS;
+	const gacPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 	if (gacPath) {
 		const creds = await readJsonFile<AdcFileCredentials>(gacPath);
 		if (!creds) {
@@ -112,7 +113,7 @@ function pemToPkcs8(pem: string): Uint8Array<ArrayBuffer> {
 		.replace(/-----END [^-]+-----/g, "")
 		.replace(/\s+/g, "");
 	if (!body) throw new AIError.ConfigurationError("Invalid PEM: empty body");
-	return Uint8Array.fromBase64(body);
+	return decodeBase64Bytes(body);
 }
 
 async function signJwtRs256(claims: Record<string, unknown>, privateKeyPem: string, keyId?: string): Promise<string> {
@@ -291,7 +292,7 @@ export async function getVertexAccessToken(options?: { signal?: AbortSignal; fet
 	// An explicit access token (e.g. `gcloud auth print-access-token`) bypasses the cache so a
 	// refreshed env token takes effect immediately. `CLOUDSDK_AUTH_ACCESS_TOKEN` is gcloud's own
 	// override var; `GOOGLE_CLOUD_ACCESS_TOKEN` is the omp-facing alias.
-	const explicitToken = Bun.env.GOOGLE_CLOUD_ACCESS_TOKEN || Bun.env.CLOUDSDK_AUTH_ACCESS_TOKEN;
+	const explicitToken = process.env.GOOGLE_CLOUD_ACCESS_TOKEN || process.env.CLOUDSDK_AUTH_ACCESS_TOKEN;
 	if (explicitToken) return explicitToken;
 	const fetchImpl = options?.fetch ?? globalThis.fetch.bind(globalThis);
 	const skew = getRefreshSkewMs();

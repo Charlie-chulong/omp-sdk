@@ -12,7 +12,7 @@ import type { AssistantMessage, Model, ToolExample, TSchema } from "@oh-my-pi/pi
 import { renderDelimitedThinking, renderToolInventory } from "@oh-my-pi/pi-ai/dialect";
 import { formatDuration } from "@oh-my-pi/pi-utils";
 import { INTENT_FIELD } from "@oh-my-pi/pi-wire";
-import { YAML } from "bun";
+import { YAML } from "@oh-my-pi/pi-utils/runtime";
 import { canonicalizeMessage } from "@oh-my-pi/pi-tui/chat/thinking-display";
 import {
 	type BashExecutionMessage,

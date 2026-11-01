@@ -1,4 +1,4 @@
-import { YAML } from "bun";
+import { YAML } from "./runtime-parsers";
 
 const YAML_MAPPING_HEADER_TRAILING_SPACE = /: +$/gm;
 

@@ -43,7 +43,7 @@ async function requestUpstream(
 	const storage = await AuthStorage.create(":memory:", { usageProviderResolver: () => undefined });
 	storage.keys.setRuntime(model.provider, "test-key");
 	const upstream: CapturedRequest[] = [];
-	const gateway = startAuthGateway({
+	const gateway = await startAuthGateway({
 		bind: "127.0.0.1:0",
 		bearerTokens: ["test-token"],
 		storage,

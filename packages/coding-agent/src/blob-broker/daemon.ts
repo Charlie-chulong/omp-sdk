@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Client half of the project-shared blob daemon.
  *
@@ -10,7 +11,7 @@
 
 import * as os from "node:os";
 import * as path from "node:path";
-import { logger, ptree } from "@oh-my-pi/pi-utils";
+import { encodeBase64, logger, ptree } from "@oh-my-pi/pi-utils";
 import { daemonClientForProject } from "../launch/client";
 import { describeQuietly, stopQuietly, waitReady } from "../launch/ensure";
 import { daemonRuntimeDir } from "../launch/paths";
@@ -227,7 +228,7 @@ class DaemonBlobBackend implements BlobBackend {
 			if (probe.publication) return probe.publication;
 			const { publication } = await fetchUnix<EnsureBlobResponse>(this.#socket, "/blob", {
 				method: "POST",
-				body: JSON.stringify({ key, mimeType, data: getBase64?.() ?? getBytes().toBase64() }),
+				body: JSON.stringify({ key, mimeType, data: getBase64?.() ?? encodeBase64(getBytes()) }),
 			});
 			return publication ?? null;
 		} catch (error) {
@@ -317,7 +318,7 @@ export async function smokeTestBlobBroker(): Promise<void> {
 			if (proc.exitCode !== null) break;
 			info = await probeDaemon(socket);
 			if (info) break;
-			await Bun.sleep(200);
+			await runtime.sleep(200);
 		}
 		if (!info) {
 			throw new Error(

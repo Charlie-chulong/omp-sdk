@@ -63,7 +63,7 @@ describe("auth broker OAuth refresh backoff", () => {
 		});
 		brokerStorage = new AuthStorage(store);
 		await brokerStorage.credentials.reload();
-		handle = startAuthBroker({
+		handle = await startAuthBroker({
 			storage: brokerStorage,
 			bind: "127.0.0.1:0",
 			bearerTokens: [TOKEN],

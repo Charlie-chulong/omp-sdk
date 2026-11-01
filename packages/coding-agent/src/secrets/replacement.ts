@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 // ═══════════════════════════════════════════════════════════════════════════
 // Deterministic replacement generation
 // ═══════════════════════════════════════════════════════════════════════════
@@ -18,7 +19,7 @@ export function generateDeterministicReplacement(secret: string): string {
 	// 1–2 char chunk is a fixed point (the deterministic replacement of a <=2-char
 	// value is itself `Z`/`ZZ`), keeping short default-replacement remainders next
 	// to a reversible placeholder stable across an obfuscator restart.
-	const hash = BigInt(Bun.hash(secret));
+	const hash = BigInt(runtime.hash(secret));
 	const chars = secret.length === 1 ? ["Z"] : ["Z", "Z"];
 	let h = hash;
 	for (let i = chars.length; i < secret.length; i++) {

@@ -94,13 +94,29 @@ if (!isRustTaskName(taskName)) {
 	process.exit(1);
 }
 
+// Common Cargo test flags support capability matrices without replacing the
+// workspace defaults for the ordinary test:rs command.
+const testArgs = taskName === "test:rs" ? process.argv.slice(3) : [];
+if (testArgs[0] === "--") testArgs.shift();
+const packageScoped = testArgs.some(arg => arg === "-p" || arg === "--package" || arg.startsWith("--package="));
+
 if (taskName !== "fmt:rs" && !(isCI() || (await hasRustAffectingChanges()))) {
 	console.log(`Skipping ${taskName} (not in CI and no Rust-affecting changes were found).`);
 	process.exit(0);
 }
 
 for (const command of TASK_COMMANDS[taskName]) {
-	const exitCode = await runCommand(command);
+	const scopedCommand: string[] = [];
+	for (let index = 0; index < command.length; index++) {
+		const arg = command[index];
+		if (packageScoped && arg === "--workspace") continue;
+		if (packageScoped && arg === "--exclude") {
+			index++;
+			continue;
+		}
+		scopedCommand.push(arg);
+	}
+	const exitCode = await runCommand([...scopedCommand, ...testArgs]);
 	if (exitCode !== 0) {
 		process.exit(exitCode);
 	}

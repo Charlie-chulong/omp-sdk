@@ -41,7 +41,8 @@
  *   into bunfs, so `onLoad` never fires; profile with a `bun --preload` dev run.
  */
 import { readFileSync } from "node:fs";
-import { plugin } from "bun";
+import type * as BunModule from "bun";
+import { createRequire } from "node:module";
 import { moduleLoadBuffer } from "./timing-buffer";
 
 // Restrict to TS/TSX only. node_modules ships CommonJS `.js`/`.cjs` that Bun
@@ -105,7 +106,8 @@ function addImportEdges(importsByPath: Map<string, Set<string>>, importer: strin
 	}
 }
 
-if (process.env.PI_TIMING) {
+if (process.env.PI_TIMING && typeof Bun !== "undefined") {
+	const { plugin } = createRequire(import.meta.url)("bun") as typeof BunModule;
 	const buffer = moduleLoadBuffer();
 	const starts = new Map<string, number>();
 	const bodyStarts = new Map<string, number>();

@@ -1,4 +1,4 @@
-import type { SQLQueryBindings } from "bun:sqlite";
+import type { SQLQueryBindings } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { logger } from "@oh-my-pi/pi-utils";
 import { polyphonicRecallEnabled } from "../../config";
 import { generateId, stableMemoryId } from "../../util/ids";

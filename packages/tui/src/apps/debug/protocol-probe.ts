@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Terminal protocol smoke-test panel for the debug menu.
  *
@@ -34,7 +35,7 @@ function pngChunk(type: string, data: Uint8Array): Uint8Array {
 	const out = Buffer.alloc(body.length + 8);
 	out.writeUInt32BE(data.length, 0);
 	body.copy(out, 4);
-	out.writeUInt32BE(Bun.hash.crc32(body) >>> 0, out.length - 4);
+	out.writeUInt32BE(runtime.hash.crc32(body) >>> 0, out.length - 4);
 	return out;
 }
 

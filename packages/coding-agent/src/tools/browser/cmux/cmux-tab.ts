@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -609,7 +610,7 @@ export class CmuxTab implements InProcessRunTab {
 					context.output.push({ type: "text", text: formatA11ySummary(result) });
 					return result;
 				}
-				await untilAborted(context.signal, () => Bun.sleep(50));
+				await untilAborted(context.signal, () => runtime.sleep(50));
 			}
 			throw new ToolError(`tab.a11y() timed out after ${context.timeoutMs}ms`);
 		} finally {
@@ -979,7 +980,7 @@ export class CmuxTab implements InProcessRunTab {
 		}
 		const id = `omp-highlight-${crypto.randomUUID()}`;
 		await this.#selectorAction(selector, "highlight", { id });
-		await untilAborted(this.#runContext?.signal, () => Bun.sleep(duration));
+		await untilAborted(this.#runContext?.signal, () => runtime.sleep(duration));
 		await this.#evalScript(`document.getElementById(${JSON.stringify(id)})?.remove()`);
 	}
 
@@ -1119,7 +1120,7 @@ export class CmuxTab implements InProcessRunTab {
 				)
 			: path.join(os.tmpdir(), `omp-sshots-${Snowflake.next()}.${ext}`);
 		await fs.promises.mkdir(path.dirname(dest), { recursive: true });
-		await Bun.write(dest, savedBuffer);
+		await runtime.write(dest, savedBuffer);
 		const info: ScreenshotResult = {
 			dest,
 			mimeType: savedMimeType,
@@ -1158,7 +1159,7 @@ export class CmuxTab implements InProcessRunTab {
 			? resolveToCwd(opts.output, context.session.cwd)
 			: path.join(os.tmpdir(), `omp-screenshot-diff-${Snowflake.next()}.png`);
 		await fs.promises.mkdir(path.dirname(diffPath), { recursive: true });
-		await Bun.write(diffPath, diff.png);
+		await runtime.write(diffPath, diff.png);
 		const resized = await resizeImage(
 			{ type: "image", data: diff.png.toString("base64"), mimeType: "image/png" },
 			{
@@ -1211,7 +1212,7 @@ export class CmuxTab implements InProcessRunTab {
 				this.#lastUrl = result.url;
 				if (pattern.test(result.url)) return result.url;
 			}
-			await untilAborted(signal, () => Bun.sleep(200));
+			await untilAborted(signal, () => runtime.sleep(200));
 		}
 		throw new ToolError(`tab.waitForUrl() timed out after ${timeoutMs}ms`);
 	}
@@ -1535,7 +1536,7 @@ export class CmuxTab implements InProcessRunTab {
 				const candidate = content.trim();
 				if (opts.exact ? candidate === text : candidate.includes(text)) return;
 			}
-			await untilAborted(signal, () => Bun.sleep(100));
+			await untilAborted(signal, () => runtime.sleep(100));
 		}
 		throw new ToolError(`tab.waitForText(${JSON.stringify(text)}) timed out after ${timeoutMs}ms`);
 	}
@@ -1578,7 +1579,7 @@ export class CmuxTab implements InProcessRunTab {
 					return null;
 				}
 			}
-			await untilAborted(signal, () => Bun.sleep(200));
+			await untilAborted(signal, () => runtime.sleep(200));
 		}
 		throw new ToolError(`tab.waitForNavigation() timed out after ${timeoutMs}ms`);
 	}
@@ -1633,7 +1634,7 @@ export class CmuxTab implements InProcessRunTab {
 					return response;
 				}
 			}
-			await untilAborted(signal, () => Bun.sleep(100));
+			await untilAborted(signal, () => runtime.sleep(100));
 		}
 		throw new ToolError(`tab.waitForResponse() timed out after ${timeoutMs}ms`);
 	}
@@ -1783,7 +1784,7 @@ export class CmuxTab implements InProcessRunTab {
 		while (Date.now() <= deadline) {
 			const value = typeof fn === "string" ? await this.#evalScript<unknown>(fn) : await this.evaluate(fn, ...args);
 			if (value) return value;
-			await untilAborted(signal, () => Bun.sleep(pollingMs));
+			await untilAborted(signal, () => runtime.sleep(pollingMs));
 		}
 		throw new ToolError(`page.waitForFunction() timed out after ${timeoutMs}ms`);
 	}
@@ -2001,7 +2002,7 @@ export class CmuxTab implements InProcessRunTab {
 		const deadline = Date.now() + timeoutMs;
 		while (Date.now() <= deadline) {
 			if (await this.#selectorExists(spec)) return;
-			await untilAborted(signal, () => Bun.sleep(100));
+			await untilAborted(signal, () => runtime.sleep(100));
 		}
 		throw new ToolError(`tab.waitFor(${JSON.stringify(selector)}) timed out after ${timeoutMs}ms`);
 	}

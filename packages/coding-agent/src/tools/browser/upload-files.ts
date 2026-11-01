@@ -1,9 +1,9 @@
+import { runtime, type RuntimeFile } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { untilAborted, withTimeout } from "@oh-my-pi/pi-utils";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
-import type { BunFile } from "bun";
 import type { ElementHandle, Page, Realm } from "puppeteer-core";
 import { throwIfAborted } from "../tool-errors";
 
@@ -30,7 +30,7 @@ export interface FilePayload extends UploadFileInfo {
 /** A file to upload, opened for reading in slices. */
 export interface UploadSource {
 	path: string;
-	file: BunFile;
+	file: RuntimeFile;
 	size: number;
 	/** A folder, which only a browser reading its path can expand (for a `webkitdirectory` input). */
 	directory: boolean;
@@ -48,7 +48,7 @@ export interface UploadSource {
  */
 export type UploadRoute = "paths" | "contents";
 
-/** The type Bun gives an extension it does not know; a browser's own pick reports such a file with no type. */
+/** The fallback type for an unknown extension; a browser's own pick reports such a file with no type. */
 const UNKNOWN_TYPE = "application/octet-stream";
 
 /** Extensions Chrome itself maps to `application/octet-stream` (`kSecondaryMappings` in `net/base/mime_util.cc`). */
@@ -59,18 +59,18 @@ const ROUTE_CHECK_READ_MS = 2_000;
 
 /** Open a file for upload; rejects when it cannot be read. */
 export async function openUploadSource(absolute: string): Promise<UploadSource> {
-	const file = Bun.file(absolute);
+	const file = runtime.file(absolute);
 	// A missing file reports size 0; stat rejects instead of uploading it empty.
 	const stats = await file.stat();
-	const bunType = file.type.split(";")[0];
-	const unknown = bunType === UNKNOWN_TYPE && !OCTET_STREAM_EXTENSIONS[path.extname(absolute).toLowerCase()];
+	const mimeType = file.type.split(";")[0];
+	const unknown = mimeType === UNKNOWN_TYPE && !OCTET_STREAM_EXTENSIONS[path.extname(absolute).toLowerCase()];
 	return {
 		path: absolute,
 		file,
 		size: stats.size,
 		directory: stats.isDirectory(),
 		revision: `${stats.ino}\0${stats.size}\0${stats.mtimeMs}\0${stats.ctimeMs}`,
-		info: { name: path.basename(absolute), type: unknown ? "" : bunType, lastModified: file.lastModified },
+		info: { name: path.basename(absolute), type: unknown ? "" : mimeType, lastModified: stats.mtimeMs },
 	};
 }
 
@@ -310,7 +310,7 @@ export class UploadStaging {
 		const checkDirectory = await fs.mkdtemp(path.join(os.tmpdir(), `omp-uploads-${process.pid}-check-`));
 		try {
 			const tokenPath = path.join(checkDirectory, "route-check");
-			await Bun.write(tokenPath, token);
+			await runtime.write(tokenPath, token);
 			const picker = await page.mainFrame().isolatedRealm().evaluateHandle(createFilePicker);
 			try {
 				const input = picker.asElement();

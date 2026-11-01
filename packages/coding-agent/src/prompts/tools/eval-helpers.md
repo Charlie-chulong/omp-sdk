@@ -1,7 +1,7 @@
 <setup>
 Reusable setup: write a script, run `%load <path>` in a standalone `code` cell. Quoted paths and `local://` work; source is not echoed. Definitions persist; edited files require another `%load`.
 {{#if py}}Missing Python dependency: `%pip install <distribution>` (e.g. `PIL` comes from `pillow`).{{/if}}
-{{#if js}}Missing JS dependency: `%bun add <pkg>` installs into a managed per-project environment; `%environment project` selects project dependencies.{{#unless autoProvision}} Automatic provisioning disabled: use an existing environment or `%environment project`.{{/unless}}{{/if}}
+{{#if js}}Missing JS dependency: `%bun add <pkg>` installs into a managed per-project environment{{#unless jsBun}} using npm (required on PATH){{/unless}}; `%environment project` selects project dependencies.{{#unless autoProvision}} Automatic provisioning disabled: use an existing environment or `%environment project`.{{/unless}}{{/if}}
 Percent commands are standalone cells. Install preserves kernel state; retry only the failed step.
 </setup>
 ```

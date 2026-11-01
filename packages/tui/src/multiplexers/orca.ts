@@ -10,7 +10,7 @@ export const orcaMultiplexer = {
 	precedence: "outerApp",
 	sessionEnvKeys: ["ORCA_PANE_KEY", "ORCA_WORKTREE_ID"],
 	ownsScreenGrid: false,
-	isInside(env: NodeJS.ProcessEnv = Bun.env): boolean {
+	isInside(env: NodeJS.ProcessEnv = process.env): boolean {
 		return Boolean(env.ORCA_PANE_KEY?.trim() && env.ORCA_WORKTREE_ID?.trim());
 	},
 } as const satisfies TerminalMultiplexerModule;

@@ -39,12 +39,16 @@ import {
 	cfgComputerMaxHeight,
 	cfgComputerMaxWidth,
 	cfgRatchetEnabled,
+	cfgToolsApprovalMode,
 } from "../tools/settings";
 import { cfgPrewalkFrom, cfgPrewalkInto, cfgSkillful } from "../session/settings";
 import { formatSlowModeResetClock } from "../session/anthropic-slow-mode";
 import { cfgExtendedContext } from "../session/context-settings";
 import { cfgGoalEnabled } from "../goals/settings";
 import { cfgPlanEnabled } from "../plan-mode/settings";
+import type { ApprovalMode } from "../tools/approval";
+import { HookSelectorComponent } from "@oh-my-pi/pi-tui/overlays/hook-selector";
+import type { SubmenuOption } from "@oh-my-pi/pi-tui/overlays/settings-defs";
 
 export function refreshStatusLine(ctx: InteractiveModeContext): void {
 	ctx.statusLine.invalidate();
@@ -232,7 +236,65 @@ export function formatTokenCount(value: number): string {
 	return value.toLocaleString();
 }
 
+// This enum declares static choices, not a runtime-generated settings submenu.
+const approvalModeOptions = cfgToolsApprovalMode.ui!.options as readonly SubmenuOption<ApprovalMode>[];
+
 export const BUILTIN_MODE_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> = [
+	{
+		name: "permissions",
+		icon: "shield",
+		description: "Change tool approval mode for this session",
+		allowArgs: true,
+		subcommandOptional: true,
+		acpInputHint: "[always-ask|always-ask-cached|write|yolo]",
+		subcommands: approvalModeOptions.map(option => ({
+			name: option.value,
+			description: option.description ?? option.label,
+		})),
+		getTuiAutocompleteDescription: runtime => `Permissions: ${runtime.ctx.session.approvalMode}`,
+		handle: async (command, runtime) => {
+			const mode = approvalModeOptions.find(option => option.value === command.args.trim())?.value;
+			if (mode) runtime.session.setApprovalMode(mode);
+			await runtime.output(
+				`Permissions: ${runtime.session.approvalMode}.${mode ? "" : " Usage: /permissions [always-ask|always-ask-cached|write|yolo]"}`,
+			);
+			return commandConsumed();
+		},
+		handleTui: (command, runtime) => {
+			const { ctx } = runtime;
+			clearSubmittedText(runtime);
+			const arg = command.args.trim();
+			const mode = approvalModeOptions.find(option => option.value === arg)?.value;
+			if (!arg) {
+				const options = approvalModeOptions;
+				const done = (value?: string) => {
+					handle.hide();
+					ctx.ui.setFocus(ctx.editorContainer.children[0] ?? ctx.editor);
+					const selected = options.find(option => option.label === value);
+					if (selected) {
+						ctx.session.setApprovalMode(selected.value);
+						ctx.showStatus(`Permissions: ${ctx.session.approvalMode}.`);
+					}
+					refreshStatusLine(ctx);
+				};
+				const selector = new HookSelectorComponent(
+					`Tool Approval · ${ctx.session.approvalMode}`,
+					options.map(option => ({ label: option.label, description: option.description })),
+					done,
+					() => done(),
+					{ tui: ctx.ui, initialIndex: options.findIndex(option => option.value === ctx.session.approvalMode) },
+				);
+				const handle = ctx.ui.showOverlay(selector, { anchor: "bottom-center", width: "80%", maxHeight: "80%" });
+				ctx.ui.setFocus(selector);
+				return;
+			}
+			if (mode) ctx.session.setApprovalMode(mode);
+			ctx.showStatus(
+				`Permissions: ${ctx.session.approvalMode}.${mode ? "" : " Usage: /permissions [always-ask|always-ask-cached|write|yolo]"}`,
+			);
+			refreshStatusLine(ctx);
+		},
+	},
 	{
 		name: "security",
 		icon: "shield",

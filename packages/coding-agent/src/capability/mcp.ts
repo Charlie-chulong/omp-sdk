@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * MCP (Model Context Protocol) Servers Capability
  *
@@ -75,7 +76,7 @@ export interface MCPServer {
 
 /** Compare the transport inputs that determine which MCP endpoint gets connected. */
 export function isSameMCPConnection(left: MCPServer, right: MCPServer): boolean {
-	if (!Bun.deepEquals(left.auth, right.auth) || !Bun.deepEquals(left.oauth, right.oauth)) return false;
+	if (!runtime.deepEquals(left.auth, right.auth) || !runtime.deepEquals(left.oauth, right.oauth)) return false;
 	// Normalize against the allocator's own default so an explicit "number" is
 	// equivalent to leaving the option unset, not a distinct connection.
 	if ((left.requestIdFormat ?? "number") !== (right.requestIdFormat ?? "number")) return false;
@@ -95,14 +96,14 @@ export function isSameMCPConnection(left: MCPServer, right: MCPServer): boolean 
 				: [...(server.envLiteralKeys ?? [])].sort();
 		return (
 			left.command === right.command &&
-			Bun.deepEquals(left.args, right.args) &&
-			Bun.deepEquals(left.env, right.env) &&
-			Bun.deepEquals(literalKeysOf(left), literalKeysOf(right)) &&
+			runtime.deepEquals(left.args, right.args) &&
+			runtime.deepEquals(left.env, right.env) &&
+			runtime.deepEquals(literalKeysOf(left), literalKeysOf(right)) &&
 			left.cwd === right.cwd
 		);
 	}
 
-	return left.url === right.url && Bun.deepEquals(left.headers, right.headers);
+	return left.url === right.url && runtime.deepEquals(left.headers, right.headers);
 }
 
 export const mcpCapability = defineCapability<MCPServer>({

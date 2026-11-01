@@ -1,3 +1,4 @@
+import { runtimeColor } from "../runtime-color";
 import { paletteToRgb, rgbToHex } from "@oh-my-pi/pi-utils/color";
 import { detectTerminalId, getTerminalInfo } from "../terminal-capabilities";
 import type { ColorMode, ColorValue } from "./schema";
@@ -12,7 +13,7 @@ export const BG_RESET = "\x1b[49m";
 // ============================================================================
 
 /** Resolve theme color depth from the shared terminal capability model. */
-export function detectColorMode(env: NodeJS.ProcessEnv = Bun.env): ColorMode {
+export function detectColorMode(env: NodeJS.ProcessEnv = process.env): ColorMode {
 	if (env.WT_SESSION) return "truecolor";
 	const terminal = getTerminalInfo(detectTerminalId(env), process.platform, env);
 	return terminal.trueColor ? "truecolor" : "256color";
@@ -31,7 +32,7 @@ export function colorToAnsi(color: string, mode: ColorMode): string {
 	const cached = cache?.get(color);
 	if (cached !== undefined) return cached;
 	const format = mode === "truecolor" ? "ansi-16m" : "ansi-256";
-	const ansi = Bun.color(color, format);
+	const ansi = runtimeColor(color, format);
 	if (ansi === null) {
 		throw new Error(`Invalid color value: ${color}`);
 	}

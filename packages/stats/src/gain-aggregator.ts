@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Aggregates token-savings data for the Gain dashboard.
  *
@@ -177,7 +178,7 @@ async function readSnapcompactRecords(cutoff: number | null, project: string | n
 	} else {
 		let text: string;
 		try {
-			text = await Bun.file(filePath).text();
+			text = await runtime.file(filePath).text();
 		} catch (readErr) {
 			if (isEnoent(readErr)) return { records: [], projects: new Set() };
 			logger.debug("gain-aggregator: failed to read snapcompact-savings.jsonl", { err: String(readErr) });

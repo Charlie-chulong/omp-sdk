@@ -30,7 +30,7 @@ Behavior notes:
 - RPC/ACP pin neutral defaults for settings declaring the corresponding `protocolDefault`, including task isolation/execution, memory, advisor, and advisor tier settings. RPC additionally pins async-job and bash/eval auto-background defaults. Explicit project/global config, `--config`, and isolated settings remain authoritative; on-disk config changes are watched in long-lived CLI RPC processes. Todo settings are not host-defaulted.
 - The process claims stdin before extension discovery, then parses it one non-empty JSONL line at a time. Malformed JSON emits a recoverable `command: "parse"` failure and does not terminate the loop.
 - At startup it writes a `ready` frame before processing commands. The frame advertises supported protocol versions and transport limits.
-- Extension startup (`session_start`) runs after `ready`. While it runs, only `extension_ui_response` (an extension may be waiting on a dialog) and `set_ask_dialog` are handled; every other valid frame is read and waits, in order, until startup finishes (a malformed line still gets its `parse` failure at once). If stdin closes during startup, dialogs the extension awaits are rejected so startup can finish.
+- Extension startup (`session_start`) runs after `ready`. While it runs, `extension_ui_response`, `set_ask_dialog`, and `set_approval_mode` are handled immediately; ordinary commands wait, in order, until startup finishes (a malformed line still gets its `parse` failure at once). If stdin closes during startup, dialogs the extension awaits are rejected so startup can finish.
 - When stdin closes, pending extension UI, host-tool, and host-URI requests are rejected; accepted commands are drained, the session is disposed, pending stdout is delivered, and normal shutdown exits with code `0`. A session-persistence failure still latched at disposal exits with code `1` after delivering its `notice` frame.
 - Responses/events are written as one JSON object per line.
 
@@ -145,6 +145,7 @@ Important edge behavior from runtime:
 ### State
 
 - `{ id?, type: "get_state" }`
+- `{ id?, type: "set_approval_mode", mode: "always-ask" | "always-ask-cached" | "write" | "yolo" }`
 - `{ id?, type: "set_fast_mode", enabled: boolean }`
 - `{ id?, type: "set_slow_mode", enabled: boolean }`
 - `{ id?, type: "goal", op: "get" | "create" | "resume" | "pause" | "drop", objective?: string, token_budget?: number }`
@@ -450,6 +451,8 @@ The response always succeeds, even when the withdrawn input is too large for one
 
 ### `get_state` payload
 
+`approvalMode` reports the live session approval mode. Re-read it after permission changes or `/permissions`; no dedicated mode-change event is emitted.
+
 `tokensPerSecond` is a number when output throughput is available and `null`
 otherwise. `fastModeEnabled` reports the session's selected model-family tier
 (`priority` or `ultrafast`), while `fastModeActive` reports the actual computed
@@ -487,6 +490,7 @@ field is absent outside both stages. No event carries it, so re-read
 {
 	"model": { "provider": "...", "id": "..." },
 	"thinkingLevel": "off|minimal|low|medium|high|xhigh|max",
+	"approvalMode": "yolo",
 	"isStreaming": false,
 	"isCompacting": false,
 	"steeringMode": "all|one-at-a-time",
@@ -655,6 +659,28 @@ another provider's persisted setting. A non-boolean `enabled` is rejected with
 `"set_slow_mode requires boolean enabled"`. A change made mid-run applies from
 the next request (stopping an active Claude low-priority window takes effect
 immediately); no event announces it, so re-read `get_state`.
+
+### `set_approval_mode` payload
+
+Change the current session's tool approval mode without aborting or restarting work:
+
+```json
+{ "id": "permissions", "type": "set_approval_mode", "mode": "always-ask" }
+```
+
+The command is served even while an ordinary command is blocked or an extension is awaiting a startup dialog. It changes only the runtime setting. Invalid or missing modes fail without changing permissions.
+
+```json
+{
+	"id": "permissions",
+	"type": "response",
+	"command": "set_approval_mode",
+	"success": true,
+	"data": { "mode": "always-ask" }
+}
+```
+
+`RpcClient.setApprovalMode(mode)` returns the applied mode; `get_state.approvalMode` reports the same value. Pending tool approvals are re-evaluated, but explicit policies, restricted folders, and provider safety checks cannot be bypassed by selecting `yolo`.
 
 ### `set_fast_mode` payload
 

@@ -1,5 +1,6 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { WriteToolDetails } from "@oh-my-pi/pi-tui/tools/write";
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
@@ -273,7 +274,7 @@ async function readCurrentWriteSource(
 ): Promise<string | undefined> {
 	const readDisk = async (): Promise<string | undefined> => {
 		try {
-			return await Bun.file(absolutePath).text();
+			return await runtime.file(absolutePath).text();
 		} catch (error) {
 			if (isEnoent(error)) return undefined;
 			throw error;
@@ -419,7 +420,7 @@ async function readTextFileConvention(
 	size: number,
 	signal: AbortSignal | undefined,
 ): Promise<TextFileConvention | undefined> {
-	const file = Bun.file(absolutePath);
+	const file = runtime.file(absolutePath);
 	let chunk = await file.slice(0, BINARY_SNIFF_BYTES).bytes();
 	if (isProbablyBinaryHeader(chunk)) return undefined;
 	const bom = chunk[0] === 0xef && chunk[1] === 0xbb && chunk[2] === 0xbf;
@@ -658,7 +659,7 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 		for (const candidate of candidates) {
 			const absolutePath = await resolvePlanPath(this.session, candidate.archivePath, signal);
 			try {
-				const stat = await Bun.file(absolutePath).stat();
+				const stat = await runtime.file(absolutePath).stat();
 				if (stat.isDirectory()) {
 					continue;
 				}
@@ -750,7 +751,7 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 
 				// Publish atomically while holding the lock; a distinct temporary
 				// path also avoids collisions with stale files left by prior runs.
-				const tmpPath = `${finalPath}.tmp-${process.pid}-${Bun.randomUUIDv7()}`;
+				const tmpPath = `${finalPath}.tmp-${process.pid}-${runtime.randomUUIDv7()}`;
 				try {
 					await writeArchive(tmpPath, format, entries);
 					signal?.throwIfAborted();
@@ -793,7 +794,7 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 			const target = parseSqliteWriteTarget(candidate.subPath, candidate.queryString);
 			const absolutePath = await resolvePlanPath(this.session, candidate.sqlitePath, signal);
 			try {
-				const stat = await Bun.file(absolutePath).stat();
+				const stat = await runtime.file(absolutePath).stat();
 				if (stat.isDirectory()) {
 					continue;
 				}
@@ -865,7 +866,7 @@ export class WriteTool implements AgentTool<typeof writeSchema, WriteToolDetails
 			} else {
 				let parsedContent: unknown;
 				try {
-					parsedContent = Bun.JSON5.parse(content);
+					parsedContent = runtime.JSON5.parse(content);
 				} catch (error) {
 					throw new ToolError(
 						`SQLite write content must be valid JSON5: ${error instanceof Error ? error.message : String(error)}`,

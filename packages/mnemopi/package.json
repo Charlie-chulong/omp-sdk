@@ -62,7 +62,8 @@
     "onnxruntime-node": "catalog:"
   },
   "engines": {
-    "bun": ">=1.4.4"
+    "bun": ">=1.4.4",
+    "node": ">=24.0.0"
   },
   "files": [
     "src",
@@ -70,6 +71,7 @@
     "CHANGELOG.md"
   ],
   "exports": {
+    "./package.json": "./package.json",
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"

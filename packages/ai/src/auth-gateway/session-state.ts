@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Server-owned provider session state for the auth-gateway.
  *
@@ -24,7 +25,7 @@
  * state an in-flight stream is still streaming through.
  */
 
-import { logger } from "@oh-my-pi/pi-utils";
+import * as logger from "@oh-my-pi/pi-utils/logger";
 import { resetAccountScopedProviderSessionState } from "../provider-session-state";
 import type { Api, Context, Message, Model, ProviderSessionState } from "../types";
 
@@ -182,7 +183,7 @@ function conversationKeys(request: AuthGatewaySessionStateRequest): string[] {
 	const toolsJson = request.toolsJson ?? (context.tools?.length ? JSON.stringify(context.tools) : "");
 	// Each component is its own seeded hash step, so no component can forge
 	// another's boundary.
-	let hash = Bun.hash(toolsJson, Bun.hash(context.systemPrompt?.join("\n\n") ?? "", Bun.hash(scope)));
+	let hash = runtime.hash(toolsJson, runtime.hash(context.systemPrompt?.join("\n\n") ?? "", runtime.hash(scope)));
 	const keys: string[] = [];
 	for (const message of context.messages) {
 		hash = hashMessage(message, hash);
@@ -205,29 +206,29 @@ function conversationKeys(request: AuthGatewaySessionStateRequest): string[] {
  * their role + content serialize alike.
  */
 function hashMessage(message: Message, seed: number | bigint): number | bigint {
-	let hash = Bun.hash(message.role, seed);
+	let hash = runtime.hash(message.role, seed);
 	const { content } = message;
-	if (typeof content === "string") return Bun.hash(content, hash);
+	if (typeof content === "string") return runtime.hash(content, hash);
 	for (const part of content) {
 		switch (part.type) {
 			case "text": {
 				const { text, ...rest } = part;
-				hash = Bun.hash(JSON.stringify(rest), Bun.hash(text, hash));
+				hash = runtime.hash(JSON.stringify(rest), runtime.hash(text, hash));
 				break;
 			}
 			case "thinking": {
 				const { thinking, ...rest } = part;
-				hash = Bun.hash(JSON.stringify(rest), Bun.hash(thinking, hash));
+				hash = runtime.hash(JSON.stringify(rest), runtime.hash(thinking, hash));
 				break;
 			}
 			case "image":
 			case "redactedThinking": {
 				const { data, ...rest } = part;
-				hash = Bun.hash(JSON.stringify(rest), Bun.hash(data, hash));
+				hash = runtime.hash(JSON.stringify(rest), runtime.hash(data, hash));
 				break;
 			}
 			default:
-				hash = Bun.hash(JSON.stringify(part), hash);
+				hash = runtime.hash(JSON.stringify(part), hash);
 		}
 	}
 	return hash;

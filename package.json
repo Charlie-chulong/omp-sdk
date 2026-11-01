@@ -63,6 +63,7 @@
 			"solid-js": "^1.9.14",
 			"tailwindcss": "^4.3.2",
 			"ts-morph": "^28.0.0",
+			"@ts-morph/common": "^0.29.0",
 			"typescript": "^7.0.2",
 			"vite": "^8.1.4",
 			"vite-plugin-solid": "^2.11.12"

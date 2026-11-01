@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
+import { zstdDecompressSync } from "node:zlib";
 import packageJson from "../package.json" with { type: "json" };
 import { embeddedAddon } from "./embedded-addon.js";
 import { bindingsHaveReleaseIdentity, bindingsReleaseVersion, containsVersionStamp } from "./version-sentinel.js";
@@ -489,7 +490,8 @@ export function extractEmbeddedAddons({ files, targetDir }) {
 	for (const file of files) {
 		const targetPath = path.join(targetDir, file.filename);
 		if (isEmbeddedAddonFileCurrent(targetPath, file)) continue;
-		const content = Bun.zstdDecompressSync(fs.readFileSync(file.zstdPath));
+		const compressed = fs.readFileSync(file.zstdPath);
+		const content = typeof Bun !== "undefined" ? Bun.zstdDecompressSync(compressed) : zstdDecompressSync(compressed);
 		if (content.length !== file.size) {
 			throw new Error(`Embedded addon size mismatch for ${file.filename}: expected ${file.size}, got ${content.length}`);
 		}
@@ -782,7 +784,7 @@ export function initLoaderContext(overrides = {}) {
 	const platform = overrides.platform ?? process.platform;
 	const platformTag = `${platform}-${process.arch}`;
 	const packageVersion = packageJson.version;
-	const nativeDir = overrides.nativeDir ?? path.join(import.meta.dir, "..", "native");
+	const nativeDir = overrides.nativeDir ?? path.join(import.meta.dirname, "..", "native");
 	const execDir = path.dirname(process.execPath);
 	const nativesDir = getNativesDir();
 	const versionedDir = path.join(nativesDir, packageVersion);

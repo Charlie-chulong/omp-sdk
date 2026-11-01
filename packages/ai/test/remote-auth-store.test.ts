@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { afterEach, beforeEach, describe, expect, test, vi } from "bun:test";
 import { type } from "@oh-my-pi/omptype";
 import { AuthStorage, REMOTE_REFRESH_SENTINEL, SqliteAuthCredentialStore } from "@oh-my-pi/pi-ai";
@@ -55,7 +55,7 @@ describe("RemoteAuthCredentialStore + AuthStorage integration", () => {
 						: undefined,
 		});
 		await serverStorage.credentials.reload();
-		handle = startAuthBroker({
+		handle = await startAuthBroker({
 			storage: serverStorage,
 			bind: "127.0.0.1:0",
 			bearerTokens: [token],

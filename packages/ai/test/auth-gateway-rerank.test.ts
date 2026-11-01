@@ -62,7 +62,7 @@ async function boot(): Promise<Harness> {
 			usage: { search_units: 1, total_tokens: 17, cost: 0.004 },
 		});
 	};
-	const handle = startAuthGateway({
+	const handle = await startAuthGateway({
 		bind: "127.0.0.1:0",
 		bearerTokens: ["gw-token"],
 		storage,

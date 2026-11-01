@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -9,7 +10,7 @@ const TOOLS_DIR = getToolsDir();
 const TOOL_DOWNLOAD_TIMEOUT_MS = 120_000;
 const TOOL_METADATA_TIMEOUT_MS = 5000;
 
-type BodyReadResult = Bun.ReadableStreamDefaultReadResult<Uint8Array>;
+type BodyReadResult = { done: false; value: Uint8Array } | { done: true; value?: Uint8Array };
 type BodyReader = {
 	read(): Promise<BodyReadResult>;
 	cancel(reason?: unknown): Promise<void>;
@@ -44,7 +45,7 @@ async function writeResponseBody(
 	onChunk: ((bytes: number) => void) | undefined,
 ): Promise<void> {
 	const reader = body.getReader();
-	const sink = Bun.file(dest).writer();
+	const sink = runtime.file(dest).writer();
 	let completed = false;
 
 	try {

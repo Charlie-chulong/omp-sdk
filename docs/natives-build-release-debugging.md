@@ -136,6 +136,32 @@ bun --cwd=packages/natives run build:bindings   # = bun scripts/build-bindings.t
 
 This runs the napi CLI (host-only, local cargo profile) against `crates/pi-natives`, installs the regenerated `index.d.ts`, normalizes the addon filename, and re-renders the explicit ESM exports + runtime enum objects via `gen-enums.ts`. Commit the resulting `index.js`/`index.d.ts` changes.
 
+### Isolated Desktop addon
+
+Run `bun run --cwd packages/natives build:desktop` from the workspace root to
+build a release-profile addon with `--no-default-features`. It uses the isolated
+Cargo directory `target/desktop` and writes the canonical `.node` file and JSON
+metadata sidecar under `packages/natives/native/desktop/`, leaving full addon
+artifacts and generated declarations/exports untouched. Desktop staging rejects
+missing or mismatched version, SHA-256, metadata, or raw capability reports;
+rebuild after changing native sources or the package version.
+
+This disables the default-on `pi-natives` features `smollm`, `live-voice`, and
+`wasm-grammars`, not their entire subsystems: ngram/macOS Apple prediction and
+spelling, audio capture/playback, and built-in-language parsing remain. Use the
+full `build:bindings` command above to regenerate the complete public API.
+See [SDK packaging](./sdk.md#nodejs-and-electron) for JS profiles and Desktop
+versus generic staging.
+
+The Rust test runner accepts common Cargo test flags and runs both nextest and
+doctests. Package selection replaces its default workspace/exclusion scope:
+
+```sh
+bun run test:rs -- --package pi-predict --package pi-voice --no-default-features
+bun run test:rs -- --package pi-predict --package pi-voice
+bun run test:rs -- --package pi-ast --no-default-features
+```
+
 ### Opt-in remote cache (`.bazelrc.user`)
 
 `.bazelrc` ends with `try-import %workspace%/.bazelrc.user` (gitignored). CI's remote cache is served by the vmon node to its own sandboxes only, so locally use a disk cache or a remote cache of your own:

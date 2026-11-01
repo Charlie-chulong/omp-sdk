@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Registry read/write operations for the marketplace plugin system.
  *
@@ -47,7 +48,7 @@ async function atomicWriteJson(filePath: string, data: unknown): Promise<void> {
 	const content = `${JSON.stringify(data, null, 2)}\n`;
 	const tmpPath = `${filePath}.tmp`;
 
-	await Bun.write(tmpPath, content);
+	await runtime.write(tmpPath, content);
 
 	try {
 		await fs.rename(tmpPath, filePath);
@@ -80,7 +81,7 @@ function emptyMarketplacesRegistry(): MarketplacesRegistry {
 
 export async function readMarketplacesRegistry(filePath: string): Promise<MarketplacesRegistry> {
 	try {
-		const content = await Bun.file(filePath).text();
+		const content = await runtime.file(filePath).text();
 		const data = tryParseJson<MarketplacesRegistry>(content);
 		if (!data || typeof data !== "object" || data.version !== 1 || !Array.isArray(data.marketplaces)) {
 			logger.warn("Invalid marketplaces registry, returning empty", { path: filePath });
@@ -105,7 +106,7 @@ function emptyInstalledPluginsRegistry(): InstalledPluginsRegistry {
 
 export async function readInstalledPluginsRegistry(filePath: string): Promise<InstalledPluginsRegistry> {
 	try {
-		const content = await Bun.file(filePath).text();
+		const content = await runtime.file(filePath).text();
 		const data = tryParseJson<InstalledPluginsRegistry>(content);
 		if (
 			!data ||
@@ -144,7 +145,7 @@ export function getProjectRegistriesIndexPath(userRegistryPath: string): string 
 /** Reads the indexed project registry paths; a missing or malformed index reads as empty. */
 export async function readProjectRegistriesIndex(filePath: string): Promise<string[]> {
 	try {
-		const data = tryParseJson<{ registries?: unknown }>(await Bun.file(filePath).text());
+		const data = tryParseJson<{ registries?: unknown }>(await runtime.file(filePath).text());
 		const registries = data?.registries;
 		if (!Array.isArray(registries)) {
 			logger.warn("Invalid project registries index, returning empty", { path: filePath });

@@ -1,3 +1,5 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
+import { Image } from "@oh-my-pi/pi-utils/runtime-image";
 import type { ImageContent, Model } from "@oh-my-pi/pi-ai";
 import { decodeBase64ImageData, formatBytes, parseImageMetadata, SUPPORTED_IMAGE_MIME_TYPES } from "@oh-my-pi/pi-utils";
 
@@ -94,7 +96,7 @@ export async function imageDecodeFailureReason(image: ImageContent): Promise<str
 		// Decode in full (that is what catches a hole in the compressed stream),
 		// then terminate into a 1x1 raster's bytes instead of re-encoding at the
 		// source dimensions and base64-ing a result nobody reads.
-		await new Bun.Image(bytes).resize(DECODE_PROBE_EDGE_PX, DECODE_PROBE_EDGE_PX).png().bytes();
+		await new Image(bytes).resize(DECODE_PROBE_EDGE_PX, DECODE_PROBE_EDGE_PX).png().bytes();
 		return null;
 	} catch (error) {
 		return error instanceof Error ? error.message : String(error);
@@ -104,7 +106,7 @@ export async function imageDecodeFailureReason(image: ImageContent): Promise<str
 /** Converts an image to PNG, rejecting when the runtime cannot decode or encode it. */
 export async function convertImageToPng(image: ImageContent): Promise<ImageContent> {
 	const bytes = Buffer.from(image.data, "base64");
-	const data = await new Bun.Image(bytes).png().toBase64();
+	const data = await new Image(bytes).png().toBase64();
 	return { ...image, data, mimeType: "image/png" };
 }
 
@@ -137,7 +139,7 @@ function touchPngCache(key: string): ImageContent | undefined {
  * behind a position are replaced.
  */
 export function imagePayloadKey(image: ImageContent): string {
-	return `${image.mimeType}:${image.data.length}:${Bun.hash(image.data)}`;
+	return `${image.mimeType}:${image.data.length}:${runtime.hash(image.data)}`;
 }
 
 /**

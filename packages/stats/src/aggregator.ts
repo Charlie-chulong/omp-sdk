@@ -1,3 +1,6 @@
+import { Worker as NodeWorker } from "node:worker_threads";
+import { nodeWorkerHostEntry } from "@oh-my-pi/pi-utils/worker-host";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { getAgentDbPath, getStatsDbPath, workerHostEntry } from "@oh-my-pi/pi-utils";
@@ -115,7 +118,7 @@ export interface SyncOptions {
 function defaultWorkerCount(): number {
 	// Bun 1.3.x can abort the macOS process when stats sync workers re-enter
 	// the compiled `omp` binary. Keep macOS on the documented serial path.
-	if (process.platform === "darwin") return 1;
+	if (runtime.capabilities.bun && process.platform === "darwin") return 1;
 	// `navigator.hardwareConcurrency` is the portable answer in Bun; fall
 	// back to a small fixed pool if it's somehow unavailable.
 	const hw = typeof navigator !== "undefined" ? (navigator.hardwareConcurrency ?? 0) : 0;
@@ -133,13 +136,27 @@ interface WorkerHandle {
 }
 
 /**
- * Create a fresh sync worker. When the process was started from a
- * self-dispatching CLI entry (omp in source, npm-bundle, or compiled form),
- * re-enter that entry with a worker argv selector; otherwise (standalone
- * omp-stats, bun test, SDK embedding) load the worker module directly, so this
- * package keeps zero runtime dependency on `@oh-my-pi/pi-coding-agent`.
+ * Re-enter the CLI worker host, or the registered packaged Node SDK host.
+ * Only standalone Bun source execution loads the worker module directly;
+ * Node never falls back to a source worker or depends on coding-agent modules.
  */
 function createSyncWorker(): Worker {
+	if (runtime.capabilities.node) {
+		const entry = workerHostEntry() ?? nodeWorkerHostEntry();
+		if (!entry) throw new Error("Stats sync requires the packaged Node worker host to be registered");
+		const thread = new NodeWorker(entry, { argv: ["__omp_worker_stats_sync"] });
+		const worker = {
+			onmessage: null as ((event: MessageEvent<SyncWorkerResponse>) => void) | null,
+			onerror: null as ((event: ErrorEvent) => void) | null,
+			postMessage: (message: SyncWorkerRequest) => thread.postMessage(message),
+			terminate: () => thread.terminate(),
+		};
+		thread.on("message", data => worker.onmessage?.({ data } as MessageEvent<SyncWorkerResponse>));
+		thread.on("error", (error: unknown) =>
+			worker.onerror?.({ error, message: error instanceof Error ? error.message : String(error) } as ErrorEvent),
+		);
+		return worker as unknown as Worker;
+	}
 	const hostEntry = workerHostEntry();
 	if (hostEntry) {
 		return new Worker(hostEntry, { type: "module", argv: ["__omp_worker_stats_sync"] });
@@ -206,7 +223,7 @@ function dispatch(handle: WorkerHandle, request: SyncWorkerRequest): Promise<Par
  * Rejects on transport error, error response, or timeout.
  */
 export async function smokeTestSyncWorker({ timeoutMs = 5_000 }: { timeoutMs?: number } = {}): Promise<void> {
-	if (process.platform === "darwin") return;
+	if (runtime.capabilities.bun && process.platform === "darwin") return;
 	const worker = createSyncWorker();
 	const { promise, resolve, reject } = Promise.withResolvers<void>();
 	const timer = setTimeout(() => reject(new Error(`sync worker did not pong within ${timeoutMs}ms`)), timeoutMs);

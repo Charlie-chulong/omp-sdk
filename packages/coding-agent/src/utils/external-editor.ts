@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Utilities for launching an external text editor ($VISUAL / $EDITOR).
  */
@@ -84,10 +85,10 @@ export async function openInEditor(
 	const tmpFile = path.join(os.tmpdir(), `omp-editor-${Snowflake.next()}${ext}`);
 
 	try {
-		await Bun.write(tmpFile, content);
+		await runtime.write(tmpFile, content);
 		const exitCode = await openEditorOnPath(editorCmd, tmpFile);
 		if (exitCode === 0) {
-			const text = await Bun.file(tmpFile).text();
+			const text = await runtime.file(tmpFile).text();
 			if (options?.trimTrailingNewline === false) {
 				return text;
 			}
@@ -114,7 +115,7 @@ export async function openEditorOnPath(editorCmd: string, filePath: string): Pro
 	const spawnCommand = resolveEditorSpawnCommand(editorCmd, filePath);
 	// Inherit the real pane pty so terminal editors (including emacsclient,
 	// which resolves the device via ttyname) render into the visible pane.
-	const child = Bun.spawn(spawnCommand.cmd, {
+	const child = runtime.spawn(spawnCommand.cmd, {
 		stdin: "inherit",
 		stdout: "inherit",
 		stderr: "inherit",

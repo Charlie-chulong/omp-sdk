@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -12,10 +13,10 @@ import {
 	logger,
 	normalizePathForComparison,
 } from "@oh-my-pi/pi-utils";
-import { JSONC } from "bun";
+import { JSONC } from "@oh-my-pi/pi-utils/runtime";
 import { resolveActiveProjectRegistryPath } from "../../discovery/helpers";
 import { loadExtensions } from "../extensions/loader";
-import { runBunCli } from "./bun-cli";
+import { pluginPackageLockFilename, runBunCli } from "./bun-cli";
 import { refreshBunGitCache } from "./bun-git-cache";
 import { linkPluginDirectory } from "./directory-link";
 import { type GitSource, parseGitUrl } from "./git-url";
@@ -119,12 +120,22 @@ function findGitPackageName(source: GitSource, deps: Record<string, string>): st
 async function readBunLockResolution(name: string): Promise<string | undefined> {
 	let text: string;
 	try {
-		text = await Bun.file(path.join(getPluginsDir(), "bun.lock")).text();
+		text = await runtime.file(path.join(getPluginsDir(), pluginPackageLockFilename())).text();
 	} catch (err) {
 		if (isEnoent(err)) return undefined;
 		throw err;
 	}
 	const lock = JSONC.parse(text) as { packages?: Record<string, unknown> } | null;
+	if (pluginPackageLockFilename() === "package-lock.json") {
+		const npmEntry = lock?.packages?.[`node_modules/${name}`];
+		if (!npmEntry || typeof npmEntry !== "object") return undefined;
+		const entry = npmEntry as { resolved?: unknown; version?: unknown };
+		return typeof entry.resolved === "string"
+			? entry.resolved
+			: typeof entry.version === "string"
+				? entry.version
+				: undefined;
+	}
 	const entry = lock?.packages?.[name];
 	return Array.isArray(entry) && typeof entry[0] === "string" ? entry[0] : undefined;
 }
@@ -170,7 +181,7 @@ export class PluginManager {
 
 	async #readRuntimeConfigAt(lockPath: string): Promise<PluginRuntimeConfig> {
 		try {
-			return normalizePluginRuntimeConfig(await Bun.file(lockPath).json());
+			return normalizePluginRuntimeConfig(await runtime.file(lockPath).json());
 		} catch (err) {
 			if (isEnoent(err)) return normalizePluginRuntimeConfig({});
 			logger.warn("Failed to load plugin runtime config", { path: lockPath, error: String(err) });
@@ -197,7 +208,7 @@ export class PluginManager {
 	async #loadProjectOverrides(): Promise<ProjectPluginOverrides> {
 		const overridesPath = getProjectPluginOverridesPath(this.#cwd);
 		try {
-			return await Bun.file(overridesPath).json();
+			return await runtime.file(overridesPath).json();
 		} catch (err) {
 			if (isEnoent(err)) return {};
 			logger.warn("Failed to load project plugin overrides", { path: overridesPath, error: String(err) });
@@ -217,10 +228,10 @@ export class PluginManager {
 	async #ensurePackageJson(): Promise<void> {
 		const pkgJsonPath = getPluginsPackageJson();
 		try {
-			await Bun.file(pkgJsonPath).json();
+			await runtime.file(pkgJsonPath).json();
 		} catch (err) {
 			if (isEnoent(err)) {
-				await Bun.write(
+				await runtime.write(
 					pkgJsonPath,
 					JSON.stringify(
 						{
@@ -246,8 +257,10 @@ export class PluginManager {
 	 */
 	async #readDeps(pkgJsonPath: string): Promise<Record<string, string>> {
 		try {
-			const json = await Bun.file(pkgJsonPath).json();
-			return (json.dependencies as Record<string, string>) ?? {};
+			const json = await runtime.file(pkgJsonPath).json();
+			return json && typeof json === "object" && "dependencies" in json
+				? ((json.dependencies as Record<string, string>) ?? {})
+				: {};
 		} catch (err) {
 			if (isEnoent(err)) return {};
 			throw err;
@@ -255,8 +268,9 @@ export class PluginManager {
 	}
 
 	async #removeDependencyEntries(pkgJsonPath: string, names: readonly string[]): Promise<void> {
-		const pkgJson: { dependencies?: Record<string, string>; [key: string]: unknown } =
-			await Bun.file(pkgJsonPath).json();
+		const pkgJson: { dependencies?: Record<string, string>; [key: string]: unknown } = await runtime
+			.file(pkgJsonPath)
+			.json();
 		if (!pkgJson.dependencies) {
 			return;
 		}
@@ -268,7 +282,7 @@ export class PluginManager {
 			}
 		}
 		if (changed) {
-			await Bun.write(pkgJsonPath, JSON.stringify(pkgJson, null, 2));
+			await runtime.write(pkgJsonPath, JSON.stringify(pkgJson, null, 2));
 		}
 	}
 
@@ -290,7 +304,7 @@ export class PluginManager {
 	): Promise<InstalledPlugin | undefined> {
 		let pluginPkg: RuntimePackageJson;
 		try {
-			pluginPkg = await Bun.file(path.join(pluginPath, "package.json")).json();
+			pluginPkg = await runtime.file(path.join(pluginPath, "package.json")).json();
 		} catch (err) {
 			if (isEnoent(err)) return undefined;
 			throw err;
@@ -328,7 +342,7 @@ export class PluginManager {
 					const parsedId = parsePluginId(pluginId);
 					let packageName = parsedId?.name ?? pluginId;
 					try {
-						const pkg: RuntimePackageJson = await Bun.file(packageJsonPath).json();
+						const pkg: RuntimePackageJson = await runtime.file(packageJsonPath).json();
 						if (typeof pkg.name === "string" && pkg.name.length > 0) {
 							packageName = pkg.name;
 						}
@@ -422,16 +436,16 @@ export class PluginManager {
 		bunLockBefore: string | null,
 		snapshot: PluginPackageSnapshot | null,
 	): Promise<void> {
-		await Bun.write(getPluginsPackageJson(), packageJsonBefore);
+		await runtime.write(getPluginsPackageJson(), packageJsonBefore);
 
 		// Restore (or remove) bun's lockfile. Without this, a `bun install` +
 		// `bun update` pair that successfully rewrote `bun.lock` would leave the
 		// rejected commit pinned even when validation rolls everything else back.
-		const bunLockPath = path.join(getPluginsDir(), "bun.lock");
+		const bunLockPath = path.join(getPluginsDir(), pluginPackageLockFilename());
 		if (bunLockBefore === null) {
 			await fs.promises.rm(bunLockPath, { force: true });
 		} else {
-			await Bun.write(bunLockPath, bunLockBefore);
+			await runtime.write(bunLockPath, bunLockBefore);
 		}
 
 		// `actualName` may be undefined when the install failed before the dep
@@ -526,16 +540,16 @@ export class PluginManager {
 		await this.#ensurePackageJson();
 
 		const pkgJsonPath = getPluginsPackageJson();
-		const packageJsonBefore = await Bun.file(pkgJsonPath).text();
+		const packageJsonBefore = await runtime.file(pkgJsonPath).text();
 		// Snapshot bun's lockfile so the rollback path can restore the pin. Every
 		// step below — `bun install`, `bun update`, feature/extension validation,
 		// runtime-config save — must either complete entirely or leave the
 		// lockfile pointing at its pre-install state. Absent before install means
 		// "remove on rollback".
-		const bunLockPath = path.join(getPluginsDir(), "bun.lock");
+		const bunLockPath = path.join(getPluginsDir(), pluginPackageLockFilename());
 		let bunLockBefore: string | null;
 		try {
-			bunLockBefore = await Bun.file(bunLockPath).text();
+			bunLockBefore = await runtime.file(bunLockPath).text();
 		} catch (err) {
 			if (!isEnoent(err)) throw err;
 			bunLockBefore = null;
@@ -646,7 +660,7 @@ export class PluginManager {
 			const pkgPath = path.join(getPluginsNodeModules(), actualName, "package.json");
 			let pkg: { name: string; version: string; omp?: PluginManifest; pi?: PluginManifest };
 			try {
-				pkg = await Bun.file(pkgPath).json();
+				pkg = await runtime.file(pkgPath).json();
 			} catch (err) {
 				if (isEnoent(err)) {
 					throw new Error(`Package installed but package.json not found at ${pkgPath}`);
@@ -746,9 +760,9 @@ export class PluginManager {
 		const previous = config.plugins[name];
 		let from = previous?.version;
 		try {
-			const pkg: { version?: unknown } = await Bun.file(
-				path.join(getPluginsNodeModules(), name, "package.json"),
-			).json();
+			const pkg: { version?: unknown } = await runtime
+				.file(path.join(getPluginsNodeModules(), name, "package.json"))
+				.json();
 			if (typeof pkg.version === "string") from = pkg.version;
 		} catch (err) {
 			if (!isEnoent(err)) throw err;
@@ -869,7 +883,7 @@ export class PluginManager {
 		const pkgJsonPath = getPluginsPackageJson();
 		let deps: Record<string, string> = {};
 		try {
-			const pkg: { dependencies?: Record<string, string> } = await Bun.file(pkgJsonPath).json();
+			const pkg: { dependencies?: Record<string, string> } = await runtime.file(pkgJsonPath).json();
 			deps = pkg.dependencies ?? {};
 		} catch (err) {
 			if (!isEnoent(err)) throw err;
@@ -903,7 +917,7 @@ export class PluginManager {
 		const pkgFilePath = path.join(absolutePath, "package.json");
 		let pkg: { name?: string; version: string; omp?: PluginManifest; pi?: PluginManifest };
 		try {
-			pkg = await Bun.file(pkgFilePath).json();
+			pkg = await runtime.file(pkgFilePath).json();
 		} catch (err) {
 			if (isEnoent(err)) throw new Error(`package.json not found at ${absolutePath}`);
 			throw err;
@@ -1069,7 +1083,7 @@ export class PluginManager {
 		let pkg: { dependencies?: Record<string, string> };
 		let hasPkgJson = true;
 		try {
-			pkg = await Bun.file(pkgJsonPath).json();
+			pkg = await runtime.file(pkgJsonPath).json();
 		} catch (err) {
 			if (isEnoent(err)) {
 				hasPkgJson = false;
@@ -1108,7 +1122,7 @@ export class PluginManager {
 
 			let pluginPkg: { version: string; description?: string; omp?: PluginManifest; pi?: PluginManifest };
 			try {
-				pluginPkg = await Bun.file(pluginPkgPath).json();
+				pluginPkg = await runtime.file(pluginPkgPath).json();
 			} catch (err) {
 				if (isEnoent(err)) {
 					if (!fs.existsSync(pluginPath)) {
@@ -1159,7 +1173,7 @@ export class PluginManager {
 				});
 				if (fixed) {
 					try {
-						pluginPkg = await Bun.file(pluginPkgPath).json();
+						pluginPkg = await runtime.file(pluginPkgPath).json();
 					} catch {
 						// Keep the pre-repair metadata if the refreshed manifest is unreadable.
 					}
@@ -1252,11 +1266,11 @@ export class PluginManager {
 	 * global `bun install --force`, which re-extracts every dependency.
 	 */
 	async #reconcileVersionDrift(name: string, expected: string): Promise<boolean> {
-		const packageJsonBefore = await Bun.file(getPluginsPackageJson()).text();
-		const bunLockPath = path.join(getPluginsDir(), "bun.lock");
+		const packageJsonBefore = await runtime.file(getPluginsPackageJson()).text();
+		const bunLockPath = path.join(getPluginsDir(), pluginPackageLockFilename());
 		let bunLockBefore: string | null;
 		try {
-			bunLockBefore = await Bun.file(bunLockPath).text();
+			bunLockBefore = await runtime.file(bunLockPath).text();
 		} catch (err) {
 			if (!isEnoent(err)) throw err;
 			bunLockBefore = null;
@@ -1267,9 +1281,9 @@ export class PluginManager {
 			await fs.promises.rm(path.join(getPluginsNodeModules(), name), { recursive: true, force: true });
 			if (!(await this.#installPluginDependencies())) return false;
 			try {
-				const pkg: { version?: string } = await Bun.file(
-					path.join(getPluginsNodeModules(), name, "package.json"),
-				).json();
+				const pkg: { version?: string } = await runtime
+					.file(path.join(getPluginsNodeModules(), name, "package.json"))
+					.json();
 				fixed = pkg.version === expected;
 				return fixed;
 			} catch {

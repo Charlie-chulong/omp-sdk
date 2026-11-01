@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * The relay extension's files as omp installs them, and the checks that let a
  * relay rewrite an installed copy in place (extension self-update).
@@ -47,12 +48,13 @@ export async function writeRelayExtension(dir: string, ompVersion: string): Prom
 	for (const name of names) {
 		const target = path.join(dir, name);
 		const content = files[name]!;
-		const current = await Bun.file(target)
+		const current = await runtime
+			.file(target)
 			.text()
 			.catch(() => null);
 		if (current === content) continue;
 		const staged = `${target}.${crypto.randomUUID()}.tmp`;
-		await Bun.write(staged, content);
+		await runtime.write(staged, content);
 		await replaceFileAtomically(staged, target);
 	}
 }
@@ -83,14 +85,14 @@ export function extensionIdForPath(absolutePath: string, platform: NodeJS.Platfo
 					"utf16le",
 				)
 			: Buffer.from(absolutePath, "utf8");
-	const hex = new Bun.CryptoHasher("sha256").update(bytes).digest("hex").slice(0, 32);
+	const hex = new runtime.CryptoHasher("sha256").update(bytes).digest("hex").slice(0, 32);
 	return Array.from(hex, digit => String.fromCharCode(97 + Number.parseInt(digit, 16))).join("");
 }
 
 /** The omp version stamped in `dir`'s manifest; "" when it has none or cannot be read. */
 export async function installedRelayExtensionVersion(dir: string): Promise<string> {
 	try {
-		const manifest: unknown = await Bun.file(path.join(dir, "manifest.json")).json();
+		const manifest: unknown = await runtime.file(path.join(dir, "manifest.json")).json();
 		if (typeof manifest === "object" && manifest !== null && "version_name" in manifest) {
 			return typeof manifest.version_name === "string" ? manifest.version_name : "";
 		}

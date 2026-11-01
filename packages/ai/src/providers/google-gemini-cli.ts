@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Google Gemini CLI / Antigravity provider.
  * Shared implementation for both google-gemini-cli and google-antigravity providers.
@@ -1160,7 +1161,7 @@ function formatSignedDecimalSessionId(value: bigint): string {
 }
 
 function deriveSignedDecimalFromHash(text: string): string {
-	const digest = Bun.SHA256.hash(text);
+	const digest = runtime.SHA256.hash(text);
 	let value = 0n;
 	for (let index = 0; index < 8; index += 1) {
 		value = (value << 8n) | BigInt(digest[index] ?? 0);

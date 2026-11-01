@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Factory Droid wire constants shared by catalog discovery, the pi-ai
  * provider, OAuth login and account usage: client identity, upstream/region
@@ -126,5 +127,5 @@ export function factoryDroidModelCacheProviderId(options: { apiKey?: string } & 
 	const scope = `${credentialScope}\u0000${options.orgId ?? ""}\u0000${region}\u0000${options.inferenceRegion ?? region}`;
 	// v4: rows cached before credits became a scalar base rate carry the old
 	// `{ input, output, cacheRead }` object and must be refetched.
-	return `factory-droid:models-v4:${Bun.hash(scope).toString(36)}`;
+	return `factory-droid:models-v4:${runtime.hash(scope).toString(36)}`;
 }

@@ -1,3 +1,4 @@
+import { runtime } from "../../runtime";
 import { crc32, crc64 } from "../checksums";
 import { ArchiveError } from "../error";
 import { lzma2Decompress } from "./lzma";
@@ -421,7 +422,7 @@ function verifyCheck(checkId: number, output: Uint8Array, expected: Uint8Array):
 		if (actual !== stored) throw new ArchiveError("Invalid XZ stream: block CRC64 mismatch");
 		return;
 	}
-	const actual = new Uint8Array(new Bun.CryptoHasher("sha256").update(output).digest());
+	const actual = new Uint8Array(new runtime.CryptoHasher("sha256").update(output).digest());
 	if (!equalBytes(actual, expected)) throw new ArchiveError("Invalid XZ stream: block SHA-256 mismatch");
 }
 

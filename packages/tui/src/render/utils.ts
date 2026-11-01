@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Shared helpers for tool-rendered UI components.
  */
@@ -15,7 +16,7 @@ const hashBytes8 = new Uint8Array(hashBuf, 0, 8);
 /**
  * Incremental xxHash64 key builder.
  *
- * Chains `Bun.hash.xxHash64` calls via seeding — each fed value
+ * Chains `runtime.hash.xxHash64` calls via seeding — each fed value
  * mixes into the running hash without intermediate string allocations.
  * Accepts strings, numbers (u32), booleans, bigints, and `undefined`/`null`
  * (hashed as a sentinel byte) natively.
@@ -26,29 +27,29 @@ export class Hasher {
 	/** Feed a string. */
 	str(s: string): this {
 		hashView.setUint32(0, s.length);
-		this.#h = Bun.hash.xxHash64(hashBytes4, this.#h);
-		this.#h = Bun.hash.xxHash64(s, this.#h);
+		this.#h = runtime.hash.xxHash64(hashBytes4, this.#h);
+		this.#h = runtime.hash.xxHash64(s, this.#h);
 		return this;
 	}
 
 	/** Feed an unsigned 32-bit integer. */
 	u32(n: number): this {
 		hashView.setUint32(0, n);
-		this.#h = Bun.hash.xxHash64(hashBytes4, this.#h);
+		this.#h = runtime.hash.xxHash64(hashBytes4, this.#h);
 		return this;
 	}
 
 	/** Feed a 64-bit bigint. */
 	u64(n: bigint): this {
 		hashView.setBigUint64(0, n);
-		this.#h = Bun.hash.xxHash64(hashBytes8, this.#h);
+		this.#h = runtime.hash.xxHash64(hashBytes8, this.#h);
 		return this;
 	}
 
 	/** Feed a boolean (single byte: 1 = true, 0 = false). */
 	bool(b: boolean): this {
 		hashView.setUint8(0, b ? 1 : 0);
-		this.#h = Bun.hash.xxHash64(hashBytes1, this.#h);
+		this.#h = runtime.hash.xxHash64(hashBytes1, this.#h);
 		return this;
 	}
 
@@ -56,9 +57,9 @@ export class Hasher {
 	optional(v: string | undefined | null): this {
 		if (v == null) {
 			hashView.setUint8(0, 0xff);
-			this.#h = Bun.hash.xxHash64(hashBytes1, this.#h);
+			this.#h = runtime.hash.xxHash64(hashBytes1, this.#h);
 		} else {
-			this.#h = Bun.hash.xxHash64(v, this.#h);
+			this.#h = runtime.hash.xxHash64(v, this.#h);
 		}
 		return this;
 	}

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Effort-tier variant collapsing.
  *
@@ -452,8 +453,8 @@ function deriveCursorEffortFamilies<TSpec extends VariantSpecLike>(specs: readon
 					member.spec.contextWindow !== first.spec.contextWindow ||
 					member.spec.maxTokens !== first.spec.maxTokens ||
 					member.spec.cursorMaxMode !== first.spec.cursorMaxMode ||
-					!Bun.deepEquals(member.spec.cost, first.spec.cost) ||
-					!Bun.deepEquals(member.spec.compat, first.spec.compat),
+					!runtime.deepEquals(member.spec.cost, first.spec.cost) ||
+					!runtime.deepEquals(member.spec.compat, first.spec.compat),
 			)
 		) {
 			continue;
@@ -708,7 +709,7 @@ function refreshCollapsedThinking<TSpec extends VariantSpecLike>(
 	const offTarget = family.routing.off;
 	const requestModelId =
 		offTarget !== undefined && !retired?.has(offTarget) && offTarget !== spec.id ? offTarget : spec.requestModelId;
-	if (Bun.deepEquals(thinking, spec.thinking) && requestModelId === spec.requestModelId) {
+	if (runtime.deepEquals(thinking, spec.thinking) && requestModelId === spec.requestModelId) {
 		return spec;
 	}
 	return { ...spec, thinking, ...(requestModelId !== undefined ? { requestModelId } : {}) };

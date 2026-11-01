@@ -1,6 +1,11 @@
-import { CString, dlopen, FFIType } from "bun:ffi";
+import type * as BunFfi from "bun:ffi";
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
+import { createRequire } from "node:module";
 import * as os from "node:os";
+// bun:ffi is not a Node module; POSIX Node resolves the inherited stdin through tty(1).
+const bunFfi: typeof BunFfi | undefined =
+	typeof Bun !== "undefined" ? createRequire(import.meta.url)("bun:ffi") : undefined;
 
 /** Resolve the TTY device path for stdin (fd 0) via POSIX `ttyname(3)`. */
 export function getTtyPath(): string | null {
@@ -16,6 +21,11 @@ export function getTtyPath(): string | null {
 		}
 	} else if (os.platform() !== "win32") {
 		try {
+			if (!bunFfi) {
+				const result = spawnSync("tty", [], { stdio: [0, "pipe", "ignore"], encoding: "utf8" });
+				return result.status === 0 ? result.stdout.trim() : null;
+			}
+			const { CString, dlopen, FFIType } = bunFfi;
 			const libName = os.platform() === "darwin" ? "libSystem.B.dylib" : "libc.so.6";
 			const lib = dlopen(libName, {
 				ttyname: { args: [FFIType.i32], returns: FFIType.ptr },

@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { Database } from "../src/sqlite-driver";
 import { expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";

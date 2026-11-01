@@ -1,3 +1,4 @@
+import { visibleWidth } from "../utils";
 import type { Component } from "../tui";
 import { getThemeEpoch, type ThemeColor, theme } from "../theme";
 import { truncateToWidth } from "../utils";
@@ -71,7 +72,7 @@ export class MessageDividerComponent implements Component {
 
 	#renderDivider(width: number): string {
 		const label = this.#options.label();
-		const labelWidth = Bun.stringWidth(label, { countAnsiEscapeCodes: false });
+		const labelWidth = visibleWidth(label);
 		const ruleWidth = Math.min(this.#options.ruleWidth ?? 10, width - labelWidth - 1);
 		const paintedLabel = theme.fg(this.#options.labelColor, label);
 		if (ruleWidth < 1) {

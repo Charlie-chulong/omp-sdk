@@ -1,4 +1,5 @@
-import type { Database } from "bun:sqlite";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
+import type { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 
@@ -99,7 +100,7 @@ export function inspectDatabase(options: DiagnosticOptions = {}): DiagnosticSumm
 		entries.push({ ts: nowIso(), category, check, status, detail });
 	};
 
-	log("env", "bun_version", Bun.version);
+	log("env", `${runtime.capabilities.backend}_version`, runtime.version);
 	log("env", "platform", `${process.platform}-${process.arch}`);
 	log("env", "MNEMOPI_DATA_DIR", safeEnv("MNEMOPI_DATA_DIR"));
 	log("env", "MNEMOPI_VEC_TYPE", safeEnv("MNEMOPI_VEC_TYPE"));

@@ -37,7 +37,7 @@ describe("auth-gateway non-streaming thinking-loop retries", () => {
 			mock.push({ content: [{ type: "thinking", thinking: loopThinking() }, "Unreachable cooked answer."] });
 		}
 		const waitSpy = spyOn(scheduler, "wait").mockResolvedValue(undefined);
-		const handle = startAuthGateway({
+		const handle = await startAuthGateway({
 			bind: "127.0.0.1:0",
 			bearerTokens: ["gw-test-token"],
 			storage,
@@ -75,7 +75,7 @@ describe("auth-gateway non-streaming thinking-loop retries", () => {
 		storage.keys.setRuntime("openrouter", "test-key");
 		const mock = createMockModel({ provider: "openrouter", id: "google/gemini-3.5-flash" });
 		mock.push({ throw: "upstream exploded" });
-		const handle = startAuthGateway({
+		const handle = await startAuthGateway({
 			bind: "127.0.0.1:0",
 			bearerTokens: ["gw-test-token"],
 			storage,
@@ -129,7 +129,7 @@ describe("auth-gateway auth retry", () => {
 				return { content: [`ok:${options?.apiKey ?? "missing"}`] };
 			},
 		});
-		const handle = startAuthGateway({
+		const handle = await startAuthGateway({
 			bind: "127.0.0.1:0",
 			bearerTokens: ["gw-test-token"],
 			storage,

@@ -142,6 +142,17 @@
 				"clientOmit": []
 			},
 			{
+				"name": "set_approval_mode",
+				"doc": "Change session-only tool approval mode immediately, without interrupting an active turn.",
+				"params": "SetApprovalModeParams",
+				"result": "SetApprovalModeResult",
+				"nullable": false,
+				"unwrap": "mode",
+				"timeoutMs": null,
+				"completion": null,
+				"clientOmit": []
+			},
+			{
 				"name": "set_fast_mode",
 				"doc": "Enable or disable fast mode for the session.",
 				"params": "SetFastModeParams",
@@ -2250,6 +2261,15 @@
 			],
 			"type": "string"
 		},
+		"ApprovalMode": {
+			"enum": [
+				"always-ask",
+				"always-ask-cached",
+				"write",
+				"yolo"
+			],
+			"type": "string"
+		},
 		"MessageUpdates": {
 			"enum": [
 				"full",
@@ -2606,6 +2626,10 @@
 				},
 				"thinkingLevel": {
 					"$ref": "#/$defs/ThinkingLevel"
+				},
+				"approvalMode": {
+					"$ref": "#/$defs/ApprovalMode",
+					"default": "always-ask"
 				},
 				"isStreaming": {
 					"type": "boolean",
@@ -6179,6 +6203,28 @@
 			},
 			"required": [
 				"sessionDir"
+			]
+		},
+		"SetApprovalModeParams": {
+			"type": "object",
+			"properties": {
+				"mode": {
+					"$ref": "#/$defs/ApprovalMode"
+				}
+			},
+			"required": [
+				"mode"
+			]
+		},
+		"SetApprovalModeResult": {
+			"type": "object",
+			"properties": {
+				"mode": {
+					"$ref": "#/$defs/ApprovalMode"
+				}
+			},
+			"required": [
+				"mode"
 			]
 		},
 		"SetFastModeParams": {

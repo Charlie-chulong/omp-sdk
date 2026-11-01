@@ -1,3 +1,4 @@
+import { runtime } from "../runtime";
 import {
 	BufferLine,
 	type BufferState,
@@ -442,7 +443,7 @@ export class Terminal {
 	}
 
 	#print(grapheme: string): void {
-		const width = Bun.stringWidth(grapheme);
+		const width = runtime.stringWidth(grapheme);
 		if (width === 0) {
 			this.#appendCombining(grapheme);
 			return;

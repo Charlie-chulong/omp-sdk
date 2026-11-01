@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Fullscreen plan-review overlay. The overlay owns its entire content: the plan
  * is split into sections (preamble + one per heading), each rendered through its
@@ -435,7 +436,7 @@ export class PlanReviewOverlay implements Component {
 	}
 
 	#sectionContentHash(section: OverlaySection): string {
-		return `${section.raw.length}:${Bun.hash(section.raw).toString(16)}`;
+		return `${section.raw.length}:${runtime.hash(section.raw).toString(16)}`;
 	}
 
 	#annotationState(): PlanReviewAnnotationState {

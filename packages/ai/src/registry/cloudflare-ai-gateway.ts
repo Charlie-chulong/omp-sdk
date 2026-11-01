@@ -7,7 +7,7 @@ import {
 	CLOUDFLARE_AI_GATEWAY_COMPAT_BASE_URL,
 	CLOUDFLARE_AI_GATEWAY_OPENAI_BASE_URL,
 } from "@oh-my-pi/pi-catalog/wire/cloudflare-ai-gateway";
-import { $env } from "@oh-my-pi/pi-utils";
+import { $env } from "@oh-my-pi/pi-utils/env";
 import { NO_AUTH_SENTINEL } from "../auth-retry";
 import * as AIError from "../error";
 import type { Api, Model } from "../types";

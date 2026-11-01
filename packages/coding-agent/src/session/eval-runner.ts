@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { Agent } from "@oh-my-pi/pi-agent-core";
 import { logger } from "@oh-my-pi/pi-utils";
 import type { Settings } from "../config/settings";
@@ -188,7 +189,7 @@ export class EvalRunner {
 			if (remainingMs <= 0) return false;
 			const settled = await Promise.race([
 				Promise.allSettled(Array.from(this.#activeExecutions)).then(() => true),
-				Bun.sleep(remainingMs).then(() => false),
+				runtime.sleep(remainingMs).then(() => false),
 			]);
 			if (!settled && this.#activeExecutions.size > 0) return false;
 		}

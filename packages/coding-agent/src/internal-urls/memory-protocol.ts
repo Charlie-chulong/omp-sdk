@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { getAgentDir, isEnoent, withLoopPhase } from "@oh-my-pi/pi-utils";
@@ -137,7 +138,7 @@ async function tryResolveInRoot(url: InternalUrl, memoryRoot: string): Promise<I
 		throw new Error(`memory:// URL must resolve to a file or directory: ${url.href}`);
 	}
 
-	const content = await Bun.file(realTargetPath).text();
+	const content = await runtime.file(realTargetPath).text();
 
 	return {
 		url: url.href,

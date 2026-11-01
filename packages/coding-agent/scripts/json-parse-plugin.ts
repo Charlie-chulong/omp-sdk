@@ -12,10 +12,10 @@ const DEFAULT_MIN_BYTES = 256 * 1024;
  * "./models.json"`); a named import of a large
  * asset fails the build loudly instead of silently reading `undefined`.
  */
-export function createJsonParsePlugin(minBytes: number = DEFAULT_MIN_BYTES): BunPlugin {
+export function createJsonParsePlugin(minBytes: number = DEFAULT_MIN_BYTES, target: "bun" | "node" = "bun"): BunPlugin {
 	return {
 		name: "omp-json-parse-asset",
-		target: "bun",
+		target,
 		setup(build) {
 			build.onResolve({ filter: /^omp-json-asset:/ }, ({ path }) => ({
 				path: `${path.slice("omp-json-asset:".length)}.zst`,
@@ -33,8 +33,8 @@ export function createJsonParsePlugin(minBytes: number = DEFAULT_MIN_BYTES): Bun
 				return {
 					contents: `import * as fs from "node:fs";
 import * as path from "node:path";
-import asset from ${JSON.stringify(`omp-json-asset:${path}`)};
-export default JSON.parse(Bun.zstdDecompressSync(fs.readFileSync(path.resolve(import.meta.dir, asset))).toString("utf8"));`,
+${target === "node" ? 'import { zstdDecompressSync } from "node:zlib";\n' : ""}import asset from ${JSON.stringify(`omp-json-asset:${path}`)};
+export default JSON.parse(${target === "node" ? "zstdDecompressSync" : "Bun.zstdDecompressSync"}(fs.readFileSync(path.resolve(import.meta.dirname, asset))).toString("utf8"));`,
 					loader: "js",
 				};
 			});

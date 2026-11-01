@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import {
 	DEFAULT_SKILLS_URL,
 	SKILL_HEADERS,
@@ -160,7 +161,7 @@ export class SkillshareClient {
 		options: PublishOptions = {},
 	): Promise<SkillPublishResponse> {
 		const headers: Record<string, string> = {
-			[SKILL_HEADERS.integrity]: `sha512-${new Bun.CryptoHasher("sha512").update(tgz).digest("base64")}`,
+			[SKILL_HEADERS.integrity]: `sha512-${new runtime.CryptoHasher("sha512").update(tgz).digest("base64")}`,
 		};
 		if (options.tag) headers[SKILL_HEADERS.tag] = options.tag;
 		if (options.provenance) {

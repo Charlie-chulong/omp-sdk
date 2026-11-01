@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import {
 	type Component,
 	Ellipsis,
@@ -47,7 +48,7 @@ const ENTER_KEYS: readonly KeyName[] = ["enter"];
 
 /** Native item key of a history entry: key-path safe (prompts may hold `/` and newlines), stable across queries. */
 function nativeEntryKey(entry: HistorySearchEntry): string {
-	return `${entry.created_at}-${Bun.hash(entry.prompt).toString(36)}`;
+	return `${entry.created_at}-${runtime.hash(entry.prompt).toString(36)}`;
 }
 
 interface HistoryNativeMemo {

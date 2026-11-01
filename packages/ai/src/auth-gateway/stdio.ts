@@ -17,7 +17,7 @@
  * status 400 with the `id` it carried, if any. Serving ends once input ends
  * and every request has been answered.
  */
-import { logger, readLines } from "@oh-my-pi/pi-utils";
+import { encodeBase64, logger, readLines } from "@oh-my-pi/pi-utils";
 
 /** Request ids are opaque to the transport: echoed back as received. */
 type StdioId = string | number;
@@ -128,5 +128,5 @@ async function readResponse(response: Response): Promise<Omit<StdioResponse, "id
 		}
 	}
 	if (type.startsWith("text/")) return { status: response.status, body: new TextDecoder().decode(bytes) };
-	return { status: response.status, body: bytes.toBase64(), encoding: "base64" };
+	return { status: response.status, body: encodeBase64(bytes), encoding: "base64" };
 }

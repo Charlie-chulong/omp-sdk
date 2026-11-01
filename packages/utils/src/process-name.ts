@@ -16,8 +16,11 @@
  * omp child attached to a pane's console (workers, `browser-relay`, servers)
  * would overwrite that pane's tab title, so Windows skips it entirely.
  */
-import { dlopen, FFIType, ptr } from "bun:ffi";
+import type * as BunFfi from "bun:ffi";
+import { createRequire } from "node:module";
 import * as os from "node:os";
+
+const require = createRequire(import.meta.url);
 
 /** `prctl(2)` option that sets the calling thread's `comm` name. */
 const PR_SET_NAME = 15;
@@ -36,7 +39,8 @@ export function setProcessName(name: string): void {
 		process.title = name;
 	} catch {}
 
-	if (platform !== "linux") return;
+	if (platform !== "linux" || typeof Bun === "undefined") return;
+	const { dlopen, FFIType, ptr } = require("bun:ffi") as typeof BunFfi;
 
 	// glibc first, then the generic soname for musl-style layouts (see stderr-guard.ts).
 	for (const soname of ["libc.so.6", "libc.so"]) {

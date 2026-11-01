@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
@@ -81,7 +82,7 @@ async function loadTemplatesFromDir(
 ): Promise<PromptTemplate[]> {
 	const templates: PromptTemplate[] = [];
 	try {
-		const glob = new Bun.Glob("**/*");
+		const glob = new runtime.Glob("**/*");
 		const entries = [];
 		for await (const entry of glob.scan({ cwd: dir, absolute: false, onlyFiles: false })) {
 			entries.push(entry);
@@ -92,7 +93,7 @@ async function loadTemplatesFromDir(
 
 		for (const entry of entries) {
 			const fullPath = path.join(dir, entry);
-			const file = Bun.file(fullPath);
+			const file = runtime.file(fullPath);
 
 			try {
 				const stat = await file.exists();

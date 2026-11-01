@@ -1,4 +1,5 @@
 import { Readable, type Transform } from "node:stream";
+import { runtime } from "../runtime";
 import { formatBytes } from "../format";
 import { LRUCache } from "../lru";
 import { ArchiveError } from "./error";
@@ -41,7 +42,7 @@ export function memoryByteSource(buffer: Uint8Array): ByteSource {
 
 /** Lazily read ranges of a file on disk as a {@link ByteSource}. */
 export function fileByteSource(filePath: string): ByteSource {
-	const file = Bun.file(filePath);
+	const file = runtime.file(filePath);
 	const size = file.size;
 	if (!Number.isSafeInteger(size)) {
 		throw new ArchiveError("Archive is too large to read safely");

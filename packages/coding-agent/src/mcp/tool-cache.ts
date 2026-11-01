@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * MCP tool cache.
  *
@@ -18,7 +19,7 @@ type MCPToolCachePayload = {
 };
 
 function hashConfig(config: MCPServerConfig): string {
-	return Bun.SHA256.hash(stableStringifyJson(config), "hex");
+	return runtime.SHA256.hash(stableStringifyJson(config), "hex");
 }
 
 function cacheKey(serverName: string): string {

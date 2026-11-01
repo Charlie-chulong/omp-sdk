@@ -18,7 +18,7 @@ behavior {
 	// it, but its legacy rows survived as previous-snapshot zombies (no
 	// descriptor makes it authoritative to prune), surfacing a dead, un-authable
 	// `opencode` provider in the picker.
-	retired-providers "wafer-pass" "wandb" "opencode"
+	retired-providers "wafer-pass" "wandb" "opencode" "zenmux" "singularityapi-dev" "singularityapi-tech"
 
 	// ClinePass exposes gateway-specific limits, pricing, and reasoning
 	// controls; matching them by bare model id contaminates unrelated proxy
@@ -257,11 +257,6 @@ behavior {
 			exact="xai/grok-4.5" exact="xai/grok-4.6" exact="xai/grok-4.7" exact="meta/muse-spark-1.1" \
 			exact="meta/muse-spark-1.2" exact="meta/muse-spark-1.2-contributor" exact="meta/muse-spark-1.3" \
 			exact="meta/muse-spark-1.3-contributor" exact="stealth/pixel-canary" exact="sakana/fugu-ultra"
-	}
-	// ZenMux fronts Anthropic ids on a dedicated Messages endpoint; every
-	// other namespace stays on chat completions.
-	api-routes provider="zenmux" default="openai-completions" {
-		route "anthropic-messages" prefix="anthropic/"
 	}
 	// GLM-5.3-Flash is available on Z.AI's native chat-completions API but
 	// not its Anthropic-compatible coding endpoint (#10539).

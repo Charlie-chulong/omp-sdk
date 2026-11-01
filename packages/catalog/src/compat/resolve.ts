@@ -470,8 +470,7 @@ function detectOpenAICompat(
 			isGrok ||
 			d.isZai ||
 			d.isZhipu ||
-			provider === "github-copilot" ||
-			provider === "zenmux");
+			provider === "github-copilot");
 
 	// URL-keyed watchdogs: they also cover custom provider ids pointed at these
 	// hosts, which provider-keyed rules (`stream-idle-timeout-ms` in
@@ -894,12 +893,11 @@ function resolveAnthropicPolicy(
 	const baseUrl = spec.baseUrl;
 	const official = isOfficialAnthropicApiUrl(baseUrl);
 	const isCopilot = modelMatchesHost(spec, "githubCopilot");
-	const isZenmux = modelMatchesHost(spec, "zenmux");
 	const requiresThinkingEnabled = modelMatchesHost(spec, "moonshotNative") && facts.kimiMandatoryThinking;
 	const bedrockMessagesApi = isBedrockAnthropicRoute(baseUrl);
 	// Both routes reject the top-level tool `strict` field.
 	const rejectsStrictTools = isAzureAnthropicRoute(baseUrl) || bedrockMessagesApi;
-	const signingEndpoint = official || isCopilot || isZenmux || isAnthropicSigningProxyUrl(baseUrl);
+	const signingEndpoint = official || isCopilot || isAnthropicSigningProxyUrl(baseUrl);
 	const compat: ResolvedAnthropicCompat = {
 		officialEndpoint: official,
 		signingEndpoint,

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type {
@@ -142,7 +143,7 @@ const MAX_WRITE_CONFLICT_RECOVERIES = 3;
 
 /** A fresh session id. */
 export function mintSessionId(): string {
-	return Bun.randomUUIDv7();
+	return runtime.randomUUIDv7();
 }
 
 /**

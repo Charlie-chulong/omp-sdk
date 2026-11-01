@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Frustration dashboard: per-model share of user messages that sound annoyed,
  * annoyed at the assistant, and angry at the assistant.
@@ -377,7 +378,7 @@ async function runJob(
 		for (let attempt = 1; attempt <= ATTEMPTS_PER_TEXT; attempt++) {
 			if (signal.aborted) return;
 			// Failures are mostly rate limits: give the judge a moment before retrying.
-			if (attempt > 1) await Bun.sleep(RETRY_DELAY_MS * (attempt - 1));
+			if (attempt > 1) await runtime.sleep(RETRY_DELAY_MS * (attempt - 1));
 			if (signal.aborted) return;
 			try {
 				const result = await judge.judge({ state: item.prose, questions: FRUSTRATION_QUESTIONS }, { signal });

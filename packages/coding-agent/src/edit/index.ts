@@ -25,6 +25,7 @@ import {
 	type EditWriteResponse,
 } from "@oh-my-pi/pi-natives";
 import { isEnoent, logger, prompt } from "@oh-my-pi/pi-utils";
+import { runtime as platformRuntime } from "@oh-my-pi/pi-utils/runtime";
 import { extractUriScheme, InternalUrlRouter, type ResolveContext, sessionResolveContext } from "../internal-urls";
 import { createLspWritethrough, flushLspWritethroughBatch, type WritethroughCallback, writethroughNoop } from "../lsp";
 import { type FileDiagnosticsResult } from "@oh-my-pi/pi-tui/tools/lsp";
@@ -700,7 +701,7 @@ export class EditTool implements AgentTool<TInput> {
 
 	async #write(request: EditWriteRequest, signal?: AbortSignal): Promise<EditWriteResponse> {
 		if (request.op === "delete") {
-			await deleteFileWithFallback(request.path, Bun.file(request.path));
+			await deleteFileWithFallback(request.path, platformRuntime.file(request.path));
 			if (this.session.enableLsp ?? true) {
 				await notifyWorkspaceWatchedFiles(
 					this.session.cwd,
@@ -731,7 +732,7 @@ export class EditTool implements AgentTool<TInput> {
 			await mkdirAllowingFallback(path.dirname(request.moveTo));
 			await writeFileWithFallback(request.moveTo, request.content);
 			if (mode !== undefined) await chmodMovedFile(request.moveTo, mode);
-			await deleteFileWithFallback(request.path, Bun.file(request.path));
+			await deleteFileWithFallback(request.path, platformRuntime.file(request.path));
 			if (this.session.enableLsp ?? true) {
 				await notifyWorkspaceWatchedFiles(
 					this.session.cwd,
@@ -768,7 +769,7 @@ export class EditTool implements AgentTool<TInput> {
 		let preWriteBytes: Uint8Array | undefined;
 		if (request.op === "update") {
 			try {
-				preWriteBytes = await Bun.file(request.path).bytes();
+				preWriteBytes = await platformRuntime.file(request.path).bytes();
 			} catch (error) {
 				if (!isEnoent(error)) throw error;
 			}
@@ -783,7 +784,7 @@ export class EditTool implements AgentTool<TInput> {
 			request.path,
 			request.content,
 			signal,
-			Bun.file(request.path),
+			platformRuntime.file(request.path),
 			request.lspBatchId ? { id: request.lspBatchId, flush: request.flushLsp } : undefined,
 			destination => {
 				if (destination !== request.path) return undefined;
@@ -798,7 +799,7 @@ export class EditTool implements AgentTool<TInput> {
 			// requested content is only encoded when disk really is unchanged.
 			let postWriteBytes: Uint8Array | undefined;
 			try {
-				postWriteBytes = await Bun.file(request.path).bytes();
+				postWriteBytes = await platformRuntime.file(request.path).bytes();
 			} catch (error) {
 				if (!isEnoent(error)) throw error;
 			}

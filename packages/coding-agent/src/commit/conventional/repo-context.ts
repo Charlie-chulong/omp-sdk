@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as path from "node:path";
 import { isRecord } from "@oh-my-pi/pi-utils";
 
@@ -182,19 +183,19 @@ async function detectGo(root: string): Promise<RepositoryContext | null> {
 
 async function optionalText(filePath: string): Promise<string | null> {
 	try {
-		return await Bun.file(filePath).text();
+		return await runtime.file(filePath).text();
 	} catch {
 		return null;
 	}
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
-	return Bun.file(filePath).exists();
+	return runtime.file(filePath).exists();
 }
 
 function parseToml(content: string): Record<string, unknown> {
 	try {
-		const value = Bun.TOML.parse(content);
+		const value = runtime.TOML.parse(content);
 		return isRecord(value) ? value : {};
 	} catch {
 		return {};

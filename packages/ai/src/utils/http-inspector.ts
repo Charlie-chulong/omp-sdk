@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { getLogsDir, isBunTestRuntime, isEnoent, isRecord, logger } from "@oh-my-pi/pi-utils";
@@ -90,12 +91,12 @@ export async function appendRawHttpRequestDumpFor400(
 	}
 
 	const payload = buildHttp400DumpPayload(dump, error, message);
-	const fileName = `${Date.now()}-${Bun.hash(JSON.stringify(payload)).toString(36)}.json`;
+	const fileName = `${Date.now()}-${runtime.hash(JSON.stringify(payload)).toString(36)}.json`;
 	const dumpDir = path.join(getLogsDir(), HTTP_DUMP_DIR_NAME);
 	const filePath = path.join(dumpDir, fileName);
 
 	try {
-		await Bun.write(filePath, `${JSON.stringify(payload, null, 2)}\n`);
+		await runtime.write(filePath, `${JSON.stringify(payload, null, 2)}\n`);
 		// Dumps are rare; bound the directory right after adding to it.
 		pruneHttpRequestDumps(dumpDir, { keep: fileName }).catch(err => {
 			logger.warn("Failed to prune HTTP request dumps", { dir: dumpDir, err });

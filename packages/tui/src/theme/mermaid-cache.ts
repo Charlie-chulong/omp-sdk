@@ -1,3 +1,4 @@
+import { visibleWidth } from "../utils";
 import type { MermaidRenderOptions } from "@oh-my-pi/pi-natives";
 import { LRUCache } from "@oh-my-pi/pi-utils/lru";
 import * as mermaidAscii from "@oh-my-pi/pi-utils/mermaid-ascii";
@@ -30,13 +31,10 @@ const cache = new LRUCache<string, string | null>({
 	sizeCalculation: (ascii, key) => key.length + (ascii?.length ?? 0),
 });
 
-/** Display columns, ignoring ANSI so themed diagrams are measured as drawn. */
-const DISPLAY_WIDTH = { countAnsiEscapeCodes: false } as const;
-
 function asciiDisplayWidth(ascii: string): number {
 	let max = 0;
 	for (const line of ascii.split("\n")) {
-		const width = Bun.stringWidth(line, DISPLAY_WIDTH);
+		const width = visibleWidth(line);
 		if (width > max) max = width;
 	}
 	return max;

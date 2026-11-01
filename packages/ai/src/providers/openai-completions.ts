@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { resolveModelPolicy } from "@oh-my-pi/pi-catalog/compat/resolve";
 import type { Effort } from "@oh-my-pi/pi-catalog/effort";
 import { resolveWireModelId } from "@oh-my-pi/pi-catalog/model-thinking";
@@ -2442,7 +2443,7 @@ export function convertMessages(
 
 	const generateFallbackToolCallId = (seed: string): string => {
 		generatedToolCallIdCounter += 1;
-		const hash = Bun.hash(`${model.provider}:${model.id}:${seed}:${generatedToolCallIdCounter}`).toString(36);
+		const hash = runtime.hash(`${model.provider}:${model.id}:${seed}:${generatedToolCallIdCounter}`).toString(36);
 		return `call_${hash}`;
 	};
 

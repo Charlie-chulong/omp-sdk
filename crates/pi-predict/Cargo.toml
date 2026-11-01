@@ -10,19 +10,23 @@ repository.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = ["smollm"]
+smollm = ["dep:candle-core", "dep:candle-nn", "dep:rayon", "dep:regex", "dep:serde", "dep:serde_json"]
+
 [dependencies]
 anyhow.workspace = true
-rayon.workspace = true
-regex.workspace = true
-serde.workspace = true
-serde_json.workspace = true
+rayon = { workspace = true, optional = true }
+regex = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 zstd.workspace = true
 
-# SmolLM2 runs on the GPU through candle's Metal backend on macOS; the
-# portable CPU decoder (src/smollm/cpu.rs) needs no ML framework.
+# Optional SmolLM2 runs on the GPU through candle's Metal backend on macOS;
+# its portable CPU decoder (src/smollm/cpu.rs) needs no ML framework.
 [target.'cfg(target_os = "macos")'.dependencies]
-candle-core = { workspace = true, features = ["metal"] }
-candle-nn = { workspace = true, features = ["metal"] }
+candle-core = { workspace = true, features = ["metal"], optional = true }
+candle-nn = { workspace = true, features = ["metal"], optional = true }
 # The `apple` engine and the process-wide AppKit spelling thread
 # (`apple::appkit`, shared with `pi_natives::spelling`).
 flume.workspace = true

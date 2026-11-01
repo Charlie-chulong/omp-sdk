@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { CustomCommandContext } from "../../../../extensibility/custom-commands/types";
 import { resolveReadPath } from "../../../../tools/path-utils";
 import type { TextReviewSource } from "@oh-my-pi/pi-tui/overlays/annotation-types";
@@ -14,7 +15,7 @@ export async function readFileTextReviewSource(
 	const filePath = inputPath.trim();
 	if (!filePath) throw new Error("Enter a file path to annotate.");
 	const resolvedPath = resolveReadPath(filePath, cwd);
-	const file = Bun.file(resolvedPath);
+	const file = runtime.file(resolvedPath);
 	const readFailure = (error: unknown) => {
 		const detail = error instanceof Error && error.message ? error.message : String(error);
 		return new Error(`Unable to read annotation file "${filePath}": ${detail}`);

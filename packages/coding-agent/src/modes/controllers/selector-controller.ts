@@ -149,6 +149,8 @@ import {
 	cfgTreeFilterMode,
 } from "../settings";
 import { cfgTaskAgentModelOverrides } from "../../task/settings";
+import { cfgToolsApprovalMode } from "../../tools/settings";
+import type { ApprovalMode } from "../../tools/approval";
 
 /** First-use boundary for provider auth catalog and dialog components. */
 async function loadProviderAuthUi() {
@@ -337,7 +339,7 @@ export class SelectorController {
 						providers: [...new Set(this.ctx.session.getAvailableModels().map(model => model.provider))].sort(
 							(a, b) => a.localeCompare(b),
 						),
-						settings: createSettingsHost(),
+						settings: createSettingsHost(this.ctx.session),
 						plugins: createPluginSettingsHost(getProjectDir()),
 						model: this.ctx.session.model,
 						imageBudget: this.ctx.ui.imageBudget,
@@ -697,11 +699,15 @@ export class SelectorController {
 	/**
 	 * Apply the side effects of a setting change the user made in this process
 	 * (settings selector, approved `cfg://` writes); the value is already stored.
-	 * Only `defaultThinkingLevel` needs this: it also switches the live session,
-	 * which config reloads and parent-session writes must not do. Every other
-	 * setting applies through handle listeners owned by the session and InteractiveMode.
+	 * Tool approval and thinking choices also switch the live session despite
+	 * startup overrides. Config reloads and parent-session writes must not do so.
+	 * Other settings apply through listeners owned by the session and InteractiveMode.
 	 */
 	handleSettingChange(id: string, value: unknown): void {
+		if (id === cfgToolsApprovalMode.id && cfgToolsApprovalMode.accepts(value)) {
+			if (!this.ctx.collabGuest) this.ctx.session.setApprovalMode(value as ApprovalMode);
+			return;
+		}
 		if (id !== cfgDefaultThinkingLevel.id || typeof value !== "string") return;
 		const level = parseConfiguredThinkingLevel(value);
 		if (level === undefined || level === this.ctx.session.configuredThinkingLevel()) return;

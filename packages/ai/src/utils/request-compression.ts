@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { promisify } from "node:util";
 import * as zlib from "node:zlib";
 import {
@@ -75,7 +76,7 @@ function withContentEncoding(headers: RequestHeaders, encoding: RequestBodyEncod
 /** Off the event loop: a synchronous codec stalls the TUI ~120ms on a 9MB body. */
 function compress(body: string | ArrayBufferView, encoding: RequestBodyEncoding): Promise<Uint8Array> {
 	const bytes = typeof body === "string" ? body : new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
-	return encoding === "zstd" ? Bun.zstdCompress(bytes, { level: ZSTD_LEVEL }) : gzip(bytes, { level: GZIP_LEVEL });
+	return encoding === "zstd" ? runtime.zstdCompress(bytes, { level: ZSTD_LEVEL }) : gzip(bytes, { level: GZIP_LEVEL });
 }
 
 /** Reads a clone of {@link response}'s body; `undefined` when it cannot be read. */

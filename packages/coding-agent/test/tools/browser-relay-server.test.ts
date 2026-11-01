@@ -109,7 +109,7 @@ describe("browser relay discovery endpoint", () => {
 
 	async function startReadyRelay(): Promise<number> {
 		const port = await findFreeCdpPort();
-		relay = startRelayServer({ port });
+		relay = await startRelayServer({ port });
 		extension = await connectExtension(port);
 		await waitForDiscovery(port);
 		return port;
@@ -147,7 +147,7 @@ describe("browser relay discovery endpoint", () => {
 
 	it("reports 503 with extensionSeen=false while no extension has ever handshaken", async () => {
 		const port = await findFreeCdpPort();
-		relay = startRelayServer({ port });
+		relay = await startRelayServer({ port });
 		const response = await fetch(`http://127.0.0.1:${port}/json/version`);
 		expect(response.status).toBe(503);
 		const info = (await response.json()) as RelayUnavailableInfo;
@@ -172,7 +172,7 @@ describe("browser relay discovery endpoint", () => {
 
 	it("reports how many CDP clients are connected, both while waiting for the extension and once ready", async () => {
 		const port = await findFreeCdpPort();
-		relay = startRelayServer({ port });
+		relay = await startRelayServer({ port });
 		const discovery = async () => {
 			const response = await fetch(`http://127.0.0.1:${port}/json/version`);
 			const body: unknown = await response.json();

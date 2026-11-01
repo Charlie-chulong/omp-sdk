@@ -1,3 +1,4 @@
+import { runtimeColor } from "../runtime-color";
 import { maskNonProse } from "./markdown-prose";
 import { detectColorMode, FG_RESET } from "../theme/color";
 import { theme } from "../theme/theme";
@@ -51,7 +52,7 @@ export function createGradientHighlighter(spec: GradientHighlightSpec): KeywordH
 		const format = mode === "truecolor" ? "ansi-16m" : "ansi-256";
 		const next: string[] = [];
 		for (let i = 0; i < stops; i++) {
-			next.push(Bun.color(`hsl(${Math.round(hue(i / stops))}, ${saturation}%, ${lightness}%)`, format) ?? "");
+			next.push(runtimeColor(`hsl(${Math.round(hue(i / stops))}, ${saturation}%, ${lightness}%)`, format) ?? "");
 		}
 		cachedMode = mode;
 		cachedPalette = next;

@@ -1,4 +1,3 @@
-import { $ } from "bun";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { loadNative } from "./loader-state.js";
@@ -154,6 +153,7 @@ export async function copyGitObjects(isolationRoot, sourceRoot) {
  * null old HEAD and branch-switch flag as `git worktree add`.
  */
 export async function runPostCheckoutHook(worktreeRoot, head) {
+	const { $ } = await import("@oh-my-pi/pi-utils/runtime");
 	const nullOid = "0".repeat(head.length);
 	const result = await $`git hook run --ignore-missing post-checkout -- ${nullOid} ${head} 1`
 		.cwd(worktreeRoot)

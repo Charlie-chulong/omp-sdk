@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Moving a session between machines (`omp session pack|unpack|moved`).
  *
@@ -431,7 +432,7 @@ async function readSessionArchive(archive: string): Promise<SessionArchiveConten
 		throw new SessionTransferError(`Bad session archive ${archive}: invalid session id.`);
 	}
 	for (const [hash, bytes] of blobs) {
-		const actual = new Bun.SHA256().update(bytes).digest("hex");
+		const actual = new runtime.SHA256().update(bytes).digest("hex");
 		if (actual !== hash) {
 			throw new SessionTransferError(
 				`Bad session archive ${archive}: blob ${hash} fails its sha256 check (content hashes to ${actual}). Nothing was unpacked.`,
@@ -463,7 +464,7 @@ function isTranscriptPrefix(local: readonly SessionEntry[], incoming: readonly S
 async function findLocalCopies(id: string, sessionDir: string): Promise<string[]> {
 	const candidates = new Set((await findSessionFiles(id)).map(file => path.resolve(file)));
 	try {
-		for await (const name of new Bun.Glob(`*_${id}.jsonl`).scan({ cwd: sessionDir, followSymlinks: true })) {
+		for await (const name of new runtime.Glob(`*_${id}.jsonl`).scan({ cwd: sessionDir, followSymlinks: true })) {
 			candidates.add(path.resolve(sessionDir, name));
 		}
 	} catch (error) {
@@ -594,10 +595,10 @@ export async function unpackSession(archivePath: string, options: UnpackSessionO
 	const staging = await TempDir.create("@omp-session-unpack-");
 	try {
 		const stagedFile = staging.join(`${header.timestamp.replace(/[^\w-]/g, "-")}_${id}.jsonl`);
-		await Bun.write(stagedFile, contents.journal);
+		await runtime.write(stagedFile, contents.journal);
 		const stagedArtifacts = stagedFile.slice(0, -".jsonl".length);
 		for (const [relative, bytes] of contents.artifacts) {
-			await Bun.write(path.join(stagedArtifacts, ...relative.split("/")), bytes);
+			await runtime.write(path.join(stagedArtifacts, ...relative.split("/")), bytes);
 		}
 
 		const localCopies = await findLocalCopies(id, sessionDir);

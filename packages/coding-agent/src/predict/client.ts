@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Client half of the machine-global text-prediction daemon.
  *
@@ -16,6 +17,8 @@ import { compareVersions, getAgentDir, logger, ptree, VERSION } from "@oh-my-pi/
 import { daemonClientForGlobal } from "../launch/client";
 import { describeQuietly, stopQuietly, waitReady } from "../launch/ensure";
 import { resolveWorkerSpawnCmd, SMOKE_TEST_TIMEOUT_MS, workerEnvFromParent } from "../subprocess/worker-client";
+import { assertLocalRuntimeAvailable } from "../sdk-profile";
+import { assertNativeCapability } from "../native-capabilities";
 import { prefetchSmolLmWeights } from "./smollm-weights";
 import {
 	TEXT_PREDICT_AGENT_DIR_ENV,
@@ -232,6 +235,10 @@ class TextPredictionClient {
 	 * (e.g. it failed to load).
 	 */
 	async complete(engine: TextPredictMethod, before: string, prefix: string): Promise<TextPrediction> {
+		if (engine === "smollm") {
+			assertLocalRuntimeAvailable("SmolLM word completion");
+			assertNativeCapability("smollm", "SmolLM word completion (choose ngram or apple instead)");
+		}
 		// SmolLM's weights download here, in the interactive process (shown in the
 		// download HUD), only once the user has chosen SmolLM.
 		if (engine === "smollm") prefetchSmolLmWeights();
@@ -342,7 +349,7 @@ export async function smokeTestTextPredictDaemon(): Promise<void> {
 		const deadline = Date.now() + SMOKE_TEST_TIMEOUT_MS;
 		while (!connection && Date.now() < deadline && proc.exitCode === null) {
 			connection = await connectDaemon(endpoint);
-			if (!connection) await Bun.sleep(200);
+			if (!connection) await runtime.sleep(200);
 		}
 		if (!connection) {
 			throw new Error(

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { type } from "@oh-my-pi/omptype";
 import type { AgentToolResult } from "@oh-my-pi/pi-agent-core";
 import { isRecord, logger, untilAborted } from "@oh-my-pi/pi-utils";
@@ -700,7 +701,7 @@ async function saveBrowserOutputArtifact(session: ToolSession, fullText: string)
 	try {
 		const alloc = await session.allocateOutputArtifact?.("browser-original");
 		if (!alloc?.path || !alloc.id) return undefined;
-		await Bun.write(alloc.path, fullText);
+		await runtime.write(alloc.path, fullText);
 		return alloc.id;
 	} catch {
 		return undefined;

@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added default-on `smollm`, `live-voice`, and `wasm-grammars` Cargo features and an isolated Desktop build without SmolLM/Candle, native WebRTC/Opus, or downloadable WASM grammars; ngram/macOS Apple prediction, spelling, audio capture/playback, and built-in parsing remain available.
+- Added binary capability reporting so integrations can distinguish disabled native features from the full default build.
+
+### Fixed
+
+- Fixed native addon package loading under Node.js and Electron.
+
 ## [18.14.0] - 2026-10-29
 
 ### Breaking Changes

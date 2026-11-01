@@ -74,8 +74,6 @@ export type AuthProviderId =
 	| "sambanova"
 	| "siliconflow"
 	| "siliconflow-cn"
-	| "singularityapi-dev"
-	| "singularityapi-tech"
 	| "snowflake"
 	| "stencil"
 	| "stepfun"
@@ -98,7 +96,6 @@ export type AuthProviderId =
 	| "yolo-auto"
 	| "zai"
 	| "zai-coding-plan"
-	| "zenmux"
 	| "zhipu-coding-plan";
 
 /** Providers whose policy declares a `login` flow (the `/login` roster). */
@@ -163,8 +160,6 @@ export type LoginProviderId =
 	| "sambanova"
 	| "siliconflow"
 	| "siliconflow-cn"
-	| "singularityapi-dev"
-	| "singularityapi-tech"
 	| "snowflake"
 	| "stencil"
 	| "stepfun"
@@ -186,5 +181,4 @@ export type LoginProviderId =
 	| "yolo-auto"
 	| "zai"
 	| "zai-coding-plan"
-	| "zenmux"
 	| "zhipu-coding-plan";

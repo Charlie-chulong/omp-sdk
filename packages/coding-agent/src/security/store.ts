@@ -1,3 +1,4 @@
+import { runtime as platformRuntime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as vcs from "@oh-my-pi/pi-natives/vcs";
@@ -88,7 +89,7 @@ export async function writeSecurityFileAtomic(
 	} else {
 		await fs.mkdir(path.dirname(filePath), { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
 	}
-	const temporaryPath = `${filePath}.${process.pid}.${Bun.randomUUIDv7()}.tmp`;
+	const temporaryPath = `${filePath}.${process.pid}.${platformRuntime.randomUUIDv7()}.tmp`;
 	try {
 		// Bun.write cannot create exclusively; `wx` keeps concurrent atomic writers from sharing a temp file.
 		await fs.writeFile(temporaryPath, content, { encoding: "utf-8", mode: PRIVATE_FILE_MODE, flag: "wx" });
@@ -132,12 +133,12 @@ export async function writeSecurityBundleToDirectory(directory: string, input: S
 }
 
 async function readJsonFile(filePath: string): Promise<unknown> {
-	return JSON.parse(await Bun.file(filePath).text()) as unknown;
+	return JSON.parse(await platformRuntime.file(filePath).text()) as unknown;
 }
 
 async function readOptionalText(filePath: string): Promise<string | undefined> {
 	try {
-		return await Bun.file(filePath).text();
+		return await platformRuntime.file(filePath).text();
 	} catch (error) {
 		if (isEnoent(error)) return undefined;
 		throw error;
@@ -426,6 +427,6 @@ export class SecurityStore {
 
 	async storeDigest(): Promise<string> {
 		const index = await this.#readIndex();
-		return Bun.SHA256.hash(JSON.stringify(index), "hex");
+		return platformRuntime.SHA256.hash(JSON.stringify(index), "hex");
 	}
 }

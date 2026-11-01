@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as path from "node:path";
 import { createInterface } from "node:readline/promises";
 import type { VcsGitRepo } from "@oh-my-pi/pi-natives";
@@ -397,7 +398,7 @@ async function loadExistingChangelogEntries(paths: string[]): Promise<ExistingCh
 		paths.map(async path => {
 			let content: string;
 			try {
-				content = await Bun.file(path).text();
+				content = await runtime.file(path).text();
 			} catch (err) {
 				if (isEnoent(err)) return null;
 				throw err;

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Client for the per-model tiny-model workers.
  *
@@ -11,6 +12,7 @@
 import { $env, getTinyWorkerRuntimeDir, logger, prompt } from "@oh-my-pi/pi-utils";
 import packageJson from "../../package.json" with { type: "json" };
 import type { Setting } from "../config/registry";
+import { assertLocalRuntimeAvailable, isCoreSdk } from "../sdk-profile";
 import { isSettingsInitialized, settings } from "../config/settings";
 
 import { stageRunnerScript } from "../eval/runner-cache";
@@ -200,7 +202,7 @@ function mlxLaunch(
 ): TinyWorkerLaunch {
 	const spec = getTinyLocalModelSpec(modelKey);
 	if (!spec) throw new Error(`Unknown tiny local model: ${modelKey}`);
-	const tag = `mlx|${MLX_LM_VERSION}|${Bun.hash.crc32(MLX_SERVER_SCRIPT).toString(16)}`;
+	const tag = `mlx|${MLX_LM_VERSION}|${runtime.hash.crc32(MLX_SERVER_SCRIPT).toString(16)}`;
 	return {
 		label: `tiny mlx worker for ${modelKey}`,
 		backend: "mlx",
@@ -246,6 +248,7 @@ export function connectTinyWorker(
 	modelKey: TinyLocalModelKey,
 	runtimeDir = getTinyWorkerRuntimeDir(),
 ): Promise<WorkerHandle> {
+	assertLocalRuntimeAvailable("Tiny local helper inference");
 	return connectSharedWorker(launch, runtimeDir, tinyWorkerName(modelKey, launch.backend));
 }
 
@@ -336,6 +339,7 @@ export class TinyTitleClient {
 	 * online / non-local keys and for models already marked failed.
 	 */
 	prewarm(modelKey: string): void {
+		if (isCoreSdk()) return;
 		if (!isTinyLocalModelKey(modelKey) || this.#hasFailed(modelKey)) return;
 		try {
 			this.#ensureWorker(modelKey).handle.send({ type: "ping", id: String(++this.#nextRequestId) });
@@ -354,6 +358,7 @@ export class TinyTitleClient {
 		message: string,
 		optionsOrSignal?: AbortSignal | TinyTitleGenerateOptions,
 	): Promise<string | null> {
+		assertLocalRuntimeAvailable("Tiny local helper inference");
 		const options = normalizeTinyTitleGenerateOptions(optionsOrSignal);
 		if (!isTinyLocalModelKey(modelKey)) return null;
 		if (options.signal?.aborted || this.#hasFailed(modelKey)) return null;
@@ -376,6 +381,7 @@ export class TinyTitleClient {
 		messages: readonly TinyChatMessage[],
 		options: TinyModelChatOptions = {},
 	): Promise<string | null> {
+		assertLocalRuntimeAvailable("Tiny local helper inference");
 		if (!isTinyLocalModelKey(modelKey)) return null;
 		if (options.signal?.aborted || this.#hasFailed(modelKey)) return null;
 		const requested = options.maxTokens ?? COMPLETION_DEFAULT_MAX_NEW_TOKENS;
@@ -398,6 +404,7 @@ export class TinyTitleClient {
 	}
 
 	async downloadModel(modelKey: string, options: TinyTitleDownloadOptions = {}): Promise<TinyTitleDownloadResult> {
+		assertLocalRuntimeAvailable("Tiny local model download");
 		if (!isTinyLocalModelKey(modelKey)) return { ok: false };
 		if (options.signal?.aborted) return { ok: false };
 		const unsubscribe = options.onProgress ? this.onProgress(options.onProgress) : undefined;

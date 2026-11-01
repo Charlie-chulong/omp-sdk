@@ -1,3 +1,4 @@
+import { visibleWidth } from "../utils";
 import * as path from "node:path";
 import type { AssistantMessage, Usage } from "@oh-my-pi/pi-ai";
 import { type Component } from "../tui";
@@ -1034,11 +1035,11 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 		const connector = index === total - 1 ? theme.tree.last : theme.tree.branch;
 		lines.push(`   ${theme.fg("dim", connector)} ${this.#formatRow(row)}`.trimEnd());
 
-		const connectorWidth = Bun.stringWidth(connector);
+		const connectorWidth = visibleWidth(connector);
 		const continuation =
 			index === total - 1
 				? " ".repeat(connectorWidth)
-				: `${theme.tree.vertical}${" ".repeat(Math.max(0, connectorWidth - Bun.stringWidth(theme.tree.vertical)))}`;
+				: `${theme.tree.vertical}${" ".repeat(Math.max(0, connectorWidth - visibleWidth(theme.tree.vertical)))}`;
 		this.#appendUsageRows(lines, usageRows, `   ${continuation} `);
 	}
 

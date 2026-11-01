@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * AES-GCM encrypted local cache for auth-broker snapshots.
  *
@@ -246,7 +247,7 @@ function pumpCacheWrite(cachePath: string, queue: CacheWriteQueue, force: boolea
  */
 function cacheWriteSignature(opts: WriteAuthBrokerSnapshotCacheOptions): number | bigint {
 	const rows = opts.snapshot.credentials.map(({ rotatesInMs: _rotatesInMs, ...entry }) => entry);
-	return Bun.hash(`${opts.token}\u0000${opts.url}\u0000${opts.snapshot.generation}\u0000${JSON.stringify(rows)}`);
+	return runtime.hash(`${opts.token}\u0000${opts.url}\u0000${opts.snapshot.generation}\u0000${JSON.stringify(rows)}`);
 }
 
 /** Temp files older than this are debris from a killed process, never a live write. */

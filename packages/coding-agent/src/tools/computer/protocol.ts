@@ -1,3 +1,4 @@
+import type { Transferable } from "node:worker_threads";
 import type { ImageContent, TextContent } from "@oh-my-pi/pi-ai";
 import type { CaptureRegion, DesktopCapabilities, DesktopScreenState } from "@oh-my-pi/pi-natives";
 import * as prompt from "@oh-my-pi/pi-utils/prompt";
@@ -136,9 +137,9 @@ export type ComputerWorkerOutbound =
 	| { type: "control-request"; id: string; runId: string; reason: string; timeoutMs: number }
 	| { type: "closed" };
 
-/** Transport used by the worker core in Bun workers and tests. */
+/** Transport used by the worker core in worker threads and tests. */
 export interface ComputerWorkerTransport {
-	send(message: ComputerWorkerOutbound, transfer?: Bun.Transferable[]): void;
+	send(message: ComputerWorkerOutbound, transfer?: Transferable[]): void;
 	onMessage(handler: (message: ComputerWorkerInbound) => void): () => void;
 	close(): void;
 }

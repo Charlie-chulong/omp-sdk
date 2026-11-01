@@ -1,3 +1,4 @@
+import { Image } from "@oh-my-pi/pi-utils/runtime-image";
 import { inflateSync } from "node:zlib";
 import type { ImageContent } from "@oh-my-pi/pi-ai";
 import { decodeSixelToPngAsync } from "@oh-my-pi/pi-natives";
@@ -331,7 +332,7 @@ export async function encodeTerminalImage(image: ImageContent): Promise<string> 
 	if (image.mimeType === "image/png") {
 		png = await normalizePng(sourceBytes);
 	} else {
-		const sourceMetadata = await new Bun.Image(sourceBytes, { maxPixels: MAX_IMAGE_PIXELS }).metadata();
+		const sourceMetadata = await new Image(sourceBytes, { maxPixels: MAX_IMAGE_PIXELS }).metadata();
 		if (!dimensionsAllowed(sourceMetadata.width, sourceMetadata.height)) {
 			throw new Error("Terminal image dimensions exceed the encode limit");
 		}
@@ -398,7 +399,7 @@ async function validatePng(bytes: Uint8Array): Promise<void> {
 	const width = view.getUint32(16);
 	const height = view.getUint32(20);
 	if (!dimensionsAllowed(width, height)) throw new Error("PNG dimensions exceed the terminal image limit");
-	const metadata = await new Bun.Image(bytes, { maxPixels: MAX_IMAGE_PIXELS }).metadata();
+	const metadata = await new Image(bytes, { maxPixels: MAX_IMAGE_PIXELS }).metadata();
 	if (metadata.format !== "png" || metadata.width !== width || metadata.height !== height) {
 		throw new Error("PNG metadata is inconsistent");
 	}

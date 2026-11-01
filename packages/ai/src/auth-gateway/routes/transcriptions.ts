@@ -1,4 +1,4 @@
-import { logger } from "@oh-my-pi/pi-utils";
+import * as logger from "@oh-my-pi/pi-utils/logger";
 import { classifyGatewayError } from "../../error/gateway";
 import * as transcriptions from "../../providers/transcriptions-server";
 import { transcribeAudio } from "../../transcription";

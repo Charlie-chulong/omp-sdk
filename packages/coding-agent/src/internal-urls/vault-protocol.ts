@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { $which } from "@oh-my-pi/pi-utils";
@@ -243,7 +244,7 @@ export async function spawnObsidian(
 ): Promise<ObsidianSpawnResult> {
 	if (signal?.aborted) throw abortError();
 
-	const proc = Bun.spawn({
+	const proc = runtime.spawn({
 		cmd: [bin, ...args],
 		stdout: "pipe",
 		stderr: "pipe",
@@ -823,7 +824,7 @@ export class VaultProtocolHandler implements ProtocolHandler {
 			throw new Error(`vault:// URL must resolve to a file or directory: ${parsed.url}`);
 		}
 
-		const content = await Bun.file(realTargetPath).text();
+		const content = await runtime.file(realTargetPath).text();
 		return {
 			url: parsed.url,
 			content,

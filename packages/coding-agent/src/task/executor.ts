@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * In-process execution for subagents.
  *
@@ -2514,7 +2515,7 @@ async function driveSessionToResult(
 				}
 				throw err;
 			}
-			await untilAborted(abortSignal, () => Bun.sleep(250 * 2 ** (attempt - 1)));
+			await untilAborted(abortSignal, () => runtime.sleep(250 * 2 ** (attempt - 1)));
 		}
 	};
 

@@ -9,7 +9,7 @@
  * Checks open a short-lived read-only connection and answer every candidate key in one query;
  * they never create the database or touch its schema. Only recording a grant creates the file.
  */
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ToolTier } from "@oh-my-pi/pi-agent-core";

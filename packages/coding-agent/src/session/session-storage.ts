@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as fsp from "node:fs/promises";
 import * as os from "node:os";
@@ -514,8 +515,8 @@ const SESSION_PUBLISH_LOCK_POLL_MS = 2;
 const publishLockSleepBuffer = new Int32Array(new SharedArrayBuffer(4));
 
 function sleepSyncMs(ms: number): void {
-	if ("sleepSync" in Bun && typeof Bun.sleepSync === "function") {
-		Bun.sleepSync(ms);
+	if (typeof runtime.sleepSync === "function") {
+		runtime.sleepSync(ms);
 		return;
 	}
 	Atomics.wait(publishLockSleepBuffer, 0, 0, ms);
@@ -618,7 +619,7 @@ function readSessionHeaderIdSync(sessionPath: string): string | undefined {
 export function tryAcquireSessionLease(sessionId: string): FileLockHandle | null {
 	const name = /^[A-Za-z0-9_-]{1,128}$/.test(sessionId)
 		? sessionId
-		: `h-${Bun.hash.wyhash(sessionId).toString(16).padStart(16, "0")}`;
+		: `h-${runtime.hash.wyhash(sessionId).toString(16).padStart(16, "0")}`;
 	const lockPath = path.join(sessionOwnersDir(), name);
 	// Linux (abstract socket) and Windows (named mutex) locks never touch the
 	// filesystem; elsewhere the lock is a `flock` sidecar in that directory. The
@@ -664,7 +665,7 @@ function writeLinesToFileSync(target: string, lines: readonly string[]): void {
  * `target` must be a fresh path: a sink does not truncate an existing file.
  */
 async function writeLinesToFile(target: string, lines: readonly string[]): Promise<void> {
-	const sink = Bun.file(target).writer({ highWaterMark: LINE_STREAM_CHUNK });
+	const sink = runtime.file(target).writer({ highWaterMark: LINE_STREAM_CHUNK });
 	try {
 		for (const line of lines) {
 			// Backpressured writes can reject after end() has otherwise completed.
@@ -1042,7 +1043,7 @@ export class FileSessionStorage implements SessionStorage {
 			// Bun.Glob walks no symlink unless asked, and a transcript placed in
 			// a session directory as one — a launcher's, a supervisor's — is a
 			// transcript like any other (#15878)
-			return Array.from(new Bun.Glob(pattern).scanSync({ cwd: dir, followSymlinks: true })).map(name =>
+			return Array.from(new runtime.Glob(pattern).scanSync({ cwd: dir, followSymlinks: true })).map(name =>
 				path.join(dir, name),
 			);
 		} catch {
@@ -1061,7 +1062,7 @@ export class FileSessionStorage implements SessionStorage {
 	}
 
 	readText(path: string): Promise<string> {
-		return Bun.file(path).text();
+		return runtime.file(path).text();
 	}
 
 	readTextSync(path: string): string {
@@ -1088,7 +1089,7 @@ export class FileSessionStorage implements SessionStorage {
 	}
 
 	async writeText(path: string, content: string): Promise<void> {
-		await Bun.write(path, content, { createPath: true });
+		await runtime.write(path, content, { createPath: true });
 	}
 
 	async writeTextAtomic(fpath: string, content: string, options?: WriteTextAtomicOptions): Promise<void> {

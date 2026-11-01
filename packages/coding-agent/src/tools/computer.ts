@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { type Type, type } from "@oh-my-pi/omptype";
 import type { AgentToolResult, ToolApprovalDecision } from "@oh-my-pi/pi-agent-core";
 import type { Model } from "@oh-my-pi/pi-ai";
@@ -330,7 +331,7 @@ async function saveComputerOutputArtifact(session: ToolSession, fullText: string
 	try {
 		const alloc = await session.allocateOutputArtifact?.("computer-original");
 		if (!alloc?.path || !alloc.id) return undefined;
-		await Bun.write(alloc.path, fullText);
+		await writeFile(alloc.path, fullText);
 		return alloc.id;
 	} catch {
 		return undefined;

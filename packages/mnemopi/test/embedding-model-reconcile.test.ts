@@ -6,7 +6,7 @@
  * memories for re-embedding under the new model. A matching model is a no-op.
  */
 
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { describe, expect, it } from "bun:test";
 
 import { initBeam } from "@oh-my-pi/pi-mnemopi/core/beam";

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { ImageContent } from "@oh-my-pi/pi-ai";
 import type { PipeStreams } from "@oh-my-pi/pi-natives";
 import { logger } from "@oh-my-pi/pi-utils";
@@ -865,7 +866,7 @@ export class AsyncJobManager {
 				return false;
 			}
 
-			await Promise.race([loop, Bun.sleep(remainingMs)]);
+			await Promise.race([loop, runtime.sleep(remainingMs)]);
 			if (Date.now() >= deadline && this.hasPendingDeliveries(filter)) {
 				return false;
 			}
@@ -1001,7 +1002,7 @@ export class AsyncJobManager {
 		void this.#waitForJobDeliverySettledBounded(jobId)
 			.then(() =>
 				!bypassGrace && this.#retainedArtifactsCleanupGraceMs > 0
-					? Bun.sleep(this.#retainedArtifactsCleanupGraceMs)
+					? runtime.sleep(this.#retainedArtifactsCleanupGraceMs)
 					: undefined,
 			)
 			.then(cleanup)
@@ -1375,7 +1376,7 @@ export class AsyncJobManager {
 		let timedOut = false;
 		await Promise.race([
 			promise,
-			Bun.sleep(remainingMs).then(() => {
+			runtime.sleep(remainingMs).then(() => {
 				timedOut = true;
 			}),
 		]);

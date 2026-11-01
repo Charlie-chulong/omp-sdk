@@ -1,5 +1,5 @@
 import computerDescription from "../../prompts/tools/computer.md" with { type: "text" };
-// @ts-expect-error Bun imports this JavaScript source as text instead of evaluating its module shape.
+// @ts-expect-error The bundler imports this JavaScript source as text rather than evaluating its module shape.
 import computerJavascript from "./prelude.js" with { type: "text" };
 import computerPython from "./prelude.py" with { type: "text" };
 

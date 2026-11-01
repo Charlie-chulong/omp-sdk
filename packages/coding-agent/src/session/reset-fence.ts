@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Cross-process fence around spending one upstream account's saved reset.
  * A session's automatic executor and `omp usage reset` take the same lock file
@@ -23,13 +24,13 @@ export type MarkedRedeem = (
 
 /** Lock file for one `resetAccountLockKey`, beside the agent database unless `root` replaces it. */
 export function resetLockPath(lockKey: string, root = getAgentDbPath()): string {
-	return `${root}.reset-${Bun.hash(lockKey).toString(16)}`;
+	return `${root}.reset-${runtime.hash(lockKey).toString(16)}`;
 }
 
 export async function readResetMarker(lockPath: string): Promise<ResetMarker> {
 	let text: string;
 	try {
-		text = await Bun.file(lockPath).text();
+		text = await runtime.file(lockPath).text();
 	} catch (error) {
 		if (!isEnoent(error)) throw error;
 		text = "";
@@ -55,12 +56,12 @@ export async function withResetFence<T>(
 			if (Date.now() - marker.atMs < ATTEMPT_COOLDOWN_MS) return onRecent(marker);
 			return spend(async redeem => {
 				const attemptedAt = Date.now();
-				await Bun.write(lockPath, `pending:${attemptedAt}`);
+				await runtime.write(lockPath, `pending:${attemptedAt}`);
 				const outcome = await redeem();
 				if (outcome.code === "reset") {
-					await Bun.write(lockPath, `reset:${attemptedAt}`);
+					await runtime.write(lockPath, `reset:${attemptedAt}`);
 				} else if (outcome.code === "no_credit" || outcome.code === "nothing_to_reset") {
-					await Bun.write(lockPath, "");
+					await runtime.write(lockPath, "");
 				}
 				return { outcome, attemptedAt };
 			});

@@ -63,8 +63,6 @@ import {
 	sambanovaModelManagerOptions,
 	siliconflowCnModelManagerOptions,
 	siliconflowModelManagerOptions,
-	singularityApiDevModelManagerOptions,
-	singularityApiTechModelManagerOptions,
 	stepfunModelManagerOptions,
 	syntheticModelManagerOptions,
 	togetherModelManagerOptions,
@@ -77,7 +75,6 @@ import {
 	xaiOAuthModelManagerOptions,
 	xiaomiModelManagerOptions,
 	yoloAutoModelManagerOptions,
-	zenmuxModelManagerOptions,
 	zhipuCodingPlanModelManagerOptions,
 } from "./openai-compat";
 import {
@@ -152,8 +149,6 @@ const MODEL_MANAGER_FACTORIES: Readonly<Partial<Record<KnownProvider, ModelManag
 	sambanova: config => sambanovaModelManagerOptions(config),
 	siliconflow: config => siliconflowModelManagerOptions(config),
 	"siliconflow-cn": config => siliconflowCnModelManagerOptions(config),
-	"singularityapi-dev": config => singularityApiDevModelManagerOptions(config),
-	"singularityapi-tech": config => singularityApiTechModelManagerOptions(config),
 	stepfun: config => stepfunModelManagerOptions(config),
 	synthetic: config => syntheticModelManagerOptions(config),
 	together: config => togetherModelManagerOptions(config),
@@ -176,7 +171,6 @@ const MODEL_MANAGER_FACTORIES: Readonly<Partial<Record<KnownProvider, ModelManag
 		xiaomiModelManagerOptions({ ...config, providerId: "xiaomi-token-plan-sgp", tokenPlanRegion: "sgp" }),
 	"yolo-auto": config => yoloAutoModelManagerOptions(config),
 	zai: config => zaiModelManagerOptions(config),
-	zenmux: config => zenmuxModelManagerOptions(config),
 	"zhipu-coding-plan": config => zhipuCodingPlanModelManagerOptions(config),
 };
 

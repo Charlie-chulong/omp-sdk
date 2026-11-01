@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * A browser tab shown as a Tern browser picture-in-picture: every helper of
  * the tab API drives the PiP's native web view through Tern's browser op
@@ -818,7 +819,7 @@ export class TernTab implements InProcessRunTab {
 			if (value !== undefined) return value;
 			const left = deadline - Date.now();
 			if (left <= 0) throw new ToolError(`${label} timed out after ${timeoutMs}ms`);
-			await untilAborted(this.#signal, () => Bun.sleep(Math.min(delay, left)));
+			await untilAborted(this.#signal, () => runtime.sleep(Math.min(delay, left)));
 			delay = Math.min(100, Math.round(delay * 1.5));
 		}
 	}
@@ -1201,7 +1202,7 @@ export class TernTab implements InProcessRunTab {
 			const elapsed = Date.now() - started;
 			if (elapsed >= timeoutMs) break;
 			if (last.reason === "missing" && explicitTimeout === undefined && elapsed >= ZERO_MATCH_FAIL_FAST_MS) break;
-			await untilAborted(this.#signal, () => Bun.sleep(delay));
+			await untilAborted(this.#signal, () => runtime.sleep(delay));
 			delay = Math.min(250, Math.round(delay * 1.5));
 		}
 		const why =
@@ -1472,7 +1473,7 @@ export class TernTab implements InProcessRunTab {
 		const id = `omp-highlight-${crypto.randomUUID()}`;
 		await this.#kit("highlight", [spec, id]);
 		try {
-			await untilAborted(this.#signal, () => Bun.sleep(duration));
+			await untilAborted(this.#signal, () => runtime.sleep(duration));
 		} finally {
 			await this.#kit("removeOverlay", [id]).catch(() => undefined);
 		}
@@ -1700,7 +1701,7 @@ export class TernTab implements InProcessRunTab {
 					`page.waitForFunction() timed out after ${resolveWaitTimeout(this.#cellMs, opts?.timeout)}ms`,
 				);
 			}
-			await untilAborted(this.#signal, () => Bun.sleep(interval));
+			await untilAborted(this.#signal, () => runtime.sleep(interval));
 		}
 	}
 
@@ -1941,7 +1942,7 @@ export class TernTab implements InProcessRunTab {
 					`screenshot-${new Date().toISOString().replace(/[:.]/g, "-").slice(0, -1)}.${ext}`,
 				)
 			: path.join(os.tmpdir(), `omp-sshots-${Snowflake.next()}.${ext}`);
-		await Bun.write(dest, savedBuffer);
+		await runtime.write(dest, savedBuffer);
 		context.screenshots.push({
 			dest,
 			mimeType: savedMimeType,
@@ -1977,7 +1978,7 @@ export class TernTab implements InProcessRunTab {
 		const diffPath = opts.output
 			? resolveToCwd(opts.output, context.session.cwd)
 			: path.join(os.tmpdir(), `omp-screenshot-diff-${Snowflake.next()}.png`);
-		await Bun.write(diffPath, diff.png);
+		await runtime.write(diffPath, diff.png);
 		const resized = await resizeImage(
 			{ type: "image", data: diff.png.toString("base64"), mimeType: "image/png" },
 			{
@@ -2020,7 +2021,7 @@ export class TernTab implements InProcessRunTab {
 		const dest = opts.path
 			? resolveToCwd(opts.path, context.session.cwd)
 			: path.join(os.tmpdir(), `omp-browser-${Snowflake.next()}.pdf`);
-		await Bun.write(dest, Buffer.from(answer.data, "base64"));
+		await runtime.write(dest, Buffer.from(answer.data, "base64"));
 		return dest;
 	}
 
@@ -2327,7 +2328,7 @@ export class TernTab implements InProcessRunTab {
 			this.#evalUser("tab.saveState()", readOriginStorageInPage, [], null),
 		]);
 		const origins = isRecord(origin) ? [origin as unknown as StorageStateOrigin] : [];
-		await Bun.write(destination, `${JSON.stringify({ cookies, origins }, null, 2)}\n`);
+		await runtime.write(destination, `${JSON.stringify({ cookies, origins }, null, 2)}\n`);
 		return destination;
 	}
 
@@ -2561,7 +2562,7 @@ export class TernTab implements InProcessRunTab {
 		const destination = options.path
 			? resolveToCwd(options.path, context.session.cwd)
 			: path.join(os.tmpdir(), `omp-browser-${Snowflake.next()}.har`);
-		await Bun.write(destination, `${JSON.stringify(har, null, 2)}\n`);
+		await runtime.write(destination, `${JSON.stringify(har, null, 2)}\n`);
 		return destination;
 	}
 
@@ -2721,7 +2722,7 @@ export class TernTab implements InProcessRunTab {
 							});
 							if (error instanceof TernError && (error.kind === "closed" || error.kind === "not_found")) return;
 						}
-						await Bun.sleep(Math.max(0, intervalMs - (Date.now() - startedAt)));
+						await runtime.sleep(Math.max(0, intervalMs - (Date.now() - startedAt)));
 					}
 				})();
 			},

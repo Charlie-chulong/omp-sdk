@@ -1,8 +1,9 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { type } from "@oh-my-pi/omptype";
 import { isEnoent, logger, slugify } from "@oh-my-pi/pi-utils";
-import { YAML } from "bun";
+import { YAML } from "@oh-my-pi/pi-utils/runtime";
 import { expandAtImports } from "../discovery/at-imports";
 import { BUILTIN_TOOL_NAMES, normalizeToolNames } from "../tools/builtin-names";
 import { collectConfigCandidates } from "./watchdog";
@@ -152,7 +153,7 @@ export function getOrCreateAdvisorProviderSessionId(
 	ids: Map<string, string>,
 	primarySessionId: string | undefined,
 	slug: string,
-	randomSessionId: () => string = () => Bun.randomUUIDv7(),
+	randomSessionId: () => string = () => runtime.randomUUIDv7(),
 ): string | undefined {
 	if (!primarySessionId) return undefined;
 	const key = `${primarySessionId}${ADVISOR_PROVIDER_SESSION_KEY_SEPARATOR}${slug}`;
@@ -294,7 +295,7 @@ export async function resolveAdvisorConfigEditPath(
 	const dir = scope === "user" ? dirs.agentDir : dirs.projectDir;
 	const yml = path.join(dir, "WATCHDOG.yml");
 	const yaml = path.join(dir, "WATCHDOG.yaml");
-	if (!(await Bun.file(yml).exists()) && (await Bun.file(yaml).exists())) return yaml;
+	if (!(await runtime.file(yml).exists()) && (await runtime.file(yaml).exists())) return yaml;
 	return yml;
 }
 
@@ -308,7 +309,7 @@ export async function resolveAdvisorConfigEditPath(
 export async function loadWatchdogConfigFile(filePath: string): Promise<WatchdogConfigDoc> {
 	let text: string;
 	try {
-		text = await Bun.file(filePath).text();
+		text = await runtime.file(filePath).text();
 	} catch (err) {
 		if (!isEnoent(err))
 			logger.warn("Advisor config: failed to read for edit", { path: filePath, error: String(err) });
@@ -456,5 +457,5 @@ export async function saveWatchdogConfigFile(filePath: string, doc: WatchdogConf
 		}
 		return;
 	}
-	await Bun.write(filePath, content);
+	await runtime.write(filePath, content);
 }

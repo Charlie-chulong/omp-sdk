@@ -9,7 +9,7 @@
  * transient) through `AuthStorage.remove(credentialId)` and suppresses the
  * Bearer injection, so the next request surfaces a clean auth error instead.
  */
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { afterEach, beforeEach, describe, expect, test, vi } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";

@@ -314,6 +314,39 @@ it("explicit yolo approval mode skips the ACP permission gate", async () => {
 	expect(bashTool.executeCalls).toBe(1);
 });
 
+it("live mode changes gate an already-registered ACP mutation tool in both directions", async () => {
+	const filename = tempDir.join("permission-delete.txt");
+	const deleteTool = makeFakeTool("delete");
+	deleteTool.execute = async () => {
+		await Bun.file(filename).unlink();
+		return { content: [{ type: "text", text: "deleted" }] };
+	};
+	const bridge = makeBridge({ outcome: "selected", optionId: "reject_once", kind: "reject_once" });
+	session = await createSession([deleteTool], bridge, { "tools.approvalMode": "yolo" });
+	await session.setActiveToolsByName(["delete"]);
+	const gatedDelete = session.agent.state.tools.find(tool => tool.name === "delete")!;
+	await Bun.write(filename, "recoverable");
+	await gatedDelete.execute("delete-yolo", { path: filename }, undefined, undefined as never, undefined as never);
+	expect(await Bun.file(filename).exists()).toBe(false);
+
+	await Bun.write(filename, "recoverable");
+	session.setApprovalMode("always-ask");
+	await expect(
+		gatedDelete.execute("delete-ask", { path: filename }, undefined, undefined as never, undefined as never),
+	).rejects.toThrow(/rejected by user/);
+	expect(await Bun.file(filename).text()).toBe("recoverable");
+
+	session.setApprovalMode("yolo");
+	await gatedDelete.execute(
+		"delete-yolo-again",
+		{ path: filename },
+		undefined,
+		undefined as never,
+		undefined as never,
+	);
+	expect(await Bun.file(filename).exists()).toBe(false);
+});
+
 it("explicit yolo still gates tools whose per-tool policy requires a prompt", async () => {
 	const bashTool = makeFakeTool("bash");
 	const bridge = makeBridge({ outcome: "selected", optionId: "allow_once", kind: "allow_once" });

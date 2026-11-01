@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Native (Tern Surface Protocol) backend: owns the surfaces a TSP terminal
  * shows, sends reconciled frames under credit-based flow control, uploads
@@ -138,7 +139,7 @@ async function cacheBlob(dir: string, blob: NativeBlob): Promise<void> {
 	const target = path.join(dir, blob.id);
 	const temp = `${target}.tmp${process.pid}`;
 	try {
-		if (await Bun.file(target).exists()) return;
+		if (await runtime.file(target).exists()) return;
 		// Not `Bun.write`: it would create a missing folder, which only Tern may.
 		await fs.promises.writeFile(temp, blob.bytes);
 		await fs.promises.rename(temp, target);
@@ -323,8 +324,8 @@ export class NativeBackend {
 		this.#credits = TSP_DEFAULT_CREDITS;
 		this.#applyHello(hello);
 		this.#mirror = options.mirror === true;
-		this.#recordPath = options.recordPath ?? (Bun.env.PI_TUI_TSP_RECORD || undefined);
-		this.#stats = options.stats ?? Bun.env.PI_TUI_NATIVE_STATS === "1";
+		this.#recordPath = options.recordPath ?? (process.env.PI_TUI_TSP_RECORD || undefined);
+		this.#stats = options.stats ?? process.env.PI_TUI_NATIVE_STATS === "1";
 		this.#scheduler = options.scheduler ?? DEFAULT_SCHEDULER;
 		this.#inline = this.#newSurface("inline");
 	}
@@ -620,7 +621,7 @@ export class NativeBackend {
 			for (const blob of fresh) this.#sendBlob(blob);
 			return;
 		}
-		const dir = Bun.env.TERN_BLOB_DIR;
+		const dir = process.env.TERN_BLOB_DIR;
 		if (dir) {
 			for (const blob of fresh) this.#blobs.set(blob.id, blob);
 			void this.#cacheBlobs(dir, fresh);

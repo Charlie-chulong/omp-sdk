@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type * as nodeFs from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -154,7 +155,7 @@ function extractUserStats(sessionFile: string, folder: string, entry: SessionMes
 		repetition: metrics.repetition,
 		blame: metrics.blame,
 		prose,
-		proseHash: prose ? Bun.hash(prose).toString(16) : "",
+		proseHash: prose ? runtime.hash(prose).toString(16) : "",
 	};
 }
 
@@ -608,7 +609,7 @@ export async function parseSessionFile(
 		const handle = await fs.open(sessionPath, "r");
 		try {
 			info = await handle.stat();
-			const file = Bun.file(handle.fd);
+			const file = runtime.file(handle.fd);
 			let resume = state?.version === 1 && state.offset === fromOffset;
 			if (resume && state) {
 				reset =
@@ -617,7 +618,7 @@ export async function parseSessionFile(
 					(info.size === state.size && info.mtimeMs !== state.mtimeMs);
 				if (!reset) {
 					const previous = await readCheckpoint(handle, fromOffset);
-					reset = Bun.hash(previous).toString(16) !== state.checkpoint;
+					reset = runtime.hash(previous).toString(16) !== state.checkpoint;
 				}
 				resume = !reset;
 			}
@@ -636,7 +637,7 @@ export async function parseSessionFile(
 				checkpointStart >= readStart
 					? bytes.subarray(checkpointStart - readStart, newOffset - readStart)
 					: await readCheckpoint(handle, newOffset);
-			checkpoint = Bun.hash(previous).toString(16);
+			checkpoint = runtime.hash(previous).toString(16);
 		} finally {
 			await handle.close();
 		}
@@ -728,7 +729,7 @@ export async function listAllSessionFiles(): Promise<string[]> {
  */
 export async function getSessionEntry(sessionPath: string, entryId: string): Promise<SessionEntry | null> {
 	try {
-		for await (const line of readLines(Bun.file(sessionPath).stream())) {
+		for await (const line of readLines(runtime.file(sessionPath).stream())) {
 			const entry = parseJsonLine(line, 0, line.length);
 			if (entry && "id" in entry && entry.id === entryId) {
 				return entry;

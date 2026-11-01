@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 // Ported from NousResearch/hermes-agent (MIT) — tools/tts_tool.py L167-171, L896-959.
 // Speech backends are catalog models selected through the speech role chain.
 
@@ -16,6 +17,7 @@ import ttsDescription from "../prompts/tools/tts.md" with { type: "text" };
 import { DEFAULT_TTS_VOICE, KOKORO_VOICES } from "../tts/models";
 import { ttsClient } from "../tts/tts-client";
 import { encodeWav } from "../tts/wav";
+import { isCoreSdk } from "../sdk-profile";
 import { formatPathRelativeToCwd, resolveToCwd } from "./path-utils";
 
 import { cfgTtsLocalSpeed, cfgTtsLocalVoice } from "../tts/settings";
@@ -118,7 +120,7 @@ async function synthesizeCloud(
 			signal,
 		},
 	);
-	await Bun.write(outputPath, result.audio);
+	await runtime.write(outputPath, result.audio);
 	const voiceId = params.voice_id ?? (model.api === "xai-tts" ? DEFAULT_XAI_VOICE_ID : "default");
 	const backend: Exclude<TtsBackend, "local-inference"> = model.api === "xai-tts" ? "xai-tts" : "openai-speech";
 	return {
@@ -157,7 +159,7 @@ async function synthesizeLocal(
 
 	const { wavPath, substituted } = resolveLocalWavPath(outputPath);
 	const wav = encodeWav(audio.pcm, audio.sampleRate);
-	await Bun.write(wavPath, wav);
+	await runtime.write(wavPath, wav);
 	const displayPath = formatPathRelativeToCwd(wavPath, cwd);
 	const note = substituted
 		? ` No local MP3 encoder is bundled, so WAV (PCM16) was written instead of the requested container.`
@@ -178,11 +180,14 @@ export const ttsTool: CustomTool<typeof ttsSchema, TtsToolDetails> = {
 	label: "Speech Generation",
 	strict: false,
 	approval: "write",
-	description: prompt.render(ttsDescription, {
-		localVoices: KOKORO_VOICES.map(v => (v.id === DEFAULT_TTS_VOICE ? `${v.id} (default)` : v.id)).join(", "),
-		xaiVoices: formatVoiceList(),
-		maxLength: XAI_MAX_TEXT_LENGTH.toLocaleString("en-US"),
-	}),
+	get description() {
+		return prompt.render(ttsDescription, {
+			localInference: !isCoreSdk(),
+			localVoices: KOKORO_VOICES.map(v => (v.id === DEFAULT_TTS_VOICE ? `${v.id} (default)` : v.id)).join(", "),
+			xaiVoices: formatVoiceList(),
+			maxLength: XAI_MAX_TEXT_LENGTH.toLocaleString("en-US"),
+		});
+	},
 	parameters: ttsSchema,
 	async execute(
 		_toolCallId: string,

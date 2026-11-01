@@ -11,7 +11,7 @@ import { complete, stream } from "@oh-my-pi/pi-ai/stream";
 import type { Api, Context, ImageContent, Model, OptionsForApi, Tool, ToolResultMessage } from "@oh-my-pi/pi-ai/types";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
 import { getBundledModel } from "@oh-my-pi/pi-catalog/models";
-import { $which } from "@oh-my-pi/pi-utils";
+import { encodeBase64, $which } from "@oh-my-pi/pi-utils";
 import { removeWithRetries } from "../../utils/src/temp";
 import { e2eApiKey, resolveApiKey } from "./oauth";
 
@@ -232,7 +232,7 @@ async function handleImage<TApi extends Api>(model: Model<TApi>, options?: Optio
 	// Read the test image
 	const imagePath = path.join(import.meta.dir, "data", "red-circle.png");
 	const imageBuffer = await fs.readFile(imagePath);
-	const base64Image = imageBuffer.toBase64();
+	const base64Image = encodeBase64(imageBuffer);
 
 	const imageContent: ImageContent = {
 		type: "image",

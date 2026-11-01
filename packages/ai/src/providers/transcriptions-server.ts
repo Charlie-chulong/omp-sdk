@@ -1,3 +1,4 @@
+import { decodeBase64Bytes } from "@oh-my-pi/pi-utils";
 import { type } from "@oh-my-pi/omptype";
 import * as AIError from "../error";
 import type {
@@ -165,7 +166,7 @@ function decodeBase64(data: string): Uint8Array {
 		throw new TranscriptionWireError(400, "input_audio.data must be valid base64");
 	}
 	try {
-		return Uint8Array.fromBase64(data);
+		return decodeBase64Bytes(data);
 	} catch (error) {
 		throw new TranscriptionWireError(400, "input_audio.data must be valid base64", { cause: error });
 	}

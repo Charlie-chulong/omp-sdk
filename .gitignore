@@ -11,6 +11,7 @@ target/
 .xwin-cache/
 *.tsbuildinfo
 *.node
+packages/natives/native/desktop/
 *.b64.js
 /result
 /result-*

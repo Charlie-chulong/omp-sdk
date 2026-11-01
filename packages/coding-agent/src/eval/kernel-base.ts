@@ -244,12 +244,23 @@ export abstract class BaseKernel<TExecuteOptions extends KernelExecuteOptions = 
 		this.#proc = proc;
 		this.#stdin = proc.stdin;
 		this.#exitedPromise = proc.exited;
-		void this.#exitedPromise.then(code => {
-			this.#markDead();
-			this.#abortPendingExecutions(`${this.#options.languageName} kernel exited with code ${code}`, {
-				kernelKilled: true,
-			});
-		});
+		void this.#exitedPromise.then(
+			code => {
+				this.#markDead();
+				this.#abortPendingExecutions(`${this.#options.languageName} kernel exited with code ${code}`, {
+					kernelKilled: true,
+				});
+			},
+			error => {
+				this.#markDead();
+				this.#abortPendingExecutions(
+					`${this.#options.languageName} kernel process failed: ${error instanceof Error ? error.message : String(error)}`,
+					{
+						kernelKilled: true,
+					},
+				);
+			},
+		);
 
 		this.#startReader(proc.stdout as ReadableStream<Uint8Array>);
 		this.#startStderrDrain(proc.stderr as ReadableStream<Uint8Array>);

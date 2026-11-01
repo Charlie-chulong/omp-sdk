@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { type } from "@oh-my-pi/omptype";
@@ -78,7 +79,7 @@ async function readRecord(filePath: string): Promise<StoredRecord | undefined> {
 		if (path.basename(filePath) !== recordFileName(record.id)) {
 			throw new Error("Record id does not match its filename");
 		}
-		return { record, revision: new Bun.CryptoHasher("sha256").update(bytes).digest("hex") };
+		return { record, revision: new runtime.CryptoHasher("sha256").update(bytes).digest("hex") };
 	} catch (error) {
 		if (isEnoent(error)) return undefined;
 		throw new Error(`Failed to read BTW history ${filePath}: ${toError(error).message}`, { cause: error });
@@ -103,7 +104,7 @@ function historyDirectory(artifactsDir: string, scope: string | undefined): stri
 	const root = path.join(artifactsDir, "btw-history");
 	if (scope === undefined) return root;
 	// Session ids come from session headers; never let one escape the history root.
-	const segment = /^[\w-]+$/.test(scope) ? scope : new Bun.CryptoHasher("sha256").update(scope).digest("hex");
+	const segment = /^[\w-]+$/.test(scope) ? scope : new runtime.CryptoHasher("sha256").update(scope).digest("hex");
 	return path.join(root, "sessions", segment);
 }
 
@@ -217,7 +218,7 @@ export class BtwHistoryStore {
 				else await writeFileAtomically(titlePath, title);
 			}
 			await writeFileAtomically(filePath, content);
-			this.#revisions.set(snapshot.id, new Bun.CryptoHasher("sha256").update(content).digest("hex"));
+			this.#revisions.set(snapshot.id, new runtime.CryptoHasher("sha256").update(content).digest("hex"));
 			this.#records.set(snapshot.id, snapshot);
 			this.#refreshSnapshot();
 			if (getBtwLatestTurn(snapshot).status !== "running") {

@@ -1,3 +1,4 @@
+import { encodeBase64 } from "@oh-my-pi/pi-utils";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -166,7 +167,7 @@ const RED_1X1_PNG_BASE64 =
 async function makeRedPng(width: number, height: number): Promise<string> {
 	const seed = Buffer.from(RED_1X1_PNG_BASE64, "base64");
 	const upscaled = await new Bun.Image(seed).resize(width, height, { filter: "nearest" }).png().bytes();
-	return Buffer.from(upscaled).toBase64();
+	return encodeBase64(Buffer.from(upscaled));
 }
 
 async function makeRedWebP(width: number, height: number): Promise<string> {
@@ -175,7 +176,7 @@ async function makeRedWebP(width: number, height: number): Promise<string> {
 		.resize(width, height, { filter: "nearest" })
 		.webp({ quality: 90 })
 		.bytes();
-	return Buffer.from(upscaled).toBase64();
+	return encodeBase64(Buffer.from(upscaled));
 }
 
 // Fixtures are synthesized once and shared read-only — `resizeImage` never mutates
@@ -348,7 +349,7 @@ describe("resizeImage decode fallback", () => {
 		png[24] = 8;
 		png[25] = 2;
 
-		const result = await resizeImage({ type: "image", data: png.toBase64(), mimeType: "image/png" });
+		const result = await resizeImage({ type: "image", data: encodeBase64(png), mimeType: "image/png" });
 
 		expect(result.width).toBe(1900);
 		expect(result.height).toBe(2474);
@@ -370,7 +371,7 @@ describe("resizeImage decode fallback", () => {
 		jpeg.writeUInt16BE(1900, 9);
 		jpeg[11] = 3;
 
-		const result = await resizeImage({ type: "image", data: jpeg.toBase64(), mimeType: "image/jpeg" });
+		const result = await resizeImage({ type: "image", data: encodeBase64(jpeg), mimeType: "image/jpeg" });
 
 		expect(result.width).toBe(1900);
 		expect(result.height).toBe(2474);
@@ -454,7 +455,7 @@ describe("fitImage", () => {
 		const pixels = new Uint8Array(401 * 41 * 4);
 		for (let i = 0; i < pixels.length; i += 4) pixels.set([255, 0, 0, 255], i);
 		pixels.set([0, 0, 255, 255], 0);
-		const strip = encodeRawPng(pixels, 401, 41, 4).toBase64();
+		const strip = encodeBase64(encodeRawPng(pixels, 401, 41, 4));
 
 		const { image, content } = await fitImage({ type: "image", data: strip, mimeType: "image/png" }, JEV);
 
@@ -477,7 +478,7 @@ describe("fitImage", () => {
 		const maxBytes = noise.length / 2;
 
 		const { image } = await fitImage(
-			{ type: "image", data: noise.toBase64(), mimeType: "image/png" },
+			{ type: "image", data: encodeBase64(noise), mimeType: "image/png" },
 			{ ...JEV, maxBytes },
 		);
 
@@ -490,7 +491,7 @@ describe("fitImage", () => {
 		const noise = makeNoisePng(400, 400);
 
 		await expect(
-			fitImage({ type: "image", data: noise.toBase64(), mimeType: "image/png" }, { ...JEV, maxBytes: 64 }),
+			fitImage({ type: "image", data: encodeBase64(noise), mimeType: "image/png" }, { ...JEV, maxBytes: 64 }),
 		).rejects.toThrow("no encoding fits 64 bytes");
 	});
 });

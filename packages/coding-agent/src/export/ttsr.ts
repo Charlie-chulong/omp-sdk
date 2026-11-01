@@ -13,6 +13,7 @@ import * as path from "node:path";
 import type { Judge, JudgeOptions, NoulQuestion } from "@oh-my-pi/pi-ai";
 import { AstMatchStrictness, astMatch, countTokens, Encoding } from "@oh-my-pi/pi-natives";
 import { logger } from "@oh-my-pi/pi-utils";
+import { RuntimeGlob } from "@oh-my-pi/pi-utils/runtime";
 import { compileRuleCondition, type Rule } from "../capability/rule";
 import { ensureGrammar } from "../utils/grammars";
 import type { TtsrSettings } from "./ttsr-settings";
@@ -104,7 +105,7 @@ export async function judgeRules(
 
 interface ToolScope {
 	toolName?: string;
-	pathGlob?: Bun.Glob;
+	pathGlob?: RuntimeGlob;
 	pathPattern?: string;
 }
 
@@ -125,7 +126,7 @@ interface TtsrEntry {
 	/** Judge question; set → conditions only prefilter completed output, never stream matches. */
 	question?: string;
 	scope: TtsrScope;
-	globalPathGlobs?: Bun.Glob[];
+	globalPathGlobs?: RuntimeGlob[];
 }
 
 /** Tracks when a rule was last injected (for repeat gating). */
@@ -614,7 +615,7 @@ export class TtsrManager {
 		return compiled;
 	}
 
-	#compileGlobalPathGlobs(globs: Rule["globs"]): Bun.Glob[] | undefined {
+	#compileGlobalPathGlobs(globs: Rule["globs"]): RuntimeGlob[] | undefined {
 		if (!globs || globs.length === 0) {
 			return undefined;
 		}
@@ -622,7 +623,7 @@ export class TtsrManager {
 		const compiled = globs
 			.map(glob => glob.trim())
 			.filter(glob => glob.length > 0)
-			.map(glob => new Bun.Glob(glob));
+			.map(glob => new RuntimeGlob(glob));
 		return compiled.length > 0 ? compiled : undefined;
 	}
 
@@ -646,7 +647,7 @@ export class TtsrManager {
 		return {
 			toolName,
 			pathPattern,
-			pathGlob: new Bun.Glob(pathPattern),
+			pathGlob: new RuntimeGlob(pathPattern),
 		};
 	}
 
@@ -728,7 +729,7 @@ export class TtsrManager {
 		return pathValue.replaceAll("\\", "/");
 	}
 
-	#matchesGlob(glob: Bun.Glob, filePaths: string[] | undefined): boolean {
+	#matchesGlob(glob: RuntimeGlob, filePaths: string[] | undefined): boolean {
 		if (!filePaths || filePaths.length === 0) {
 			return false;
 		}

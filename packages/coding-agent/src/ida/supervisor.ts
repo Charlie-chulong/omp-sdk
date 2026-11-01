@@ -9,6 +9,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { type FileLockHandle, logger, readLines, untilAborted } from "@oh-my-pi/pi-utils";
+import { runtime as platformRuntime } from "@oh-my-pi/pi-utils/runtime";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import type { Subprocess } from "bun";
 import { hostHasInheritableConsole, shouldHideKernelWindow } from "../eval/py/spawn-options";
@@ -131,8 +132,8 @@ export class IdaWorker {
 	#lastUsed = Date.now();
 	/** Idle time after which the database is saved and closed; 0 disables. */
 	readonly #idleCloseMs: number;
-	#autosaveTimer: Timer | undefined;
-	#idleTimer: Timer | undefined;
+	#autosaveTimer: NodeJS.Timeout | undefined;
+	#idleTimer: NodeJS.Timeout | undefined;
 
 	private constructor(
 		loc: IdbLocation,
@@ -165,7 +166,7 @@ export class IdaWorker {
 		idleCloseMs: number,
 	): Promise<IdaWorker> {
 		const script = await stageRunnerScript("omp-ida-worker", "py", IDA_WORKER);
-		const proc = Bun.spawn([runtime.pythonPath, "-u", script], {
+		const proc = platformRuntime.spawn([runtime.pythonPath, "-u", script], {
 			cwd: loc.dir,
 			env: runtime.env,
 			stdin: "pipe",

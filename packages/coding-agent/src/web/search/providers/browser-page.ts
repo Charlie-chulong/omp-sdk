@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { FetchImpl } from "@oh-my-pi/pi-ai";
 import { getProjectDir, untilAborted } from "@oh-my-pi/pi-utils";
 import type { Page } from "puppeteer-core";
@@ -95,7 +96,7 @@ async function browseHtmlPage(
 			);
 		}
 		for (let attempt = 0; attempt < attempts; attempt++) {
-			if (attempt > 0 && options.retryDelayMs) await Bun.sleep(options.retryDelayMs);
+			if (attempt > 0 && options.retryDelayMs) await runtime.sleep(options.retryDelayMs);
 
 			const response = await untilAborted(signal, () =>
 				activePage.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs }),

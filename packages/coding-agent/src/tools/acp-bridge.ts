@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Shared ACP client bridge routing for file-write sites.
  *
@@ -85,7 +86,7 @@ export async function routeWriteThroughBridge(
 	if (!bridge?.capabilities.writeTextFile || !bridge.writeTextFile) return undefined;
 	if (!(await shouldRouteWriteThroughBridge(session, requestedPath, absolutePath))) return undefined;
 
-	const changeType = (await Bun.file(absolutePath).exists()) ? FileChangeType.Changed : FileChangeType.Created;
+	const changeType = (await runtime.file(absolutePath).exists()) ? FileChangeType.Changed : FileChangeType.Created;
 	// The ACP protocol has no cancellation for fs writes; the most we can do is
 	// refuse to start one after the tool was aborted. Racing the promise would
 	// report failure while the editor still applies the write.
@@ -114,7 +115,7 @@ export async function routeWriteThroughBridge(
 	// instead of a silently wrong tag.
 	let actualText = content;
 	try {
-		actualText = await Bun.file(absolutePath).text();
+		actualText = await runtime.file(absolutePath).text();
 	} catch {
 		// Unreadable right after a reported-successful write; nothing more we
 		// can verify here.

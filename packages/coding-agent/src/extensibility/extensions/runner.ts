@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Extension runner - executes extensions and manages their lifecycle.
  */
@@ -368,7 +369,7 @@ async function raceHandlerWithTimeout<T>(
 					() => undefined,
 					() => undefined,
 				),
-				Bun.sleep(0),
+				runtime.sleep(0),
 			]);
 		}
 		return result;
@@ -1978,11 +1979,11 @@ export class ExtensionRunner {
 					replacement.some((block, index) => {
 						const previous = expected[index];
 						if (!block || typeof block !== "object" || block.type !== previous?.type) return true;
-						if (block.type !== "text") return !Bun.deepEquals(block, previous);
+						if (block.type !== "text") return !runtime.deepEquals(block, previous);
 						return (
 							typeof block.text !== "string" ||
 							previous?.type !== "text" ||
-							!Bun.deepEquals(textMetadata(block), textMetadata(previous))
+							!runtime.deepEquals(textMetadata(block), textMetadata(previous))
 						);
 					})
 				) {
@@ -2277,7 +2278,7 @@ export class ExtensionRunner {
 						const historyIndex = getContextHistoryIndex(previousMessage);
 						if (historyIndex === undefined) continue;
 						setContextHistoryIndex(message, historyIndex);
-						if (!Bun.deepEquals(message, previousMessage)) clearContextHistoryIndex(message);
+						if (!runtime.deepEquals(message, previousMessage)) clearContextHistoryIndex(message);
 					}
 					currentMessages = nextMessages;
 				}
@@ -2288,7 +2289,7 @@ export class ExtensionRunner {
 			const historyIndex = getContextHistoryIndex(message);
 			const historyMessage = historyIndex === undefined ? undefined : messages[historyIndex];
 			if (historyMessage && historyIndex !== undefined) setContextHistoryIndex(historyMessage, historyIndex);
-			const unchanged = historyMessage !== undefined && Bun.deepEquals(message, historyMessage);
+			const unchanged = historyMessage !== undefined && runtime.deepEquals(message, historyMessage);
 			clearContextHistoryIndex(message);
 			if (historyMessage) clearContextHistoryIndex(historyMessage);
 			if (!unchanged) markPerCallContextMessage(message);

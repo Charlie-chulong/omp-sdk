@@ -1,3 +1,4 @@
+import { encodeBase64 } from "@oh-my-pi/pi-utils";
 import type { BlobDestinationId } from "./destinations";
 import type { BlobUploader, BlobUploadRequest, RemoteDeleteAction } from "./publication";
 import {
@@ -184,7 +185,7 @@ async function oauthSignature(
 	const signatureBase = `${method}&${oauthEncode(oauthBaseUrl(url))}&${oauthEncode(normalized)}`;
 	const keyBytes = new TextEncoder().encode(`${oauthEncode(consumerSecret)}&${oauthEncode(tokenSecret)}`);
 	const key = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
-	return new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(signatureBase))).toBase64();
+	return encodeBase64(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(signatureBase))));
 }
 
 async function oauthParameters(

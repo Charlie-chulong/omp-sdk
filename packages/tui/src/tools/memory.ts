@@ -1,3 +1,4 @@
+import { visibleWidth } from "../utils";
 import type { NativeToolView, ToolRenderer } from "./renderer";
 /**
  * Inline TUI renderers for the long-term memory tools (`retain`, `recall`,
@@ -72,7 +73,7 @@ function retainComponent(contents: string[], header: string, getExpanded: () => 
 		const limit = expanded ? contents.length : PREVIEW_LIMITS.COLLAPSED_ITEMS;
 		const shown = contents.slice(0, limit);
 		const bullet = theme.format.bullet;
-		const contentWidth = Math.max(8, width - 2 - Bun.stringWidth(bullet) - 1);
+		const contentWidth = Math.max(8, width - 2 - visibleWidth(bullet) - 1);
 		for (const content of shown) {
 			const value = truncateToWidth(content, contentWidth, Ellipsis.Unicode);
 			lines.push(`  ${theme.fg("muted", bullet)} ${theme.fg("toolOutput", value)}`);

@@ -3,6 +3,7 @@ const trailingEvents = new WeakSet<ServerSentEvent>();
 import { abortableSource } from "./abortable";
 import { parseStreamingJson } from "./json-parse";
 import { isWhitespace } from "./json-lexer";
+import { runtime } from "./runtime";
 
 const LF = 0x0a;
 const CR = 0x0d;
@@ -51,7 +52,7 @@ export async function* readJsonl<T>(stream: ReadableStream<Uint8Array>, signal?:
 			const tail = buffer.flush();
 			if (tail) {
 				buffer.clear();
-				const { values, error, done } = Bun.JSONL.parseChunk(tail, 0, tail.length);
+				const { values, error, done } = runtime.JSONL.parseChunk(tail, 0, tail.length);
 				if (values.length > 0) {
 					yield* values as T[];
 				}
@@ -226,7 +227,7 @@ export class ConcatSink {
 		}
 
 		if (this.isEmpty) {
-			const { values, error, read, done } = Bun.JSONL.parseChunk(chunk, beg, end);
+			const { values, error, read, done } = runtime.JSONL.parseChunk(chunk, beg, end);
 			if (values.length > 0) {
 				yield* values as T[];
 			}
@@ -243,7 +244,7 @@ export class ConcatSink {
 		space.set(chunk.subarray(beg, end), offset);
 		this.#length = total;
 
-		const { values, error, read, done } = Bun.JSONL.parseChunk(space, 0, total);
+		const { values, error, read, done } = runtime.JSONL.parseChunk(space, 0, total);
 		if (values.length > 0) {
 			yield* values as T[];
 		}
@@ -603,7 +604,7 @@ export async function* readSseEvents(
 /**
  * Parse a complete JSONL string, skipping malformed lines instead of throwing.
  *
- * Uses `Bun.JSONL.parseChunk` internally. On parse errors, the malformed
+ * Uses the shared runtime JSONL parser internally. On parse errors, the malformed
  * region is skipped up to the next newline and parsing continues.
  *
  * @param options.onMalformedRecord Called once for every skipped JSONL record.
@@ -618,7 +619,7 @@ export function parseJsonlLenient<T>(buffer: string, options: { onMalformedRecor
 	const len = buffer.length;
 
 	while (cursor < len) {
-		const { values, error, read, done } = Bun.JSONL.parseChunk(buffer, cursor);
+		const { values, error, read, done } = runtime.JSONL.parseChunk(buffer, cursor);
 		if (values.length > 0) {
 			const ext = values as T[];
 			if (!entries) {

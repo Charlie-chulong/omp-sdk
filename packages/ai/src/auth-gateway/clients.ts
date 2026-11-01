@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Scoped auth-gateway clients.
  *
@@ -124,7 +125,7 @@ export function parseAuthGatewayClients(text: string): AuthGatewayClient[] {
 
 /** Hex SHA-256 digest of a bearer token, as `tokenSha256` records it. */
 export function hashAuthGatewayToken(token: string): string {
-	return new Bun.CryptoHasher("sha256").update(token).digest("hex");
+	return new runtime.CryptoHasher("sha256").update(token).digest("hex");
 }
 
 type RestrictionSessions = Pick<SessionsApi, "restrict" | "unrestrict">;

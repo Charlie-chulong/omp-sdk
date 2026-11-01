@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Fullscreen `/advisor configure` overlay: a mouse- and keyboard-driven editor
  * for the `WATCHDOG.yml` advisor roster at project or user level.
@@ -282,7 +283,7 @@ function describeSyncBacklogMode(mode: AdvisorSyncBacklog): string {
 /** Soft-wrap plain text to `width`, returning at least one (possibly empty) line. */
 function wrap(text: string, width: number): string[] {
 	if (!text) return [""];
-	return Bun.wrapAnsi(text, Math.max(1, width), { trim: false }).split("\n");
+	return runtime.wrapAnsi(text, Math.max(1, width), { trim: false }).split("\n");
 }
 
 type Screen =

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -51,7 +52,7 @@ async function prepareLaunchScript(request: TerminalLaunchRequest): Promise<{ di
 			);
 		}
 		// No `exec`: it would parse a command name starting with `-` as an option.
-		await Bun.write(script, `rm -rf -- ${quotePosixArgument(directory)}\n${quotePosixArgv(request.command)}\n`);
+		await runtime.write(script, `rm -rf -- ${quotePosixArgument(directory)}\n${quotePosixArgv(request.command)}\n`);
 		return { directory, typed: `/bin/sh ${script}` };
 	} catch (error) {
 		await fs.rm(directory, { recursive: true, force: true });

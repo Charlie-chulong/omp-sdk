@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { scheduler } from "node:timers/promises";
 import { isSqliteBusyError, logger, postmortem } from "@oh-my-pi/pi-utils";
 import * as AIError from "../error";
@@ -85,7 +86,7 @@ const OAUTH_REFRESH_SHUTDOWN_WAIT_MS = OAUTH_REFRESH_STALLED_OWNER_MS + 5_000;
 /** Short non-secret fingerprint so logs can tell which process minted which token. */
 function tokenFingerprint(token: unknown): string {
 	if (typeof token !== "string" || token.length === 0) return "none";
-	return new Bun.CryptoHasher("sha256").update(token).digest("hex").slice(0, 8);
+	return new runtime.CryptoHasher("sha256").update(token).digest("hex").slice(0, 8);
 }
 
 type LeasedExchangeOutcome<T extends OAuthCredential> = { result: StoredOAuthRefreshResult<T> } | { failure: unknown };
@@ -240,7 +241,7 @@ export class OAuthRefresher {
 				if (!isSqliteBusyError(error)) throw error;
 				if (Date.now() >= deadline) return false;
 			}
-			await Bun.sleep(Math.min(OAUTH_REFRESH_PERSIST_RETRY_MAX_MS, OAUTH_REFRESH_LEASE_POLL_MS * 2 ** attempt));
+			await runtime.sleep(Math.min(OAUTH_REFRESH_PERSIST_RETRY_MAX_MS, OAUTH_REFRESH_LEASE_POLL_MS * 2 ** attempt));
 		}
 	}
 
@@ -344,7 +345,7 @@ export class OAuthRefresher {
 				refused = false;
 				logger.warn("OAuth exchanged token save hit a busy store; retrying", { ...fingerprints, attempt });
 			}
-			await Bun.sleep(Math.min(OAUTH_REFRESH_PERSIST_RETRY_MAX_MS, OAUTH_REFRESH_LEASE_POLL_MS * 2 ** attempt));
+			await runtime.sleep(Math.min(OAUTH_REFRESH_PERSIST_RETRY_MAX_MS, OAUTH_REFRESH_LEASE_POLL_MS * 2 ** attempt));
 		}
 	}
 
@@ -452,7 +453,7 @@ export class OAuthRefresher {
 				const stalledMs = stalled.until - Date.now();
 				if (stalled.refresh === current.refresh && stalledMs > 0) {
 					await raceSignal(
-						Bun.sleep(Math.min(stalledMs, waitDeadline - Date.now(), OAUTH_REFRESH_LEASE_WAIT_MAX_MS)),
+						runtime.sleep(Math.min(stalledMs, waitDeadline - Date.now(), OAUTH_REFRESH_LEASE_WAIT_MAX_MS)),
 						options.signal,
 						"OAuth refresh wait for a stalled refresher aborted by caller",
 					);
@@ -487,7 +488,7 @@ export class OAuthRefresher {
 			const remainingMs = waitDeadline - Date.now();
 			if (remainingMs <= 0) return this.#budgetExceeded(provider, options, current);
 			await raceSignal(
-				Bun.sleep(Math.min(waitMs, remainingMs)),
+				runtime.sleep(Math.min(waitMs, remainingMs)),
 				options.signal,
 				"OAuth refresh ownership wait aborted by caller",
 			);

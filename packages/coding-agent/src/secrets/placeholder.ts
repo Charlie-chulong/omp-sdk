@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as crypto from "node:crypto";
 import type { SecretEntry } from "./obfuscator";
 import type { RegistryRevision } from "./registry-revision";
@@ -299,7 +300,7 @@ export function secretEntriesNeedPlaceholderKey(entries: SecretEntry[]): boolean
 // be dictionaried from the transcript; HMAC-SHA256 under a private per-install
 // key cannot, since the attacker lacks the key.
 export function buildHashBase(key: string, value: string): string {
-	const digest = new Bun.CryptoHasher("sha256", key).update(value).digest();
+	const digest = new runtime.CryptoHasher("sha256", key).update(value).digest();
 	let v = 0n;
 	for (let i = 0; i < 8; i++) v = (v << 8n) | BigInt(digest[i]);
 	const radix = BigInt(HASH_CHARS.length);
@@ -322,7 +323,7 @@ export function buildKeyedReplacementRun(key: string, length: number): string {
 	const radix = REPLACEMENT_CHARS.length;
 	let out = "";
 	for (let block = 0; out.length < length; block++) {
-		const digest = new Bun.CryptoHasher("sha256", key).update(`replace-chunk\0${length}\0${block}`).digest();
+		const digest = new runtime.CryptoHasher("sha256", key).update(`replace-chunk\0${length}\0${block}`).digest();
 		for (let i = 0; i < digest.length && out.length < length; i++) {
 			out += REPLACEMENT_CHARS[digest[i] % radix];
 		}

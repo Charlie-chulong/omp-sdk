@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as path from "node:path";
 import type { ThinkingLevel } from "@oh-my-pi/pi-agent-core";
 import type { Api, ApiKey, Model } from "@oh-my-pi/pi-ai";
@@ -54,7 +55,7 @@ export async function runChangelogFlow({
 	const boundaries = await detectChangelogBoundaries(cwd, stagedFiles);
 	if (boundaries.length === 0) return [];
 
-	const sessionId = Bun.randomUUIDv7();
+	const sessionId = runtime.randomUUIDv7();
 	const updated: string[] = [];
 	for (const boundary of boundaries) {
 		onProgress?.(`Generating entries for ${boundary.changelogPath}…`);
@@ -62,7 +63,7 @@ export async function runChangelogFlow({
 		if (!diff.trim()) continue;
 		const stat = renderStat(await repo.numstat({ cached: true, files: boundary.files }));
 		const diffForPrompt = truncateDiff(diff, maxDiffChars ?? DEFAULT_MAX_DIFF_CHARS);
-		const changelogContent = await Bun.file(boundary.changelogPath).text();
+		const changelogContent = await runtime.file(boundary.changelogPath).text();
 		let unreleased: { startLine: number; endLine: number; entries: Record<string, string[]> };
 		try {
 			unreleased = parseUnreleasedSection(changelogContent);
@@ -87,7 +88,7 @@ export async function runChangelogFlow({
 
 		const updatedContent = applyChangelogEntries(changelogContent, unreleased, generated.entries);
 		if (!dryRun) {
-			await Bun.write(boundary.changelogPath, updatedContent);
+			await runtime.write(boundary.changelogPath, updatedContent);
 			await repo.stageFiles([path.relative(cwd, boundary.changelogPath)]);
 		}
 		updated.push(boundary.changelogPath);
@@ -114,12 +115,12 @@ export async function applyChangelogProposals({
 		)
 			continue;
 		onProgress?.(`Applying entries for ${proposal.path}…`);
-		const exists = await Bun.file(proposal.path).exists();
+		const exists = await runtime.file(proposal.path).exists();
 		if (!exists) {
 			logger.warn("commit changelog path missing", { path: proposal.path });
 			continue;
 		}
-		const changelogContent = await Bun.file(proposal.path).text();
+		const changelogContent = await runtime.file(proposal.path).text();
 		let unreleased: { startLine: number; endLine: number; entries: Record<string, string[]> };
 		try {
 			unreleased = parseUnreleasedSection(changelogContent);
@@ -132,7 +133,7 @@ export async function applyChangelogProposals({
 		if (Object.keys(normalized).length === 0 && !normalizedDeletions) continue;
 		const updatedContent = applyChangelogEntries(changelogContent, unreleased, normalized, normalizedDeletions);
 		if (!dryRun) {
-			await Bun.write(proposal.path, updatedContent);
+			await runtime.write(proposal.path, updatedContent);
 			await repo.stageFiles([path.relative(cwd, proposal.path)]);
 		}
 		updated.push(proposal.path);

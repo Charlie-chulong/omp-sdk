@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { getBlobsDir, isEnoent, logger } from "@oh-my-pi/pi-utils";
@@ -35,7 +36,7 @@ export interface BlobBrokerSavingsStatus extends BlobBrokerSavingsCounters {
 }
 
 function projectHash(projectDir: string): string {
-	return Bun.hash.wyhash(path.resolve(projectDir)).toString(16);
+	return runtime.hash.wyhash(path.resolve(projectDir)).toString(16);
 }
 
 /** Deterministic per-project append-only journal path. */

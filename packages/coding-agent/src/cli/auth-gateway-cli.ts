@@ -449,7 +449,7 @@ async function runServe(flags: AuthGatewayCommandArgs["flags"]): Promise<void> {
 	});
 	await rebuildCatalog();
 
-	const handle = startAuthGateway({
+	const handle = await startAuthGateway({
 		storage,
 		bind,
 		bearerTokens: gatewayToken ? [gatewayToken] : [],

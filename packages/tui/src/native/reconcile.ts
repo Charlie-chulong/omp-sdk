@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Reconciler: turns successive component descriptions into minimal TSP ops.
  *
@@ -98,7 +99,7 @@ function nodeId(base: string, keypath: string): string {
 
 function sameValue(a: unknown, b: unknown): boolean {
 	if (a === b) return true;
-	return typeof a === "object" && typeof b === "object" && a !== null && b !== null && Bun.deepEquals(a, b);
+	return typeof a === "object" && typeof b === "object" && a !== null && b !== null && runtime.deepEquals(a, b);
 }
 
 function asProps(node: NativeNode): Readonly<Record<string, unknown>> | undefined {

@@ -1,3 +1,4 @@
+import { visibleWidth } from "../utils";
 import { Box } from "../components/box";
 import { Disclosure } from "../components/disclosure";
 import { type Component } from "../tui";
@@ -71,7 +72,7 @@ class DividerSummary implements Component {
 		const label = this.#label();
 		// sep.dot ships pre-padded (" · "); trim so the hint joins with single spaces.
 		const hint = `${theme.sep.dot.trim()} ${expandKeyHint()}`;
-		const plainWidth = Bun.stringWidth(`${label} ${hint}`, { countAnsiEscapeCodes: false });
+		const plainWidth = visibleWidth(`${label} ${hint}`);
 		// ` label hint ` framed by rules on both sides.
 		const remaining = width - plainWidth - 2;
 		if (remaining < 4) {

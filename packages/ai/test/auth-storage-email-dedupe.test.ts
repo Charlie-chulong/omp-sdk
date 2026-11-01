@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
@@ -405,99 +405,6 @@ describe("AuthStorage openai-codex email dedupe", () => {
 
 		expect(store.listAuthCredentials("openai-codex")).toHaveLength(0);
 		expect(readDisabledCauses(db, "openai-codex")).toEqual([disabledCause]);
-	});
-
-	it("re-keys stored SingularityAPI credentials into the product that accepts them", async () => {
-		const legacyDb = new Database(":memory:");
-		legacyDb.run(`
-			CREATE TABLE auth_schema_version (
-				id INTEGER PRIMARY KEY CHECK (id = 1),
-				version INTEGER NOT NULL
-			);
-			INSERT INTO auth_schema_version(id, version) VALUES (1, 7);
-			CREATE TABLE auth_credentials (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				provider TEXT NOT NULL,
-				credential_type TEXT NOT NULL,
-				data TEXT NOT NULL,
-				disabled_cause TEXT DEFAULT NULL,
-				identity_key TEXT DEFAULT NULL,
-				created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-				updated_at INTEGER NOT NULL DEFAULT (unixepoch())
-			);
-			CREATE TABLE auth_credential_blocks (
-				credential_id INTEGER NOT NULL,
-				provider_key TEXT NOT NULL,
-				block_scope TEXT NOT NULL DEFAULT '',
-				blocked_until_ms INTEGER NOT NULL,
-				updated_at INTEGER NOT NULL,
-				PRIMARY KEY (credential_id, provider_key, block_scope)
-			);
-		`);
-		const insertCredential = legacyDb.query(
-			"INSERT INTO auth_credentials (provider, credential_type, data, identity_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-		);
-		// One row per product, both stored under the retired shared id: the
-		// gateway key carries the `sk-sapi-` prefix, the lane key does not.
-		insertCredential.run(
-			"singularityapi",
-			"api_key",
-			JSON.stringify({ key: "sk-sapi-live-abc", source: "login" }),
-			null,
-			LEGACY_TIMESTAMP,
-			LEGACY_TIMESTAMP,
-		);
-		insertCredential.run(
-			"singularityapi",
-			"api_key",
-			JSON.stringify({ key: "sk-sing-lane-abc", source: "login" }),
-			null,
-			LEGACY_TIMESTAMP,
-			LEGACY_TIMESTAMP,
-		);
-		legacyDb
-			.query(
-				"INSERT INTO auth_credential_blocks (credential_id, provider_key, block_scope, blocked_until_ms, updated_at) VALUES (?, ?, ?, ?, ?)",
-			)
-			.run(2, "singularityapi:api_key", "shared", LEGACY_TIMESTAMP, LEGACY_TIMESTAMP);
-
-		const migratedStore = new SqliteAuthCredentialStore(legacyDb);
-		try {
-			expect(readAuthSchemaVersion(legacyDb)).toBe(8);
-			const readKeys = (provider: string): string[] => {
-				// Rows were inserted by this test above; the cast names their shape.
-				const rows = legacyDb
-					.query("SELECT data FROM auth_credentials WHERE provider = ? ORDER BY id ASC")
-					.all(provider) as Array<{ data: string }>;
-				return rows.map(row => {
-					const parsed: unknown = JSON.parse(row.data);
-					if (
-						typeof parsed !== "object" ||
-						parsed === null ||
-						!("key" in parsed) ||
-						typeof parsed.key !== "string"
-					) {
-						throw new Error("credential payload is missing a string key");
-					}
-					return parsed.key;
-				});
-			};
-			// Each key lands on the product that accepts it — a gateway key on the
-			// lanes would 401, and leaving either under the retired id would make
-			// it invisible to both providers.
-			expect(readKeys("singularityapi-dev")).toEqual(["sk-sapi-live-abc"]);
-			expect(readKeys("singularityapi-tech")).toEqual(["sk-sing-lane-abc"]);
-			expect(readKeys("singularityapi")).toEqual([]);
-			// Rate-limit state travels with the credential: a block recorded under
-			// the old provider key must not be dropped, nor outlive the rename.
-			// Rows were inserted by this test above; the cast names their shape.
-			const blockRows = legacyDb
-				.query("SELECT provider_key FROM auth_credential_blocks ORDER BY credential_id ASC")
-				.all() as Array<{ provider_key: string }>;
-			expect(blockRows.map(row => row.provider_key)).toEqual(["singularityapi-tech:api_key"]);
-		} finally {
-			migratedStore.close();
-		}
 	});
 
 	it("creates fresh auth schema without unixepoch defaults", async () => {

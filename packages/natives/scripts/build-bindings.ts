@@ -13,6 +13,7 @@
  */
 
 import * as fsSync from "node:fs";
+import { createHash } from "node:crypto";
 import * as fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import * as path from "node:path";
@@ -60,7 +61,8 @@ if (process.platform === "win32" && (!Bun.which("cmake") || !Bun.which("ninja"))
 
 const repoRoot = path.join(import.meta.dir, "../../..");
 const rustDir = path.join(repoRoot, "crates/pi-natives");
-const nativeDir = path.join(import.meta.dir, "../native");
+const desktopBuild = process.argv.includes("--desktop");
+const nativeDir = path.join(import.meta.dir, "../native", desktopBuild ? "desktop" : "");
 const packageJsonPath = path.join(import.meta.dir, "../package.json");
 
 const localAddon = resolveLocalHostAddon({
@@ -181,13 +183,15 @@ async function installGeneratedBindings(outputDir: string): Promise<void> {
 const canonicalAddonFilename = localAddon.filename;
 const canonicalAddonPath = path.join(nativeDir, canonicalAddonFilename);
 
-console.log(`Building pi-natives bindings for ${process.platform}-${process.arch}${variantSuffix} (local)…`);
+console.log(
+	`Building pi-natives bindings for ${process.platform}-${process.arch}${variantSuffix} (${desktopBuild ? "desktop" : "local"})…`,
+);
 
 await fs.mkdir(nativeDir, { recursive: true });
 await cleanupStaleTemps(nativeDir);
 await fs.mkdir(path.join(nativeDir, ".build"), { recursive: true });
 const buildOutputDir = await fs.mkdtemp(
-	path.join(nativeDir, ".build", `${process.platform}-${process.arch}-${effectiveVariant ?? "default"}-local-`),
+	path.join(nativeDir, ".build", `${process.platform}-${process.arch}-${effectiveVariant ?? "default"}-`),
 );
 
 // Resolve the CLI's JS entry from the package manifest rather than the
@@ -213,9 +217,9 @@ if (!napiBinEntry) {
 }
 const napiBin = path.join(path.dirname(napiManifestPath), napiBinEntry);
 
-// Profiles live in the root Cargo.toml; `local` trades size for iteration
-// speed, `ci` strips and drops incremental state.
-const cargoProfile = Bun.env.OMP_NATIVE_CARGO_PROFILE?.trim() || "local";
+// Desktop shipping artifacts are always release builds; generic local builds
+// retain their existing configurable iteration profile.
+const cargoProfile = desktopBuild ? "release" : Bun.env.OMP_NATIVE_CARGO_PROFILE?.trim() || "local";
 
 const napiArgs = [
 	"build",
@@ -232,11 +236,14 @@ const napiArgs = [
 	"--profile",
 	cargoProfile,
 ];
+if (desktopBuild) {
+	napiArgs.push("--no-default-features", "--target-dir", path.join(repoRoot, "target/desktop"));
+}
 
 // Local-only opt-in: pass extra cargo features through to napi build, e.g.
 // OMP_NATIVE_FEATURES=wayland-pipewire bun --cwd=packages/natives run build
 const extraFeatures = Bun.env.OMP_NATIVE_FEATURES?.trim();
-if (extraFeatures) {
+if (extraFeatures && !desktopBuild) {
 	napiArgs.push("--features", extraFeatures);
 }
 
@@ -276,9 +283,33 @@ try {
 		await installBinary(builtAddonPath, canonicalAddonPath);
 	}
 
-	await installGeneratedBindings(buildOutputDir);
-
-	await generateEnumExports();
+	if (desktopBuild) {
+		const bindings = require_(builtAddonPath);
+		if (typeof bindings.nativeCapabilities !== "function") {
+			throw new Error("Desktop addon is missing nativeCapabilities(); rebuild the current native Rust sources.");
+		}
+		const capabilities = bindings.nativeCapabilities();
+		if (capabilities.smollm !== false || capabilities.liveVoice !== false || capabilities.wasmGrammars !== false) {
+			throw new Error("Desktop addon unexpectedly enables SmolLM, live voice, or WASM grammars.");
+		}
+		const metadata = {
+			schemaVersion: 1,
+			buildTarget: "desktop",
+			profile: cargoProfile,
+			version,
+			platform: process.platform,
+			arch: process.arch,
+			filename: canonicalAddonFilename,
+			capabilities,
+			sha256: createHash("sha256")
+				.update(await fs.readFile(builtAddonPath))
+				.digest("hex"),
+		};
+		await fs.writeFile(`${canonicalAddonPath}.json`, `${JSON.stringify(metadata, null, 2)}\n`);
+	} else {
+		await installGeneratedBindings(buildOutputDir);
+		await generateEnumExports();
+	}
 
 	console.log("Bindings build complete.");
 } finally {

@@ -670,7 +670,7 @@ import { startRelayServer } from ${source("tools/browser/relay/server.ts")};
 
 if (process.argv[2] === "browser-relay") {
 	const port = Number(process.argv[process.argv.indexOf("--port") + 1]);
-	startRelayServer({ port });
+	await startRelayServer({ port });
 	console.log(\`omp browser relay listening on http://127.0.0.1:\${port}\`);
 } else {
 	const [port, standIn] = [Bun.env.OMP_TEST_PORT!, Bun.env.OMP_TEST_STALE_RELAY!];

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Client half of the machine-shared workers: one detached process per worker
  * name that owns an IPC endpoint under a runtime directory, serves every omp
@@ -237,7 +238,7 @@ export function spawnDetached(
 ): SpawnedWorker {
 	const log = fs.openSync(logPath, "w");
 	try {
-		const proc = Bun.spawn({
+		const proc = runtime.spawn({
 			cmd,
 			cwd,
 			env,
@@ -258,14 +259,14 @@ async function waitForEndpointRelease(endpoint: string): Promise<void> {
 	const deadline = Date.now() + SHUTDOWN_WAIT_MS;
 	while (Date.now() < deadline) {
 		if ((await probeSharedWorker(endpoint, "")).kind === "absent") return;
-		await Bun.sleep(PROBE_INTERVAL_MS);
+		await runtime.sleep(PROBE_INTERVAL_MS);
 	}
 }
 
 /** Last 500 chars of a worker's log, minus its readiness banner; `""` when absent or empty. */
 async function logTail(logPath: string): Promise<string> {
 	try {
-		const text = await Bun.file(logPath).text();
+		const text = await runtime.file(logPath).text();
 		return text
 			.split("\n")
 			.filter(line => !/^omp .+ listening on /.test(line))
@@ -285,16 +286,21 @@ async function awaitSpawnedWorker(
 	timeoutMs: number,
 ): Promise<LineChannel> {
 	const deadline = Date.now() + timeoutMs;
+	let spawnError: Error | undefined;
+	void spawned.proc.exited.catch(error => {
+		spawnError = error instanceof Error ? error : new Error(String(error));
+	});
 	while (Date.now() < deadline) {
 		const result = await probeSharedWorker(endpoint, launch.tag);
 		if (result.kind === "live") return result.channel;
+		if (spawnError) throw new Error(`${launch.label} failed to start: ${spawnError.message}`, { cause: spawnError });
 		if (spawned.proc.exitCode !== null) {
 			// Our child is gone: either it lost the bind race to a sibling omp
 			// (adopted by the probe above if so) or it crashed.
 			const tail = await logTail(spawned.logPath);
 			throw new Error(`${launch.label} exited with code ${spawned.proc.exitCode}${tail ? `: ${tail}` : ""}`);
 		}
-		await Bun.sleep(PROBE_INTERVAL_MS);
+		await runtime.sleep(PROBE_INTERVAL_MS);
 	}
 	throw new Error(`${launch.label} did not bind ${endpoint} within ${timeoutMs}ms`);
 }

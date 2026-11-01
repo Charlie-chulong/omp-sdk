@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vcs from "@oh-my-pi/pi-natives/vcs";
@@ -105,7 +106,7 @@ export async function collectConfigCandidates(
 	const items: ConfigCandidate[] = [];
 	for (const candidate of candidates) {
 		try {
-			const content = await Bun.file(candidate).text();
+			const content = await runtime.file(candidate).text();
 			const parent = path.dirname(candidate);
 			const baseName = parent.split(path.sep).pop() ?? "";
 			const isUser = userPaths.has(candidate);

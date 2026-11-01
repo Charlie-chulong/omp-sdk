@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -645,7 +646,7 @@ export async function executePrCreate(
 				// argv-length limits and shell-quoting hazards on uncommon platforms.
 				bodyDir = await fs.mkdtemp(path.join(os.tmpdir(), "gh-pr-body-"));
 				const bodyFile = path.join(bodyDir, "body.md");
-				await Bun.write(bodyFile, body);
+				await runtime.write(bodyFile, body);
 				args.push("--body-file", bodyFile);
 			} else {
 				// Avoid gh dropping into an interactive editor when no body is given.

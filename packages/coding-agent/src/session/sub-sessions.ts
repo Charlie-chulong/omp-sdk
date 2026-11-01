@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Subagent session discovery shared by `/export` (HTML) and `/dump all` (zip of text dumps).
  *
@@ -67,7 +68,7 @@ export async function collectSubSessions(
 async function loadCollectedSession(file: string): Promise<SessionLoadResult | null> {
 	if (!file.endsWith(".jsonl.gz")) return loadSessionFile(file);
 	try {
-		return parseSessionContent(utf8Decoder.decode(Bun.gunzipSync(await Bun.file(file).bytes())));
+		return parseSessionContent(utf8Decoder.decode(runtime.gunzipSync(await runtime.file(file).bytes())));
 	} catch (err) {
 		// Match the plain loader when gc removes a transcript after discovery.
 		if (isEnoent(err)) return null;

@@ -1,3 +1,5 @@
+import type { RuntimeFile, RuntimeFileSink } from "@oh-my-pi/pi-utils/runtime";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 // node:net only serves the TCP readiness probe for user daemons (`connectPort`).
 import * as net from "node:net";
@@ -98,7 +100,7 @@ interface ManagedDaemon {
 	dir: string;
 	log?: DaemonLog;
 	process?: ManagedProcess;
-	input?: Bun.FileSink;
+	input?: RuntimeFileSink;
 	pty?: PtySession;
 	generation: number;
 	stopRequested: boolean;
@@ -193,14 +195,14 @@ function syncReadyPending(record: ManagedDaemon): void {
 /** Replace `filePath` via a pid-scoped temp file so readers never see a partial write. */
 async function writeFileAtomic(filePath: string, content: string): Promise<void> {
 	const tempPath = `${filePath}.${process.pid}.tmp`;
-	await Bun.write(tempPath, content);
+	await runtime.write(tempPath, content);
 	await fs.rename(tempPath, filePath);
 }
 
 async function fileTextSlice(filePath: string, head: boolean): Promise<string> {
 	try {
 		const stat = await fs.stat(filePath);
-		const file = Bun.file(filePath);
+		const file = runtime.file(filePath);
 		if (stat.size <= LOG_READ_BYTES) return await file.text();
 		return head
 			? await file.slice(0, LOG_READ_BYTES).text()
@@ -214,14 +216,14 @@ async function fileTextSlice(filePath: string, head: boolean): Promise<string> {
 class DaemonLog {
 	readonly #path: string;
 	readonly #previousPath: string;
-	readonly #file: Bun.BunFile;
-	#writer: Bun.FileSink;
+	readonly #file: RuntimeFile;
+	#writer: RuntimeFileSink;
 	#currentBytes = 0;
 	#queue: Promise<void> = Promise.resolve();
 	#closed = false;
 	#closing: Promise<void> | undefined;
 
-	constructor(logPath: string, previousPath: string, file: Bun.BunFile, writer: Bun.FileSink) {
+	constructor(logPath: string, previousPath: string, file: RuntimeFile, writer: RuntimeFileSink) {
 		this.#path = logPath;
 		this.#previousPath = previousPath;
 		this.#file = file;
@@ -234,7 +236,7 @@ class DaemonLog {
 		const logPath = path.join(dir, LOG_FILE);
 		const previousPath = path.join(dir, PREVIOUS_LOG_FILE);
 		await Promise.all([fs.rm(previousPath, { force: true }), fs.rm(logPath, { force: true })]);
-		const file = Bun.file(logPath);
+		const file = runtime.file(logPath);
 		return new DaemonLog(logPath, previousPath, file, file.writer());
 	}
 
@@ -249,7 +251,7 @@ class DaemonLog {
 		} catch (error) {
 			if (!isEnoent(error)) throw error;
 		}
-		const file = Bun.file(logPath);
+		const file = runtime.file(logPath);
 		return new DaemonLog(logPath, previousPath, file, file.writer());
 	}
 
@@ -368,7 +370,7 @@ async function holdsLiveForeignLease(pidPath: string, endpoint: string): Promise
 		return false; // Dead PID: the lease outlived its broker.
 	}
 	if (await probeBrokerEndpoint(endpoint)) return true;
-	await Bun.sleep(LEASE_HANDOFF_GRACE_MS);
+	await runtime.sleep(LEASE_HANDOFF_GRACE_MS);
 	return probeBrokerEndpoint(endpoint);
 }
 
@@ -900,7 +902,7 @@ class DaemonBroker {
 	}
 
 	#launchPipe(record: ManagedDaemon, generation: number): void {
-		const process = Bun.spawn([record.spec.application, ...record.spec.args], {
+		const process = runtime.spawn([record.spec.application, ...record.spec.args], {
 			cwd: record.spec.cwd,
 			env: workerEnvFromParent(record.spec.env),
 			stdin: "pipe",
@@ -925,7 +927,7 @@ class DaemonBroker {
 		const logPath = path.join(record.dir, LOG_FILE);
 		const output = await fs.open(logPath, "a", 0o600);
 		try {
-			const process = Bun.spawn([record.spec.application, ...record.spec.args], {
+			const process = runtime.spawn([record.spec.application, ...record.spec.args], {
 				cwd: record.spec.cwd,
 				env: workerEnvFromParent(record.spec.env),
 				stdio: ["ignore", output.fd, output.fd],
@@ -982,7 +984,7 @@ class DaemonBroker {
 		}
 		if (size < record.outputOffset) record.outputOffset = 0;
 		if (size === record.outputOffset) return;
-		const file = Bun.file(logPath);
+		const file = runtime.file(logPath);
 		const raw = await file.slice(record.outputOffset, size).text();
 		if (generation !== record.generation) return;
 		record.outputOffset = size;
@@ -1016,7 +1018,7 @@ class DaemonBroker {
 
 	async #monitorRecoveredDetached(record: ManagedDaemon, generation: number): Promise<void> {
 		while (!this.#shuttingDown && generation === record.generation && !settledState(record.snapshot.state)) {
-			await Bun.sleep(100);
+			await runtime.sleep(100);
 			if (this.#shuttingDown || generation !== record.generation) return;
 			await this.#refreshDetached(record);
 		}
@@ -1033,7 +1035,7 @@ class DaemonBroker {
 				this.#markReady(record);
 				return;
 			}
-			await Bun.sleep(100);
+			await runtime.sleep(100);
 		}
 	}
 
@@ -1343,7 +1345,7 @@ class DaemonBroker {
 			await this.#refreshDetached(record);
 			if (condition()) return true;
 			if (this.#shuttingDown && terminalState(record.snapshot.state)) return condition();
-			await Bun.sleep(50);
+			await runtime.sleep(50);
 		}
 		await this.#refreshDetached(record);
 		return condition();
@@ -1636,7 +1638,7 @@ export async function startDaemonBrokerFromEnvironment(options: DaemonBrokerStar
 			error: error instanceof Error ? error.message : String(error),
 		});
 	});
-	const token = (await Bun.file(path.join(runtimeDir, TOKEN_FILE)).text()).trim();
+	const token = (await runtime.file(path.join(runtimeDir, TOKEN_FILE)).text()).trim();
 	if (!token) throw new Error("Daemon broker token is empty");
 	const broker = new DaemonBroker(
 		projectDir,

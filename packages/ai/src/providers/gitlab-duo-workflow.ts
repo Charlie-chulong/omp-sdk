@@ -1,3 +1,5 @@
+import { createModelWebSocket } from "../utils/model-websocket";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import {
@@ -35,10 +37,10 @@ export type GitLabDuoWorkflowDefinition = "ambient" | (string & {});
 const DEFAULT_GITLAB_BASE_URL = "https://gitlab.com";
 const GITLAB_DUO_WORKFLOW_TRACE_ENV = "GITLAB_DUO_WORKFLOW_TRACE";
 const GITLAB_DUO_WORKFLOW_TRACE_FILE_ENV = "GITLAB_DUO_WORKFLOW_TRACE_FILE";
-const DEFAULT_GITLAB_DUO_WORKFLOW_TRACE_FILE = path.resolve(
-	import.meta.dir,
+const DEFAULT_GITLAB_DUO_WORKFLOW_TRACE_FILE = new URL(
 	"../../../../.tmp/gitlab-duo-workflow-trace.log",
-);
+	import.meta.url,
+).pathname;
 const GITLAB_DUO_WORKFLOW_CLIENT_TYPE = "node-websocket";
 /**
  * Idle deadline for the workflow WebSocket. The socket has no server-side
@@ -921,7 +923,7 @@ interface GitLabDuoWorkflowAccountState {
 const gitLabDuoWorkflowAccountState = new Map<string, GitLabDuoWorkflowAccountState>();
 
 function gitLabDuoWorkflowAccountKey(apiKey: string, baseUrl: string, cwd: string | undefined): string {
-	return `${Bun.hash(apiKey).toString(36)}\u0000${baseUrl}\u0000${cwd ?? ""}`;
+	return `${runtime.hash(apiKey).toString(36)}\u0000${baseUrl}\u0000${cwd ?? ""}`;
 }
 
 function getGitLabDuoWorkflowAccountState(
@@ -973,11 +975,11 @@ function hasGitLabDuoWorkflowExplicitNamespace(options: GitLabDuoWorkflowOptions
 	return Boolean(
 		nonEmptyString(options.rootNamespaceId) ??
 		nonEmptyString(options.namespaceId) ??
-		nonEmptyString(Bun.env.GITLAB_DUO_NAMESPACE_ID) ??
+		nonEmptyString(process.env.GITLAB_DUO_NAMESPACE_ID) ??
 		nonEmptyString(options.projectId) ??
 		nonEmptyString(options.projectPath) ??
-		nonEmptyString(Bun.env.GITLAB_DUO_PROJECT_ID) ??
-		nonEmptyString(Bun.env.GITLAB_DUO_PROJECT_PATH),
+		nonEmptyString(process.env.GITLAB_DUO_PROJECT_ID) ??
+		nonEmptyString(process.env.GITLAB_DUO_PROJECT_PATH),
 	);
 }
 
@@ -1125,8 +1127,9 @@ async function runGitLabDuoWorkflow(
 	}
 	const workflowDefinition = resolveGitLabDuoWorkflowDefinition(options.workflowDefinition);
 	const explicitNamespace = hasGitLabDuoWorkflowExplicitNamespace(options);
-	const configuredProjectPath = nonEmptyString(options.projectPath) ?? nonEmptyString(Bun.env.GITLAB_DUO_PROJECT_PATH);
-	const configuredProjectId = nonEmptyString(options.projectId) ?? nonEmptyString(Bun.env.GITLAB_DUO_PROJECT_ID);
+	const configuredProjectPath =
+		nonEmptyString(options.projectPath) ?? nonEmptyString(process.env.GITLAB_DUO_PROJECT_PATH);
+	const configuredProjectId = nonEmptyString(options.projectId) ?? nonEmptyString(process.env.GITLAB_DUO_PROJECT_ID);
 	const goal = extractLatestUserPrompt(context.messages);
 
 	// Resolve the namespace and everything scoped to it (settings enable, project
@@ -1903,10 +1906,7 @@ function defaultGitLabDuoWorkflowWebSocketFactory(
 	url: string,
 	options: GitLabDuoWorkflowWebSocketFactoryOptions,
 ): GitLabDuoWorkflowWebSocketLike {
-	return new (WebSocket as unknown as new (
-		url: string,
-		options: Bun.WebSocketOptions,
-	) => GitLabDuoWorkflowWebSocketLike)(url, { headers: options.headers });
+	return createModelWebSocket(url, { headers: options.headers }) as unknown as GitLabDuoWorkflowWebSocketLike;
 }
 
 export function runGitLabDuoWorkflowSocket(
@@ -2393,7 +2393,7 @@ function emitGitLabDuoWorkflowCheckpoint(
 		const previousContent = contentByKey[entry.messageKey];
 		// Keyed by a content hash: every frame is a full snapshot, so keying on the
 		// text itself kept two copies of each message prefix seen per stream.
-		const contentHash = Bun.hash(entry.content).toString(36);
+		const contentHash = runtime.hash(entry.content).toString(36);
 		const contentSignature = `${turnIndex}\u0000${entry.kind}\u0000${contentHash}`;
 		const contentOnlySignature = `${turnIndex}\u0000content\u0000${contentHash}`;
 		const duplicateContent =
@@ -2846,8 +2846,8 @@ function socketEventErrorText(error: unknown): string | undefined {
 }
 
 export function traceGitLabDuoWorkflow(event: string, data: Record<string, unknown> = {}): void {
-	if (Bun.env[GITLAB_DUO_WORKFLOW_TRACE_ENV] !== "1") return;
-	const traceFile = Bun.env[GITLAB_DUO_WORKFLOW_TRACE_FILE_ENV]?.trim() || DEFAULT_GITLAB_DUO_WORKFLOW_TRACE_FILE;
+	if (process.env[GITLAB_DUO_WORKFLOW_TRACE_ENV] !== "1") return;
+	const traceFile = process.env[GITLAB_DUO_WORKFLOW_TRACE_FILE_ENV]?.trim() || DEFAULT_GITLAB_DUO_WORKFLOW_TRACE_FILE;
 	const line = `${JSON.stringify({
 		time: new Date().toISOString(),
 		event,
@@ -2929,14 +2929,14 @@ export async function resolveGitLabDuoWorkflowNamespaceSelection(
 	const configured =
 		nonEmptyString(options.rootNamespaceId) ??
 		nonEmptyString(options.namespaceId) ??
-		nonEmptyString(Bun.env.GITLAB_DUO_NAMESPACE_ID);
+		nonEmptyString(process.env.GITLAB_DUO_NAMESPACE_ID);
 
 	try {
 		const projectId =
 			nonEmptyString(options.projectId) ??
 			nonEmptyString(options.projectPath) ??
-			nonEmptyString(Bun.env.GITLAB_DUO_PROJECT_ID) ??
-			nonEmptyString(Bun.env.GITLAB_DUO_PROJECT_PATH);
+			nonEmptyString(process.env.GITLAB_DUO_PROJECT_ID) ??
+			nonEmptyString(process.env.GITLAB_DUO_PROJECT_PATH);
 		return await discoverGitLabDuoWorkflowRuntimeNamespace({
 			apiKey,
 			baseUrl,
@@ -2973,7 +2973,7 @@ function resolveGitLabDuoWorkflowDefinition(
 ): GitLabDuoWorkflowDefinition {
 	const configured =
 		nonEmptyString(workflowDefinition) ??
-		nonEmptyString(Bun.env.GITLAB_DUO_WORKFLOW_DEFINITION) ??
+		nonEmptyString(process.env.GITLAB_DUO_WORKFLOW_DEFINITION) ??
 		GITLAB_DUO_WORKFLOW_DEFINITION;
 	return configured;
 }

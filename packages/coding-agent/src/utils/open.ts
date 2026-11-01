@@ -1,3 +1,5 @@
+import type { RuntimeSubprocess } from "@oh-my-pi/pi-utils/runtime";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as url from "node:url";
@@ -18,7 +20,7 @@ function getExistingWslLocalPath(urlOrPath: string): string | undefined {
 				: path.resolve(urlOrPath);
 		if (!localPath || !fs.existsSync(localPath)) return undefined;
 
-		const result = Bun.spawnSync(["wslpath", "-w", localPath], { stdout: "pipe", stderr: "ignore" });
+		const result = runtime.spawnSync(["wslpath", "-w", localPath], { stdout: "pipe", stderr: "ignore" });
 		if (result.exitCode !== 0) return undefined;
 
 		return result.stdout.toString().trim() || undefined;
@@ -85,9 +87,9 @@ export function openPath(urlOrPath: string): void {
 			break;
 		}
 	}
-	let child: Bun.Subprocess | undefined;
+	let child: RuntimeSubprocess | undefined;
 	try {
-		child = Bun.spawn(cmd, {
+		child = runtime.spawn(cmd, {
 			stdin: "ignore",
 			stdout: "ignore",
 			stderr: "ignore",

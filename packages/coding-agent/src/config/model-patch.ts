@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { Api, Model, ModelSpec, RemoteCompactionConfig, ThinkingConfig } from "@oh-my-pi/pi-ai/types";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
 import { isVertexExpressOpenAIUrl } from "@oh-my-pi/pi-catalog/hosts";
@@ -118,7 +119,7 @@ export function mergeDiscoveredModel<TApi extends Api>(
 			...(supportsTools !== undefined ? { supportsTools } : {}),
 			compat: mergeCompat(model.compatConfig, providerOverride?.compat),
 		} as ModelSpec<TApi>);
-		return Bun.deepEquals(merged, model) ? model : merged;
+		return runtime.deepEquals(merged, model) ? model : merged;
 	}
 	if (providerOverride) {
 		const merged = buildModel({
@@ -136,7 +137,7 @@ export function mergeDiscoveredModel<TApi extends Api>(
 			),
 			compat: mergeCompat(model.compatConfig, providerOverride.compat),
 		} as ModelSpec<TApi>);
-		return Bun.deepEquals(merged, model) ? model : merged;
+		return runtime.deepEquals(merged, model) ? model : merged;
 	}
 	return model;
 }

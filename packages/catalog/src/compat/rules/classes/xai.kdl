@@ -13,8 +13,7 @@ class "xai" {
 			}
 		}
 	}
-	on "aimlapi" "kilo" "nanogpt" "opencode-go" "opencode-zen" "venice" "vercel-ai-gateway" \
-		"zenmux" {
+	on "aimlapi" "kilo" "nanogpt" "opencode-go" "opencode-zen" "venice" "vercel-ai-gateway" {
 		family "grok" {
 			thinking-efforts "minimal" "low" "medium" "high" "xhigh"
 		}

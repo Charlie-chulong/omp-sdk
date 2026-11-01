@@ -18,7 +18,7 @@ describe("auth-gateway explicit OpenAI prompt cache controls", () => {
 			id: "gateway-prompt-cache",
 			handler: () => ({ content: ["ok"] }),
 		});
-		const handle = startAuthGateway({
+		const handle = await startAuthGateway({
 			bind: "127.0.0.1:0",
 			bearerTokens: ["gw-test-token"],
 			storage,

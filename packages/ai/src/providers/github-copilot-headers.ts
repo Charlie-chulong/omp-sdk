@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import {
 	COPILOT_CAPI_IDENTITY_HEADERS,
 	COPILOT_CHAT_INTEGRATION_ID,
@@ -121,7 +122,7 @@ export function getCopilotIntegrationCacheKey(apiKeyRaw: string | undefined, bas
 	if (!trimmed) return undefined;
 	const parsed = parseGitHubCopilotApiKey(trimmed);
 	if (!parsed.accessToken) return undefined;
-	const fingerprint = Bun.hash(parsed.accessToken).toString(36);
+	const fingerprint = runtime.hash(parsed.accessToken).toString(36);
 	return `${parsed.enterpriseUrl ?? ""}\0${parsed.apiEndpoint ?? ""}\0${normalizeCopilotCacheBaseUrl(baseUrl)}\0${fingerprint}`;
 }
 

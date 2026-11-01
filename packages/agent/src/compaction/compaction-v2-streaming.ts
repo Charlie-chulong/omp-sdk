@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Remote Compaction V2: streaming Responses compaction.
  *
@@ -289,7 +290,7 @@ export async function requestCompactionV2Streaming(
 		throw new Error(`Model ${model.id} does not support V2 streaming compaction`);
 	}
 
-	const retryWait = options?.retryWait ?? ((delayMs: number) => Bun.sleep(delayMs));
+	const retryWait = options?.retryWait ?? ((delayMs: number) => runtime.sleep(delayMs));
 	const isCodexResponses = compactionV2Api(model) === "openai-codex-responses" || model.provider === "openai-codex";
 	let codexMetadata: OpenAICodexCompatibilityMetadata | undefined;
 	if (isCodexResponses && !shouldUseCodexProviderTransport(model)) {

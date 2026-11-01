@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { formatDuration } from "@oh-my-pi/pi-tui/render/render-utils";
 import type { DaemonSnapshot } from "@oh-my-pi/pi-tui/tools/daemon";
 import { formatBytes, logger, sanitizeText, truncate } from "@oh-my-pi/pi-utils";
@@ -167,7 +168,7 @@ export class ProcProtocolHandler implements ProtocolHandler {
 		if (ownerJobs(session).some(job => job.id === id)) return null;
 		if (runningAgentsOutsideJobs(session).some(agent => agent.id === id)) return null;
 		const logPath = await serviceLogPath(session, id);
-		return options?.create || (await Bun.file(logPath).exists()) ? logPath : null;
+		return options?.create || (await runtime.file(logPath).exists()) ? logPath : null;
 	}
 
 	async resolve(url: InternalUrl, context?: ResolveContext): Promise<InternalResource> {
@@ -217,7 +218,7 @@ export class ProcProtocolHandler implements ProtocolHandler {
 			return textResource(
 				url,
 				`${header}${logs.text ? `\n${logs.text}` : ""}`,
-				(await Bun.file(sourcePath).exists()) ? sourcePath : undefined,
+				(await runtime.file(sourcePath).exists()) ? sourcePath : undefined,
 				undefined,
 				{ daemon: service, log: logs.text, ...("terminalRows" in logs ? { terminalRows: logs.terminalRows } : {}) },
 			);

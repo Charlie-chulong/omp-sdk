@@ -2,7 +2,38 @@ import { describe, expect, it } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { decodeBase64Bytes, encodeBase64 } from "@oh-my-pi/pi-utils";
 import { isProbablyBinary, isProbablyBinaryHeader, isProbablyBinarySync } from "@oh-my-pi/pi-utils/binary";
+
+describe("decodeBase64Bytes", () => {
+	it("accepts default loose final quanta, padding and ASCII whitespace", () => {
+		for (const data of ["Zg", "Zg==", "Zh==", " Z\tg\n=\f=\r "]) {
+			expect(decodeBase64Bytes(data).toString()).toBe("f");
+		}
+		expect([...decodeBase64Bytes("AP-A", "base64url")]).toEqual([0x00, 0xff, 0x80]);
+		expect(decodeBase64Bytes("").byteLength).toBe(0);
+	});
+
+	it("rejects malformed alphabets, final quanta and padding instead of silently truncating", () => {
+		for (const data of ["A", "Zg=", "Zg===", "Zg==A", "Zg!", "AP-A", "Zg\v=="]) {
+			expect(() => decodeBase64Bytes(data)).toThrow(SyntaxError);
+		}
+		expect(() => decodeBase64Bytes("AP+A", "base64url")).toThrow(SyntaxError);
+	});
+});
+
+describe("encodeBase64", () => {
+	it("encodes only visible binary bytes, never surrounding backing-buffer data", () => {
+		const bytes = new Uint8Array([
+			0x73, 0x65, 0x63, 0x72, 0x65, 0x74, 0x00, 0xff, 0x80, 0x73, 0x65, 0x63, 0x72, 0x65, 0x74,
+		]);
+		expect(encodeBase64(bytes.subarray(6, 9))).toBe("AP+A");
+		expect(encodeBase64(Buffer.from(bytes).subarray(6, 9))).toBe("AP+A");
+		expect(encodeBase64(bytes.subarray(6, 8))).toBe("AP8=");
+		expect(encodeBase64(bytes.subarray(6, 7))).toBe("AA==");
+		expect(encodeBase64(bytes.subarray(6, 6))).toBe("");
+	});
+});
 
 describe("isProbablyBinaryHeader", () => {
 	it("treats empty input as text", () => {

@@ -1,4 +1,5 @@
-import type { Database } from "bun:sqlite";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
+import type { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import type { AgentToolResult } from "@oh-my-pi/pi-agent-core";
 import type { ToolSession } from "../sdk";
 import { DEFAULT_MAX_LINES, truncateHead } from "@oh-my-pi/pi-tui/tools/streaming-output";
@@ -52,7 +53,7 @@ export async function resolveSqliteReadPath(
 		let suffixResolution: { from: string; to: string } | undefined;
 
 		try {
-			const stat = await Bun.file(absolutePath).stat();
+			const stat = await runtime.file(absolutePath).stat();
 			// Sniffing a FIFO or device can block; leave it to the read tool's rejection.
 			if (!stat.isFile()) continue;
 			if (!(await isSqliteFile(absolutePath))) continue;
@@ -70,7 +71,7 @@ export async function resolveSqliteReadPath(
 			if (!suffixMatch) continue;
 
 			try {
-				const retryStat = await Bun.file(suffixMatch.absolutePath).stat();
+				const retryStat = await runtime.file(suffixMatch.absolutePath).stat();
 				if (!retryStat.isFile()) continue;
 				if (!(await isSqliteFile(suffixMatch.absolutePath))) continue;
 

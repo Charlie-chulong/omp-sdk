@@ -1,3 +1,4 @@
+import { runtime as platformRuntime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Runs `tab.run` code in-process for backends without a tab worker (cmux,
  * Tern): their tabs are thin RPC facades, so user code executes in a
@@ -257,7 +258,7 @@ export async function runInProcessTab(tab: InProcessRunTab, opts: RunInProcessOp
 		}
 		runAc.abort(runEndedError);
 		// Let rejection callbacks run while this run can still own guest-created promises.
-		await Bun.sleep(0);
+		await platformRuntime.sleep(0);
 		if (hasFloatingFailure && !runFailed) await floatingFailure;
 		if (runFailed) {
 			for (const reason of activeRun.floatingRejections) {

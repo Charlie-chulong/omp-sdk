@@ -1,4 +1,5 @@
-import { logger } from "@oh-my-pi/pi-utils";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
+import * as logger from "@oh-my-pi/pi-utils/logger";
 import { resolveCredentialIdentityKey, serializeCredential } from "./sqlite-credential-store";
 import type { BlockStoreHealth } from "./blocks";
 import type { AccountPolicies } from "./policy";
@@ -25,7 +26,7 @@ const MAX_PENDING_DISABLED_EVENTS = 32;
 
 /** SHA-256 bearer fingerprint, so superseded OAuth token bytes never enter the identity cache. */
 function fingerprintOAuthBearer(bearer: string): string {
-	return Bun.SHA256.hash(bearer, "base64url");
+	return runtime.SHA256.hash(bearer, "base64url");
 }
 
 /** One stored credential row as cached in memory. */

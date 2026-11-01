@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { ImageContent } from "@oh-my-pi/pi-ai";
 import type { AgentTool } from "@oh-my-pi/pi-agent-core";
 import { Box } from "../components/box";
@@ -589,7 +590,7 @@ export class ToolExecutionComponent extends Container {
 			await this.#previewReady.promise;
 			return;
 		}
-		await Promise.race([this.#previewReady.promise, Bun.sleep(timeoutMs)]);
+		await Promise.race([this.#previewReady.promise, runtime.sleep(timeoutMs)]);
 	}
 
 	updateStreamPreview(update: unknown): void {

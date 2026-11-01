@@ -11,7 +11,7 @@ import { constants as fsConstants, type Stats } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { getAgentDir, isEnoent } from "@oh-my-pi/pi-utils";
-import { YAML } from "bun";
+import { YAML } from "@oh-my-pi/pi-utils/runtime";
 
 /** Provider id stamped on discovered managed skills (distinguishes them from authored). */
 export const MANAGED_SKILLS_PROVIDER_ID = "omp-managed";

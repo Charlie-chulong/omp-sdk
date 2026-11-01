@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Protocol handler for artifact:// URLs.
  *
@@ -154,7 +155,7 @@ async function resolveArtifactFile(url: InternalUrl, context?: ResolveContext): 
 		throw new MissingArtifactError(`Artifact ${id} not found. Available: ${availableStr}`);
 	}
 
-	const stat = await Bun.file(foundPath).stat();
+	const stat = await runtime.file(foundPath).stat();
 	if (stat.isDirectory()) {
 		throw new Error(`Artifact ${id} resolved to a directory, not a file`);
 	}
@@ -212,7 +213,7 @@ export class ArtifactProtocolHandler implements ProtocolHandler {
 			);
 		}
 
-		const content = await Bun.file(artifact.path).text();
+		const content = await runtime.file(artifact.path).text();
 		return {
 			url: url.href,
 			content,

@@ -6,7 +6,7 @@ export const screenMultiplexer = {
 	sessionEnvKeys: ["STY"],
 	termPrefix: "screen",
 	ownsScreenGrid: true,
-	isInside(env: NodeJS.ProcessEnv = Bun.env): boolean {
+	isInside(env: NodeJS.ProcessEnv = process.env): boolean {
 		return Boolean(env.STY);
 	},
 	// GNU screen never gained OSC 8 support, so a screen layer anywhere in the

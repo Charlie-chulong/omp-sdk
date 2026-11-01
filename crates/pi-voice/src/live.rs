@@ -43,7 +43,7 @@ use webrtc::{
 
 use crate::{
 	VoiceResult,
-	audio::{PlaybackStream, PlaybackWriter},
+	audio::{OUTPUT_JITTER_BUFFER_MS, PlaybackStream, PlaybackWriter},
 };
 
 const DATA_CHANNEL_LABEL: &str = "oai-events";
@@ -56,10 +56,6 @@ const OUTPUT_SAMPLE_RATE: u32 = 48_000;
 const MAX_DECODED_OPUS_SAMPLES: usize = 5_760;
 const OUTPUT_LEVEL_SAMPLES: usize = 2_400;
 const OUTPUT_FRAME_SAMPLES: usize = 960;
-/// Remote speech held back before playback starts and after each underrun.
-/// Packets arrive paced by the network, one 20 ms frame per device period on
-/// macOS/Windows; three frames of slack absorb ordinary jitter and spikes.
-pub(crate) const OUTPUT_JITTER_BUFFER_MS: u32 = 60;
 /// Default `wait_for_open` timeout, exposed so the N-API adapter can apply it
 /// when TypeScript passes no override.
 pub const DEFAULT_OPEN_TIMEOUT_MS: u32 = 20_000;

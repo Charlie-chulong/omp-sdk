@@ -1,8 +1,10 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { type WasmGrammarInfo, type WasmGrammarQuery, wasmGrammarFor } from "@oh-my-pi/pi-natives";
 import { getNativeGrammarsDir, logger, withFileLock } from "@oh-my-pi/pi-utils";
 import { withDownload } from "../downloads/activity";
+import { assertNativeCapability } from "../native-capabilities";
 import { downloadFile } from "./tools-manager";
 
 /**
@@ -42,13 +44,13 @@ async function fetchGrammar(
 	logger.debug("grammar: downloading", { language: info.language, url });
 	try {
 		await downloadFile(url, compressed, { timeoutMs: DOWNLOAD_TIMEOUT_MS, onProgress });
-		const wasm = Bun.zstdDecompressSync(await Bun.file(compressed).bytes());
+		const wasm = runtime.zstdDecompressSync(await runtime.file(compressed).bytes());
 		if (wasm.byteLength !== info.size) {
 			throw new Error(`${info.file}: expected ${info.size} bytes, received ${wasm.byteLength}`);
 		}
-		const digest = new Bun.CryptoHasher("sha256").update(wasm).digest("hex");
+		const digest = new runtime.CryptoHasher("sha256").update(wasm).digest("hex");
 		if (digest !== info.sha256.toLowerCase()) throw new Error(`${info.file}: SHA-256 mismatch (${digest})`);
-		await Bun.write(part, wasm);
+		await runtime.write(part, wasm);
 		// Rename, never rewrite in place: the addon reads `<dir>/<file>` lazily and must never see a partial file.
 		await fs.rename(part, dest);
 	} finally {
@@ -64,7 +66,7 @@ async function installLocked(info: WasmGrammarInfo, dir: string, dest: string): 
 			`${dest}.install`,
 			async () => {
 				// Another process may have finished the install while we waited.
-				if (await Bun.file(dest).exists()) return true;
+				if (await runtime.file(dest).exists()) return true;
 				await withDownload(
 					`${info.language} grammar`,
 					tracker => fetchGrammar(info, dest, (loaded, total) => tracker.update({ loaded, total })),
@@ -90,12 +92,13 @@ async function installLocked(info: WasmGrammarInfo, dir: string, dest: string): 
  * Download, verify, and install `info`'s wasm grammar into `dir` (default:
  * the directory the addon reads). Returns whether `<dir>/<file>` exists
  * afterwards. Concurrent calls for the same file share one install, and an OS
- * file lock serializes installs across processes. Never throws: network and
- * integrity failures are logged, return `false`, and back off for a few
- * minutes. {@link ensureGrammar} is the usual entry point; this takes the
- * resolved info directly (test seam).
+ * file lock serializes installs across processes. Unsupported native builds
+ * throw before any filesystem or network work. Network and integrity failures
+ * are logged, return `false`, and back off for a few minutes.
+ * {@link ensureGrammar} is the usual entry point.
  */
 export function installGrammar(info: WasmGrammarInfo, dir: string = getNativeGrammarsDir()): Promise<boolean> {
+	assertNativeCapability("wasmGrammars", `WASM grammar for ${info.language}`);
 	const dest = path.join(dir, info.file);
 	const pending = inflight.get(dest);
 	if (pending) return pending;
@@ -115,7 +118,9 @@ export function installGrammar(info: WasmGrammarInfo, dir: string = getNativeGra
  */
 export async function ensureGrammar(query: WasmGrammarQuery): Promise<boolean> {
 	const info = wasmGrammarFor(query);
-	if (!info || info.installed) return true;
+	if (!info) return true;
+	assertNativeCapability("wasmGrammars", `WASM grammar for ${info.language}`);
+	if (info.installed) return true;
 	return installGrammar(info);
 }
 
@@ -129,6 +134,7 @@ export async function ensureGrammars(languages: readonly string[]): Promise<bool
 		languages.map(lang => {
 			const info = wasmGrammarFor({ lang });
 			if (!info) return false;
+			assertNativeCapability("wasmGrammars", `WASM grammar for ${info.language}`);
 			return info.installed || installGrammar(info);
 		}),
 	);

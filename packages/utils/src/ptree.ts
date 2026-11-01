@@ -9,6 +9,8 @@
 
 import { Process, type ProcessTerminateOptions } from "@oh-my-pi/pi-natives";
 import type { Spawn, Subprocess } from "bun";
+import { createRequire } from "node:module";
+import { runtime } from "./runtime";
 
 type InMask = "pipe" | "ignore" | Buffer | Uint8Array | null;
 
@@ -27,6 +29,49 @@ const SUBREAPER_KILL_POLL_MS = 5;
  * the loader continues to the next candidate.
  */
 export function createLinuxSubreaperScript(libcCandidates: readonly string[] = ["libc.so.6", "libc.so"]): string {
+	if (!runtime.capabilities.bun) {
+		const koffiEntry = createRequire(import.meta.url).resolve("koffi");
+		return `
+const { spawn } = require("node:child_process");
+const { once } = require("node:events");
+const { setTimeout: sleep } = require("node:timers/promises");
+const koffi = require(${JSON.stringify(koffiEntry)});
+let libc;
+for (const soname of ${JSON.stringify(libcCandidates)}) {
+	try {
+		const library = koffi.load(soname);
+		libc = {
+			prctl: library.func("int prctl(int option, uint64_t a, uint64_t b, uint64_t c, uint64_t d)"),
+			waitpid: library.func("int waitpid(int pid, void *status, int options)"),
+		};
+		break;
+	} catch {}
+}
+if (!libc) throw new Error("failed to load libc for Linux child supervision");
+if (libc.prctl(36, 1, 0, 0, 0) !== 0) throw new Error("failed to become a Linux child subreaper");
+const commandJson = process.env.${LINUX_SUBREAPER_COMMAND_ENV};
+if (!commandJson) throw new Error("missing supervised command");
+delete process.env.${LINUX_SUBREAPER_COMMAND_ENV};
+delete process.env.${LINUX_SUBREAPER_BUN_BE_BUN_ENV};
+const command = JSON.parse(commandJson);
+const child = spawn(command[0], command.slice(1), { stdio: ["inherit", "pipe", "pipe"], env: process.env });
+async function relay(stream, destination) {
+	for await (const chunk of stream) if (!destination.write(chunk)) await once(destination, "drain");
+}
+async function main() {
+	const exited = once(child, "exit");
+	const [[exitCode]] = await Promise.all([exited, relay(child.stdout, process.stdout), relay(child.stderr, process.stderr)]);
+	for (;;) {
+		let pid;
+		do { pid = libc.waitpid(-1, null, 1); } while (pid > 0);
+		if (pid !== 0) break;
+		await sleep(10);
+	}
+	process.exit(exitCode ?? 1);
+}
+main().catch(error => { console.error(error); process.exit(1); });
+`;
+	}
 	return `
 import { dlopen, FFIType } from "bun:ffi";
 
@@ -416,7 +461,7 @@ export class ChildProcess<In extends InMask = InMask> {
 		};
 		if (gracefulMs >= 0) {
 			signal("SIGTERM");
-			await Promise.race([this.proc.exited, Bun.sleep(gracefulMs)]);
+			await Promise.race([this.proc.exited, runtime.sleep(gracefulMs)]);
 		}
 		if (this.proc.exitCode === null && this.proc.signalCode === null) signal("SIGKILL");
 	}
@@ -433,7 +478,7 @@ export class ChildProcess<In extends InMask = InMask> {
 					emptySweeps = 0;
 					for (const child of children) child.killTree(9);
 				}
-				if (emptySweeps < 2) await Bun.sleep(SUBREAPER_KILL_POLL_MS);
+				if (emptySweeps < 2) await runtime.sleep(SUBREAPER_KILL_POLL_MS);
 			}
 		} finally {
 			root.killTree(9);
@@ -660,8 +705,8 @@ function spawnInternal<In extends InMask = InMask>(
 ): ChildProcess<In> {
 	const { timeout = -1, signal, stderr, detached, subreaper = false, ...rest } = opts ?? {};
 	const useSubreaper = subreaper && process.platform === "linux";
-	const commandEnv = rest.env ?? Bun.env;
-	const child = Bun.spawn(useSubreaper ? [process.execPath, "-e", LINUX_SUBREAPER_SCRIPT] : cmd, {
+	const commandEnv = rest.env ?? process.env;
+	const child = runtime.spawn(useSubreaper ? [process.execPath, "-e", LINUX_SUBREAPER_SCRIPT] : cmd, {
 		stdin: "ignore",
 		stdout: "pipe",
 		stderr: "pipe",

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Fullscreen esc-esc rewind selector.
  *
@@ -633,7 +634,7 @@ export class RewindSelectorComponent implements Component {
 	#plainRowText(rows: readonly string[]): string {
 		let text = this.#rowText.get(rows);
 		if (text === undefined) {
-			text = Bun.stripANSI(rows.join("\n")).toLowerCase();
+			text = runtime.stripANSI(rows.join("\n")).toLowerCase();
 			this.#rowText.set(rows, text);
 		}
 		return text;

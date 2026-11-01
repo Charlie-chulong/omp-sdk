@@ -10,7 +10,7 @@ import * as toolsManager from "@oh-my-pi/pi-coding-agent/utils/tools-manager";
 import * as scrapers from "@oh-my-pi/pi-coding-agent/web/scrapers/types";
 import * as scraperUtils from "@oh-my-pi/pi-coding-agent/web/scrapers/utils";
 import * as natives from "@oh-my-pi/pi-natives";
-import { ptree, removeSyncWithRetries, Snowflake } from "@oh-my-pi/pi-utils";
+import { encodeBase64, ptree, removeSyncWithRetries, Snowflake } from "@oh-my-pi/pi-utils";
 import { asGlobalFetch } from "../helpers/fetch-mock";
 
 const withMissingSystemPython = () => {
@@ -84,7 +84,7 @@ describe("read tool URL handling", () => {
 			height: 1,
 			wasResized: false,
 			get data() {
-				return imageBytes.toBase64();
+				return encodeBase64(imageBytes);
 			},
 		});
 
@@ -96,7 +96,7 @@ describe("read tool URL handling", () => {
 		expect(result.details?.method).toBe("image");
 		expect(imageBlock).toBeDefined();
 		expect(imageBlock?.mimeType).toBe("image/png");
-		expect(imageBlock?.data).toBe(imageBytes.toBase64());
+		expect(imageBlock?.data).toBe(encodeBase64(imageBytes));
 	});
 
 	it("resizes fetched images before emitting image content blocks", async () => {

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * OpenAI Codex (ChatGPT OAuth) flow — browser and device-code flows.
  */
@@ -253,7 +254,7 @@ export async function loginOpenAICodexDevice(ctrl: OAuthController): Promise<OAu
 	ctrl.onProgress?.(`Waiting for browser authorization (code: ${userCode})…`);
 
 	for (let poll = 0; poll < DEVICE_MAX_POLLS; poll++) {
-		await Bun.sleep(poll === 0 ? Math.min(pollIntervalMs, DEVICE_POLL_INTERVAL_MS) : pollIntervalMs);
+		await runtime.sleep(poll === 0 ? Math.min(pollIntervalMs, DEVICE_POLL_INTERVAL_MS) : pollIntervalMs);
 
 		if (ctrl.signal?.aborted) {
 			throw new AIError.LoginCancelledError("Device authorization cancelled");

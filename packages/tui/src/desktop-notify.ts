@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 // Linux desktop notification delivery via D-Bus.
 //
 // Several terminal families — most notably the VTE-based stack (Ptyxis,
@@ -44,7 +45,7 @@ export interface DesktopNotifier {
  */
 export function hasLinuxDesktopSession(
 	platform: NodeJS.Platform = process.platform,
-	env: NodeJS.ProcessEnv = Bun.env,
+	env: NodeJS.ProcessEnv = process.env,
 	fileExists: (path: string) => boolean = fs.existsSync,
 ): boolean {
 	if (platform !== "linux") return false;
@@ -67,7 +68,7 @@ export function shouldDeliverDesktopNotification(
 	_terminalId: TerminalId,
 	notifyProtocolIsBell: boolean,
 	platform: NodeJS.Platform = process.platform,
-	env: NodeJS.ProcessEnv = Bun.env,
+	env: NodeJS.ProcessEnv = process.env,
 ): boolean {
 	if (!notifyProtocolIsBell) return false;
 	if (!hasLinuxDesktopSession(platform, env)) return false;
@@ -180,7 +181,7 @@ export function sendDesktopNotification(message: string | TerminalNotification):
 		// the renderer's shutdown — a completion toast must never delay process
 		// exit. Ignored stdio alone does not detach the child from the parent's
 		// reference count.
-		const child = Bun.spawn({
+		const child = runtime.spawn({
 			cmd: buildDesktopNotifyCommand(notifier, message),
 			stdin: "ignore",
 			stdout: "ignore",

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { dirname } from "node:path";
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import type * as MnemopiNs from "@oh-my-pi/pi-mnemopi";
@@ -978,7 +979,7 @@ export class MnemopiSessionState {
 			const remainingMs = deadline - performance.now();
 			const completed =
 				remainingMs > 0
-					? await Promise.race([consolidatePromise.then(() => true), Bun.sleep(remainingMs).then(() => false)])
+					? await Promise.race([consolidatePromise.then(() => true), runtime.sleep(remainingMs).then(() => false)])
 					: false;
 			if (!completed) {
 				logger.warn("Mnemopi: consolidate-on-dispose exceeded shutdown budget; detaching to background.", {

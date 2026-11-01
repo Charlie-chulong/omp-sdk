@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -196,7 +197,7 @@ async function loadPuppeteerImport(safeDir: string, prepareSafeDir: boolean): Pr
 	let loading = puppeteerLoadPromise;
 	if (!loading) {
 		loading = (async () => {
-			if (prepareSafeDir) await Bun.write(path.join(safeDir, "package.json"), "{}");
+			if (prepareSafeDir) await runtime.write(path.join(safeDir, "package.json"), "{}");
 			return importPuppeteerWithSafeCwd(safeDir);
 		})();
 		puppeteerLoadPromise = loading;
@@ -453,7 +454,7 @@ async function isChromiumExecutable(p: string): Promise<boolean> {
 	if (process.platform !== "linux") return true;
 	try {
 		const probeTimeoutMs = 3000;
-		const proc = Bun.spawn([p, "--version"], {
+		const proc = runtime.spawn([p, "--version"], {
 			stdout: "pipe",
 			stderr: "ignore",
 			signal: AbortSignal.timeout(probeTimeoutMs),
@@ -461,7 +462,7 @@ async function isChromiumExecutable(p: string): Promise<boolean> {
 		});
 		const stdout = await Promise.race([
 			new Response(proc.stdout).text(),
-			Bun.sleep(probeTimeoutMs + 500).then(() => null),
+			runtime.sleep(probeTimeoutMs + 500).then(() => null),
 		]);
 		if (stdout === null) return false;
 		await proc.exited;
@@ -715,7 +716,7 @@ async function writeOwnedProfilePreferences(file: string): Promise<void> {
 	prefs.profile = profile;
 	const staged = `${file}.omp-${process.pid}`;
 	try {
-		await Bun.write(staged, JSON.stringify(prefs));
+		await runtime.write(staged, JSON.stringify(prefs));
 		await fs.promises.rename(staged, file);
 	} catch (error) {
 		await fs.promises.rm(staged, { force: true });
@@ -868,7 +869,7 @@ function resolvePageClient(page: Page): PuppeteerCdpClient | null {
 async function resolveMacOsProductVersion(): Promise<string> {
 	if (os.platform() !== "darwin") return "";
 	try {
-		const plist = await Bun.file("/System/Library/CoreServices/SystemVersion.plist").text();
+		const plist = await runtime.file("/System/Library/CoreServices/SystemVersion.plist").text();
 		return plist.match(/<key>ProductVersion<\/key>\s*<string>([^<]+)<\/string>/)?.[1] ?? "";
 	} catch {
 		return "";

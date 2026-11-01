@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Protocol handler for agent:// URLs.
  *
@@ -242,7 +243,7 @@ export class AgentProtocolHandler implements ProtocolHandler {
 			}
 		});
 
-		const rawContent = await Bun.file(scan.foundPath).text();
+		const rawContent = await runtime.file(scan.foundPath).text();
 		const notes: string[] = [];
 		let content = rawContent;
 		// A published file belongs to a finished run. If the agent is streaming
@@ -264,7 +265,7 @@ export class AgentProtocolHandler implements ProtocolHandler {
 			let parsed = false;
 			if (scan.jsonPath) {
 				try {
-					jsonValue = JSON.parse(await Bun.file(scan.jsonPath).text());
+					jsonValue = JSON.parse(await runtime.file(scan.jsonPath).text());
 					extractedFrom = scan.jsonPath;
 					parsed = true;
 				} catch {

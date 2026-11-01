@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * HTTP loopback bridge that lets the Python kernel invoke host-side tools and
  * enabled eval-prelude capabilities, mirroring the JavaScript worker bridge.
@@ -149,7 +150,7 @@ async function callSessionToolPromptOnAbort(
 
 async function startServer(): Promise<BridgeServer> {
 	const token = crypto.randomUUID();
-	const server = Bun.serve({
+	const server = await runtime.serve({
 		hostname: "127.0.0.1",
 		port: 0,
 		async fetch(req) {

@@ -91,7 +91,7 @@ describe("broker-backed MCP OAuth refresh", () => {
 		if (!stored) throw new Error("broker credential was not persisted");
 		brokerCredentialId = stored.id;
 
-		handle = startAuthBroker({
+		handle = await startAuthBroker({
 			storage: serverStorage,
 			bind: "127.0.0.1:0",
 			bearerTokens: [BEARER],

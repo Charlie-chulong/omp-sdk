@@ -1,3 +1,4 @@
+import { runtime as hostRuntime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Subprocess-backed Python runner.
  *
@@ -335,7 +336,7 @@ export class PythonKernel extends BaseKernel<PythonKernelExecuteOptions> {
 		const scriptPath = await stageRunnerScript("omp-python-runner", "py", RUNNER_SCRIPT);
 		const kernel = new PythonKernel(Snowflake.next(), runtime.pythonPath);
 
-		const proc = Bun.spawn([runtime.pythonPath, "-u", scriptPath], {
+		const proc = hostRuntime.spawn([runtime.pythonPath, "-u", scriptPath], {
 			cwd: options.cwd,
 			detached: shouldDetachKernel(process.platform),
 			env: spawnEnv,

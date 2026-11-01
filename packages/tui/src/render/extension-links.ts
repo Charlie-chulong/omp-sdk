@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Links whose scheme an extension registered (`pi.registerLinkScheme`). Markdown draws them
  * without the ` (url)` suffix. In a plain terminal the rendered row carries an OSC 8 marker with the
@@ -117,7 +118,7 @@ export function formatExtensionLink(label: string, href: string, key: string): s
 	const body = label.replace(SGR_PATTERN, (sequence, params: string) =>
 		endsUnderline(params) ? sequence + UNDERLINE.on : sequence,
 	);
-	const id = Bun.hash.crc32(`${safe}\0${key}`);
+	const id = runtime.hash.crc32(`${safe}\0${key}`);
 	return `${MARKER_OPEN}-${id};${safe}\x07${UNDERLINE.on}${body}${UNDERLINE.off}\x1b]8;;\x07`;
 }
 
@@ -207,7 +208,7 @@ export function extensionLinkLabels(line: string): ExtensionLinkLabel[] {
 		labels.push({ ...open, end: x, endsRow: true });
 	} else {
 		const last = labels.at(-1);
-		if (last && Bun.stripANSI(line.slice(lastClose)).trim() === "")
+		if (last && runtime.stripANSI(line.slice(lastClose)).trim() === "")
 			labels[labels.length - 1] = { ...last, endsRow: true };
 	}
 	return labels;

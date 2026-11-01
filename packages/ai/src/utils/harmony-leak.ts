@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * GPT-5 Harmony-header leakage detection and recovery.
  *
@@ -371,7 +372,7 @@ export function createHarmonyAuditEvent(params: {
 		removedLen: params.removed.length,
 		removedSha8: sha8(params.removed),
 		removedPreview: redactedJunkPreview(params.removed),
-		removedBlob: Bun.env.OMP_HARMONY_DEBUG === "1" ? params.removed : undefined,
+		removedBlob: process.env.OMP_HARMONY_DEBUG === "1" ? params.removed : undefined,
 	};
 }
 
@@ -469,7 +470,7 @@ function truncateAtLineAndAppendSentinel(
 }
 
 function sha8(text: string): string {
-	return Bun.sha(text, "hex").slice(0, 8);
+	return runtime.CryptoHasher.hash("sha512-256", text, "hex").slice(0, 8);
 }
 
 const PREVIEW_KEEP_RE = new RegExp(`[${SCRIPT_CLASS}\\s】【”“…」「、。]`, "u");

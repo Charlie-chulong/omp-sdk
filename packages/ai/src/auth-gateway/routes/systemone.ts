@@ -12,7 +12,7 @@
  * response header and the broker's observed-usage ledger.
  */
 import { calculateCost } from "@oh-my-pi/pi-catalog/models";
-import { logger } from "@oh-my-pi/pi-utils";
+import * as logger from "@oh-my-pi/pi-utils/logger";
 import * as AIError from "../../error";
 import { classifyGatewayError } from "../../error/gateway";
 import { checkNativeJudgmentImages, createNativeJudge, isJudgmentApi } from "../../judgment/native";

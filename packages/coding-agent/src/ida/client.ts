@@ -11,6 +11,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { IpcConnection, ipcEndpoint } from "@oh-my-pi/pi-natives";
 import { logger, postmortem, ptree, untilAborted } from "@oh-my-pi/pi-utils";
+import { runtime as platformRuntime } from "@oh-my-pi/pi-utils/runtime";
 import { TERMINAL_STATES } from "@oh-my-pi/pi-tui/apps/ps-data";
 import type { DaemonSnapshot } from "@oh-my-pi/pi-tui/tools/daemon";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
@@ -521,7 +522,7 @@ export async function smokeTestIdaHost(): Promise<void> {
 				alive = (await conn.call({ id: conn.nextId(), op: "ping" }).catch(() => undefined)) === "pong";
 				conn.close();
 			}
-			if (!alive) await Bun.sleep(200);
+			if (!alive) await platformRuntime.sleep(200);
 		}
 		if (!alive) {
 			throw new Error(`ida host smoke failed: no ping response (${proc.peekStderr().slice(-500) || "no stderr"})`);

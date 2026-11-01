@@ -1,4 +1,5 @@
-import { Database, type Statement } from "bun:sqlite";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
+import { Database, type Statement } from "@oh-my-pi/pi-utils/sqlite-driver";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
@@ -774,7 +775,7 @@ LIMIT ?4`,
 				}
 				if (rows.length < chunk) break;
 				// Yield so a chunked walk never freezes the TUI (bun:sqlite is sync).
-				await Bun.sleep(0);
+				await runtime.sleep(0);
 			}
 			if (sums.size > 0) {
 				using upsert = this.#db.prepare(

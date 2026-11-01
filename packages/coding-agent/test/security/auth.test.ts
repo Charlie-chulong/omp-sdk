@@ -207,7 +207,7 @@ describe("exact security OAuth resolver", () => {
 		});
 		const brokerStorage = createBrokerAuthStorage(store);
 		await brokerStorage.credentials.reload();
-		const handle = startAuthBroker({
+		const handle = await startAuthBroker({
 			storage: brokerStorage,
 			bind: "127.0.0.1:0",
 			bearerTokens: ["security-broker-token"],

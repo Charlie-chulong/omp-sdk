@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { logger, sanitizeText, truncate } from "@oh-my-pi/pi-utils";
 import { findPersistedRecall, persistRecall } from "../memory-backend/recall-entry";
 import type { MemoryPromptPreparation } from "../memory-backend/types";
@@ -205,7 +206,7 @@ function extendRetentionPrefixKey(key: string, messages: HindsightMessage[], fro
 	for (let i = from; i < to; i++) {
 		const m = messages[i];
 		if (m === undefined) break;
-		key = Bun.hash(`${key}\u0000${m.role}\u0000${m.content}\u0000${m.timestamp ?? ""}`).toString(36);
+		key = runtime.hash(`${key}\u0000${m.role}\u0000${m.content}\u0000${m.timestamp ?? ""}`).toString(36);
 	}
 	return key;
 }
@@ -455,7 +456,7 @@ export class HindsightSessionState {
 		signal?: AbortSignal,
 	): Promise<MemoryPromptPreparation | undefined> {
 		if (this.config.mentalModelsEnabled && this.mentalModelsLoadPromise && this.mentalModelsLoadedAt === undefined) {
-			await Promise.race([this.mentalModelsLoadPromise, Bun.sleep(MENTAL_MODEL_FIRST_TURN_DEADLINE_MS)]);
+			await Promise.race([this.mentalModelsLoadPromise, runtime.sleep(MENTAL_MODEL_FIRST_TURN_DEADLINE_MS)]);
 		}
 
 		if (!this.config.autoRecall || this.hasRecalledForFirstTurn) return undefined;
@@ -503,7 +504,7 @@ export class HindsightSessionState {
 		return JSON.stringify([
 			"hindsight",
 			this.config.hindsightApiUrl,
-			Bun.hash(this.config.hindsightApiToken ?? "").toString(16),
+			runtime.hash(this.config.hindsightApiToken ?? "").toString(16),
 			this.bankId,
 			this.recallTags ?? [],
 			this.recallTagsMatch ?? null,
@@ -580,7 +581,7 @@ export class HindsightSessionState {
 	): Promise<void> {
 		const outcome = await Promise.race([
 			load,
-			Bun.sleep(MENTAL_MODEL_FIRST_TURN_DEADLINE_MS).then(() => MENTAL_MODEL_LOAD_TIMED_OUT),
+			runtime.sleep(MENTAL_MODEL_FIRST_TURN_DEADLINE_MS).then(() => MENTAL_MODEL_LOAD_TIMED_OUT),
 		]);
 		if (outcome !== MENTAL_MODEL_LOAD_TIMED_OUT || generation !== this.#mentalModelsLoadGeneration) return;
 

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Biome CLI-based linter client.
  * Uses Biome's CLI with JSON output instead of LSP (which has stale diagnostics issues).
@@ -66,7 +67,7 @@ async function runBiome(
 	const command = resolvedCommand ?? "biome";
 
 	try {
-		const proc = Bun.spawn([command, ...args], {
+		const proc = runtime.spawn([command, ...args], {
 			cwd,
 			stdout: "pipe",
 			stderr: "pipe",
@@ -117,12 +118,12 @@ export class BiomeClient implements LinterClient {
 	async format(filePath: string, content: string): Promise<string> {
 		// Keep the standalone LinterClient contract: callers supply the content to
 		// format, regardless of what is currently on disk.
-		await Bun.write(filePath, content);
+		await runtime.write(filePath, content);
 
 		const result = await runBiome(["format", "--write", filePath], this.cwd, this.config.resolvedCommand);
 
 		if (result.success) {
-			return await Bun.file(filePath).text();
+			return await runtime.file(filePath).text();
 		}
 
 		// Format failed, return original

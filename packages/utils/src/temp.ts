@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as fsPromises from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { runtime } from "./runtime";
 
 /**
  * Owned temporary directory, removed via `remove()` or `using`/`await using`.
@@ -104,8 +105,8 @@ export async function removeWithRetries(target: string): Promise<void> {
 			// handles on GC, so a closed database can still block deletion for
 			// seconds. One forced major collection on the first retry releases
 			// them immediately instead of burning the retry window.
-			if (attempt === 0) Bun.gc(true);
-			await Bun.sleep(kRemoveRetryDelayMs);
+			if (attempt === 0) runtime.gc?.(true);
+			await runtime.sleep(kRemoveRetryDelayMs);
 		}
 	}
 }
@@ -117,8 +118,8 @@ export function removeSyncWithRetries(target: string): void {
 			return;
 		} catch (err) {
 			if (!shouldRetryRemove(err, attempt)) throw err;
-			if (attempt === 0) Bun.gc(true);
-			Bun.sleepSync(kRemoveRetryDelayMs);
+			if (attempt === 0) runtime.gc?.(true);
+			runtime.sleepSync(kRemoveRetryDelayMs);
 		}
 	}
 }

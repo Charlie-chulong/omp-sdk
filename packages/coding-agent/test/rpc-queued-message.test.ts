@@ -36,6 +36,30 @@ describe("RPC queued-message editing", () => {
 		await removeWithRetries(directory);
 	});
 
+	test("changes approval mode both ways during a live turn without aborting it", async () => {
+		client = createClient("hold");
+		await client.start();
+		const started = Promise.withResolvers<void>();
+		const results: RpcPromptResultFrame[] = [];
+		const unsubscribe = client.onEvent(event => {
+			if (event.type === "agent_start") started.resolve();
+		});
+		const unsubscribeResults = client.onPromptResult(result => results.push(result));
+		try {
+			await client.prompt("hold this turn");
+			await withTimeout(started.promise, 10_000, "Turn never started");
+			for (const mode of ["always-ask", "yolo"] as const) {
+				expect(await withTimeout(client.setApprovalMode(mode), 5_000, "Approval mode waited for idle")).toBe(mode);
+				expect(await client.getState()).toMatchObject({ approvalMode: mode, isStreaming: true });
+			}
+			expect(results).toEqual([]);
+		} finally {
+			unsubscribeResults();
+			unsubscribe();
+			await client.abort();
+		}
+	}, 30_000);
+
 	test("validates removal and delivers only the surviving queued request", async () => {
 		await client.start();
 		await client.followUp("cancel this");

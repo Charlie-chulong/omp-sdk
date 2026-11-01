@@ -1,10 +1,11 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Gemini CLI OAuth flow (Google Cloud Code Assist)
  * Standard Gemini models only (gemini-2.0-flash, gemini-2.5-*)
  */
 
 import { getGeminiCliHeaders } from "@oh-my-pi/pi-catalog/wire/gemini-headers";
-import { $env } from "@oh-my-pi/pi-utils";
+import { $env } from "@oh-my-pi/pi-utils/env";
 import * as AIError from "../../error";
 import { extractGoogleValidationUrl, formatGoogleValidationRequiredMessage } from "../../utils/google-validation";
 import type { AfterExchangeHook } from "../hooks/types";
@@ -68,7 +69,7 @@ export async function pollOperation(
 		if (attempt > 0) {
 			onProgress?.(`Waiting for project provisioning (attempt ${attempt + 1}/${POLL_MAX_ATTEMPTS})...`);
 			throwIfLoginCancelled(signal);
-			await Bun.sleep(POLL_INTERVAL_MS);
+			await runtime.sleep(POLL_INTERVAL_MS);
 		}
 
 		throwIfLoginCancelled(signal);

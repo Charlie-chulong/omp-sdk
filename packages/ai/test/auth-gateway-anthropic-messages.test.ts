@@ -515,8 +515,8 @@ describe("anthropic-messages parseRequest", () => {
 		expect(bare.context.messages.find(m => m.role === "assistant")?.model).toBe("claude-fable-5-1");
 
 		// Another provider's prefix does not describe this route, so it stays put.
-		const foreign = parseRequest({ ...base, model: "zenmux/claude-opus-4-8" });
-		expect(foreign.context.messages.find(m => m.role === "assistant")?.model).toBe("zenmux/claude-opus-4-8");
+		const foreign = parseRequest({ ...base, model: "nanogpt/claude-opus-4-8" });
+		expect(foreign.context.messages.find(m => m.role === "assistant")?.model).toBe("nanogpt/claude-opus-4-8");
 	});
 
 	it("stamps a tool-calling replayed turn as toolUse", () => {

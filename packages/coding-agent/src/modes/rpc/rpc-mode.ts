@@ -62,6 +62,7 @@ import { listLogoutAccounts, logoutCredential } from "../../slash-commands/helpe
 import { cfgSttEnabled } from "../../stt/settings";
 import { defaultLoadModeForToolName } from "../../tools/essential-tools";
 import { USER_TODO_EDIT_CUSTOM_TYPE } from "../../tools/todo";
+import { isApprovalMode } from "../../tools/approval";
 import type { EventBus } from "../../utils/event-bus";
 import { selectRpcEntries } from "./rpc-compat";
 import { calculateTokensPerSecond } from "../../utils/token-rate";
@@ -436,6 +437,7 @@ const BACKGROUND_COMMANDS: ReadonlySet<string> = new Set<RpcCommand["type"]>([
 	"live_connect",
 	"btw_cancel",
 	"abort_branch_summary",
+	"set_approval_mode",
 ]);
 
 /**
@@ -1718,12 +1720,18 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 		rpcUiContext.askDialogEnabled = command.enabled === true;
 		return success(command.id, "set_ask_dialog", { enabled: rpcUiContext.askDialogEnabled });
 	};
+	const setApprovalMode = (command: RpcCommand & { type: "set_approval_mode" }): RpcResponse => {
+		if (!isApprovalMode(command.mode)) {
+			return error(command.id, "set_approval_mode", `Invalid approval mode: ${String(command.mode)}`);
+		}
+		session.setApprovalMode(command.mode);
+		return success(command.id, "set_approval_mode", { mode: session.approvalMode });
+	};
 	const onPromptError = (id: string | undefined, command: string) => (promptError: Error) =>
 		output(error(id, command, promptError.message));
 
-	// Read stdin from now on: `session_start` may be waiting on a dialog only the client can answer. Until the
-	// command loop below exists, a dialog answer and the ask-dialog opt-in are handled at once and every other
-	// frame is held, in arrival order, for that loop.
+	// Startup dialogs can wait on the client: serve their answers and permission/ask controls immediately.
+	// Hold ordinary commands in arrival order until the initialized command loop exists.
 	let heldFrames: unknown[] | undefined = [];
 	const receiveFrame = (parsed: unknown): void => {
 		if (!heldFrames) {
@@ -1732,6 +1740,8 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 			pendingExtensionRequests.get(parsed.id)?.resolve(parsed);
 		} else if (isRecord(parsed) && parsed.type === "set_ask_dialog") {
 			output(setAskDialog(parsed as RpcCommand & { type: "set_ask_dialog" }));
+		} else if (isRecord(parsed) && parsed.type === "set_approval_mode") {
+			output(setApprovalMode(parsed as RpcCommand & { type: "set_approval_mode" }));
 		} else {
 			heldFrames.push(parsed);
 		}
@@ -2254,6 +2264,7 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 				const state: RpcSessionState = {
 					model: session.model,
 					thinkingLevel: session.thinkingLevel,
+					approvalMode: session.approvalMode,
 					isStreaming: session.isStreaming,
 					isCompacting: session.isCompacting,
 					steeringMode: session.steeringMode,
@@ -2293,6 +2304,9 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 				};
 				return success(id, "get_state", state);
 			}
+
+			case "set_approval_mode":
+				return setApprovalMode(command);
 
 			case "set_fast_mode": {
 				const supported = session.setFastMode(command.enabled);

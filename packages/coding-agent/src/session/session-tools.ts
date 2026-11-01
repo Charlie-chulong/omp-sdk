@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Agent, AgentMessage, AgentTool, AgentToolContext } from "@oh-my-pi/pi-agent-core";
 import type { Model } from "@oh-my-pi/pi-ai";
@@ -150,7 +151,6 @@ export interface SettingsGatedToolDelta {
 }
 
 interface SessionToolsOptions {
-	autoApprove?: boolean;
 	toolRegistry?: Map<string, AgentTool>;
 	createVibeTools?: () => AgentTool[];
 	/** Creates the private `think` scratchpad tool for runtime setting changes. */
@@ -275,7 +275,7 @@ const SYSTEM_PROMPT_DIGEST_CUSTOM_TYPE = "system-prompt-digest";
 /** Equal digests mean equal prompt blocks. */
 function systemPromptDigest(blocks: readonly string[]): string {
 	let hash = BigInt(blocks.length);
-	for (const block of blocks) hash = Bun.hash.wyhash(block, hash);
+	for (const block of blocks) hash = runtime.hash.wyhash(block, hash);
 	return hash.toString(16);
 }
 
@@ -348,7 +348,6 @@ interface XdevMountNoticeProjection {
 /** Owns tool registration, presentation, prompt rebuilding, skills, and permissions. */
 export class SessionTools {
 	readonly #host: SessionToolsHost;
-	#autoApprove: boolean;
 	#toolRegistry: Map<string, AgentTool>;
 	#createVibeTools: (() => AgentTool[]) | undefined;
 	#createThinkTool: SessionToolsOptions["createThinkTool"];
@@ -484,7 +483,6 @@ export class SessionTools {
 
 	constructor(host: SessionToolsHost, options: SessionToolsOptions) {
 		this.#host = host;
-		this.#autoApprove = options.autoApprove === true;
 		this.#toolRegistry = options.toolRegistry ?? new Map();
 		this.#createVibeTools = options.createVibeTools;
 		this.#createThinkTool = options.createThinkTool;
@@ -1033,11 +1031,6 @@ export class SessionTools {
 		if (PERMISSION_REQUIRED_TOOLS[tool.name] !== true) return tool;
 		// Default-config ACP sessions still ask for executable calls even though
 		// the schema defaults to yolo; explicit yolo is an intentional opt-in.
-		if (tool.name !== "bash" && this.#isExplicitAutoApproveMode()) {
-			const userPolicies: Record<string, unknown> = cfgToolsApproval.get(this.#host.settings);
-			const toolPolicy = userPolicies[tool.name];
-			if (!toolPolicy || toolPolicy === "allow") return tool;
-		}
 		return new Proxy(tool, {
 			get: (target, prop) => {
 				if (prop !== "execute") return target[prop as keyof T];
@@ -1051,10 +1044,16 @@ export class SessionTools {
 					const restrictions = approvalRestrictions(this.#host.settings, this.#host.sessionManager.getCwd());
 					// A restricted call is approved per call: a remembered ACP answer never covers it.
 					let cacheable = restrictedFolderReason(target, args, restrictions) === undefined;
+					if (target.name !== "bash" && cacheable && this.#isExplicitAutoApproveMode()) {
+						const userPolicies: Record<string, unknown> = cfgToolsApproval.get(this.#host.settings);
+						const toolPolicy = userPolicies[target.name];
+						if (!toolPolicy || toolPolicy === "allow") {
+							return await target.execute(toolCallId, args as never, signal, onUpdate, ctx as never);
+						}
+					}
 					if (target.name === "bash") {
 						const explicitAutoApprove = this.#isExplicitAutoApproveMode();
 						const { approvalMode, userPolicies } = resolveApprovalFromContext({
-							autoApprove: this.#autoApprove,
 							settings: this.#host.settings,
 						});
 						const mode = approvalMode === "yolo" && !explicitAutoApprove ? "always-ask" : approvalMode;
@@ -1263,9 +1262,8 @@ export class SessionTools {
 
 	#isExplicitAutoApproveMode(): boolean {
 		return (
-			this.#autoApprove ||
-			(cfgToolsApprovalMode.isConfigured(this.#host.settings) &&
-				cfgToolsApprovalMode.get(this.#host.settings) === "yolo")
+			cfgToolsApprovalMode.isConfigured(this.#host.settings) &&
+			cfgToolsApprovalMode.get(this.#host.settings) === "yolo"
 		);
 	}
 

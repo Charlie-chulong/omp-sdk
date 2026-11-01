@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { AgentToolResult } from "@oh-my-pi/pi-agent-core";
 import * as vcs from "@oh-my-pi/pi-natives/vcs";
 import { CwdLookupMemo } from "../utils/forge-cli";
@@ -290,7 +291,7 @@ export async function saveArtifactText(
 		return undefined;
 	}
 
-	await Bun.write(artifactPath, text);
+	await runtime.write(artifactPath, text);
 	return artifactId;
 }
 

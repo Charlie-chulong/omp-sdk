@@ -22,12 +22,17 @@
 //! engine.observe("can you refactor the parser");
 //! let hint = engine.complete(&Query { before: "can you ", prefix: "re" });
 //! ```
+//!
+//! The default `smollm` feature includes SmolLM2 and its macOS Metal backend.
+//! Without it, n-gram, Apple prediction, and the shared AppKit spelling thread
+//! remain available; opening the `smollm` wire method returns an error.
 
 use std::{path::PathBuf, str::FromStr};
 
 pub mod apple;
 pub mod ngram;
 pub mod prose;
+#[cfg(feature = "smollm")]
 pub mod smollm;
 
 /// Editor state when ghost text is requested.
@@ -90,6 +95,7 @@ pub enum Method {
 	/// Personal word n-gram + web prior; serves `auto`.
 	Ngram,
 	/// SmolLM2-135M base model with token-healed, prefix-constrained decoding.
+	/// Opening this method requires the `smollm` crate feature.
 	SmolLm,
 	/// macOS `NSSpellChecker` dictionary completion (errors elsewhere).
 	Apple,
@@ -122,11 +128,36 @@ impl FromStr for Method {
 /// Open (or restore from [`Config::state_dir`]) the engine for `method`.
 ///
 /// # Errors
-/// Returns an error when persisted state or model weights cannot be loaded.
+/// Returns an error when persisted state or model weights cannot be loaded,
+/// or when the requested engine is not included in this build.
 pub fn open(method: Method, config: &Config) -> anyhow::Result<Box<dyn Predictor>> {
 	match method {
 		Method::Ngram => ngram::open(config),
+		#[cfg(feature = "smollm")]
 		Method::SmolLm => smollm::open(config),
+		#[cfg(not(feature = "smollm"))]
+		Method::SmolLm => anyhow::bail!(
+			"the smollm text prediction engine is not included in this build; rebuild with the \
+			 smollm feature or choose ngram or apple (macOS)"
+		),
 		Method::Apple => apple::open(config),
+	}
+}
+
+#[cfg(all(test, not(feature = "smollm")))]
+mod tests {
+	use super::{Config, Method, open};
+
+	#[test]
+	fn smollm_wire_method_reports_disabled_feature_before_loading_weights() {
+		let method = Method::parse("smollm").expect("smollm remains a valid wire method");
+		assert_eq!(method, Method::SmolLm);
+		let Err(error) = open(method, &Config::default()) else {
+			panic!("SmolLM must not open without its feature");
+		};
+		let message = error.to_string();
+		assert!(message.contains("smollm"));
+		assert!(message.contains("not included"));
+		assert!(message.contains("ngram"));
 	}
 }

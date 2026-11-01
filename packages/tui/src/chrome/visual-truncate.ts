@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Shared utility for truncating text to visual lines (accounting for line wrapping).
  * Used by both tool-execution.ts and bash-execution.ts for consistent behavior.
@@ -15,7 +16,7 @@ const textCache = new Map<string, Text>();
 const TRUNCATE_CACHE_MAX = 8;
 
 function cacheKey(text: string, width: number, paddingX: number): string {
-	return `${paddingX} ${width} ${text.length} ${Bun.hash(text).toString(36)}`;
+	return `${paddingX} ${width} ${text.length} ${runtime.hash(text).toString(36)}`;
 }
 
 function getCachedText(cacheKeyValue: string, paddingX: number): Text {

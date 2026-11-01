@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { isEexist, isEnoent, logger } from "@oh-my-pi/pi-utils";
@@ -163,7 +164,7 @@ export function flattenWorkspaceTextEdits(edit: WorkspaceEdit): Map<string, Text
 export async function applyTextEdits(filePath: string, edits: TextEdit[]): Promise<void> {
 	const content = await readTextFromDisk(filePath);
 	const result = applyTextEditsToString(content, edits);
-	await Bun.write(filePath, result);
+	await runtime.write(filePath, result);
 }
 
 /** A reference file and the text edits a rename computed for it. */
@@ -198,7 +199,7 @@ export async function applyEditsThenRename(
 		await fs.mkdir(path.dirname(dest), { recursive: true });
 		await fs.rename(source, dest);
 	} catch (err) {
-		await Promise.all(backups.map(({ filePath, original }) => Bun.write(filePath, original)));
+		await Promise.all(backups.map(({ filePath, original }) => runtime.write(filePath, original)));
 		throw err;
 	}
 }
@@ -341,7 +342,7 @@ export async function applyWorkspaceEdit(
 				await fs.mkdir(path.dirname(filePath), { recursive: true });
 				try {
 					if (op.options?.overwrite) {
-						await Bun.write(filePath, "");
+						await runtime.write(filePath, "");
 					} else {
 						const handle = await fs.open(filePath, "wx");
 						await handle.close();

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { popLoopPhase, pushLoopPhase, withLoopPhase } from "@oh-my-pi/pi-utils";
 import {
 	importedWeight,
@@ -1258,7 +1259,7 @@ function enhancedRecallCacheScope(
 	// A caller-supplied embedding changes the ranking; a derived one is a function of the query.
 	if (options.queryEmbedding === null) scope.queryEmbedding = null;
 	else if (options.queryEmbedding !== undefined) {
-		scope.queryEmbedding = Bun.hash(JSON.stringify(options.queryEmbedding)).toString(36);
+		scope.queryEmbedding = runtime.hash(JSON.stringify(options.queryEmbedding)).toString(36);
 	}
 	return JSON.stringify(scope);
 }

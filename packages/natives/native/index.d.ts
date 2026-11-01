@@ -2898,6 +2898,16 @@ export interface MinimizerResult {
  */
 export declare function mmrRerankIndices(contents: Array<string>, scores: Float64Array, lambdaParam: number, topK: number): Uint32Array
 
+/** Capabilities of the loaded binary, not the launcher's settings. */
+export declare function nativeCapabilities(): NativeCapabilities
+
+/** Optional engines present in this native addon. */
+export interface NativeCapabilities {
+  smollm: boolean
+  liveVoice: boolean
+  wasmGrammars: boolean
+}
+
 /** Construction options for [`NativeOAuthCallback`]. */
 export interface NativeOAuthCallbackOptions {
   /** Custom URL scheme to register. */

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { activityOneLine, compareActivityRows } from "@oh-my-pi/pi-tui/overlays/agent-activity";
 import type { Stats } from "node:fs";
 import * as fs from "node:fs/promises";
@@ -358,7 +359,7 @@ export class AgentActivityIndex {
 		const start = state.offset;
 		let text: string;
 		try {
-			text = await Bun.file(sessionFile).slice(start, stat.size).text();
+			text = await runtime.file(sessionFile).slice(start, stat.size).text();
 		} catch {
 			return;
 		}

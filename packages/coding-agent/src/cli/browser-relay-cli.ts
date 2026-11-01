@@ -62,7 +62,7 @@ async function runServe(args: BrowserRelayCommandArgs): Promise<void> {
 		: undefined;
 	let relay: RelayServer;
 	try {
-		relay = startRelayServer({ port: args.port, token: args.token, group: args.group !== false, log });
+		relay = await startRelayServer({ port: args.port, token: args.token, group: args.group !== false, log });
 	} catch (err) {
 		// The port is machine-global while relays can be started by any project's
 		// broker (or by hand): losing the bind to a live relay is success.

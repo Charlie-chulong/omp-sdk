@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Content-addressed binary blobs (images) for `image` nodes.
  *
@@ -38,7 +39,7 @@ interface BlobTagged {
 
 function getOrCreateBlob(bytes: Uint8Array, mime: string): NativeBlob {
 	const known = (bytes as BlobTagged)[kBlobId];
-	const id = known ?? new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
+	const id = known ?? new runtime.CryptoHasher("sha256").update(bytes).digest("hex");
 	(bytes as BlobTagged)[kBlobId] = id;
 	let blob = blobs.get(id)?.deref();
 	if (!blob) {

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Plugin loader - discovers and loads manifest entry points from installed plugins.
  *
@@ -56,7 +57,7 @@ registerPluginCacheInvalidator(clearEnabledPluginsCache);
 async function loadRuntimeConfig(home?: string): Promise<PluginRuntimeConfig> {
 	const lockPath = getPluginsLockfile(home);
 	try {
-		return normalizePluginRuntimeConfig(await Bun.file(lockPath).json());
+		return normalizePluginRuntimeConfig(await runtime.file(lockPath).json());
 	} catch (err) {
 		if (isEnoent(err)) return normalizePluginRuntimeConfig({});
 		throw err;
@@ -69,7 +70,7 @@ async function loadRuntimeConfig(home?: string): Promise<PluginRuntimeConfig> {
 async function loadProjectOverrides(cwd: string): Promise<ProjectPluginOverrides> {
 	for (const overridesPath of getConfigDirPaths("plugin-overrides.json", { user: false, cwd })) {
 		try {
-			return await Bun.file(overridesPath).json();
+			return await runtime.file(overridesPath).json();
 		} catch (err) {
 			if (isEnoent(err)) continue;
 			// Malformed or unreadable overrides would otherwise silently act
@@ -114,7 +115,7 @@ async function collectPluginsAtRoot(
 	let hasPackageManifest = false;
 	const pkgJsonPath = path.join(root, "package.json");
 	try {
-		const pkg: { dependencies?: Record<string, string> } = await Bun.file(pkgJsonPath).json();
+		const pkg: { dependencies?: Record<string, string> } = await runtime.file(pkgJsonPath).json();
 		depsKeys = Object.keys(pkg.dependencies ?? {});
 		hasPackageManifest = true;
 	} catch (err) {
@@ -130,7 +131,7 @@ async function collectPluginsAtRoot(
 	const lockPath = path.join(root, "omp-plugins.lock.json");
 	let runtimeConfig: PluginRuntimeConfig;
 	try {
-		runtimeConfig = normalizePluginRuntimeConfig(await Bun.file(lockPath).json());
+		runtimeConfig = normalizePluginRuntimeConfig(await runtime.file(lockPath).json());
 	} catch (err) {
 		if (isUnreadableRoot(err)) {
 			logger.warn("plugins: skipping unreadable plugin root", { root, path: lockPath });
@@ -176,7 +177,7 @@ async function collectPluginsAtRoot(
 		const pluginPkgPath = path.join(nodeModulesPath, name, "package.json");
 		let pluginPkg: { version: string; omp?: PluginManifest; pi?: PluginManifest };
 		try {
-			pluginPkg = await Bun.file(pluginPkgPath).json();
+			pluginPkg = await runtime.file(pluginPkgPath).json();
 		} catch (err) {
 			// Lockfile entry without a corresponding node_modules tree means the
 			// link was deleted out from under us; skip silently.

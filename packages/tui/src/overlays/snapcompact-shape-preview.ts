@@ -1,3 +1,4 @@
+import { Image } from "@oh-my-pi/pi-utils/runtime-image";
 /**
  * Live preview for the `snapcompact.shape` setting: renders a sample session
  * transcript through the real snapcompact rasterizer as a miniature page and
@@ -195,13 +196,13 @@ export class SnapcompactShapePreview implements Component {
 			const frame = (await renderMany(text, { shape, frameSize: SRC_FRAME_PX, maxFrames: 1 }))[0];
 			if (!frame) throw new Error("empty sample frame");
 			const edgePx = SRC_FRAME_PX * ZOOM_SCALE;
-			const zoomed = await new Bun.Image(Buffer.from(frame.data, "base64"))
+			const zoomed = await new Image(Buffer.from(frame.data, "base64"))
 				.resize(edgePx, edgePx, { filter: "nearest" })
 				.png()
 				.bytes();
 			this.#entries.set(name, {
 				state: "ready",
-				data: zoomed.toBase64(),
+				data: Buffer.from(zoomed.buffer, zoomed.byteOffset, zoomed.byteLength).toString("base64"),
 				bytes: zoomed,
 				edgePx,
 				// Keyed id: reopening settings reuses the id, so data already in the

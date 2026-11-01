@@ -1,3 +1,4 @@
+import { TextDecoder } from "node:util";
 /**
  * Decode a response body honoring the declared charset (Content-Type header,
  * then, for HTML or untyped bodies, a cheap <meta charset> sniff), falling
@@ -14,9 +15,8 @@ export function decodeBody(bytes: Buffer, contentTypeHeader: string): string {
 	}
 	if (label && !/^utf-?8$/i.test(label)) {
 		try {
-			// Bun.Encoding's union is narrower than the runtime, which accepts
-			// WHATWG labels (shift_jis, euc-kr, gbk, big5, …); unknowns throw here.
-			return new TextDecoder(label as Bun.Encoding).decode(bytes);
+			// WHATWG labels include encodings beyond BufferEncoding; unknowns throw.
+			return new TextDecoder(label).decode(bytes);
 		} catch {
 			// Unknown/unsupported label — fall back to UTF-8.
 		}

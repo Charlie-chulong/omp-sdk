@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Frameless, reusable model browser: a fuzzy search row, a windowed model
  * list with role chips and metadata columns, and a selection detail block.
@@ -1591,8 +1592,8 @@ export class ModelBrowser implements Component {
 		if (overContext) {
 			// Gray the whole row but keep the selection cursor visible: over-context
 			// models stay selectable (the host compacts before switching).
-			const plainPrefix = Bun.stripANSI(prefix);
-			line = `${prefix}${theme.fg("dim", Bun.stripANSI(line).slice(plainPrefix.length))}`;
+			const plainPrefix = runtime.stripANSI(prefix);
+			line = `${prefix}${theme.fg("dim", runtime.stripANSI(line).slice(plainPrefix.length))}`;
 		}
 		// The bg band is reserved for the mouse: it marks hover, nothing else.
 		// Keyboard selection is the cursor glyph + accent name.
@@ -2072,7 +2073,7 @@ export class ModelBrowser implements Component {
 			...(int !== undefined ? { title: `Intelligence ${Math.round(int)}` } : {}),
 		};
 		// Discovery re-mints Model objects for unchanged models; an equal row keeps its identity.
-		const kept = cached && Bun.deepEquals(cached.value, value) ? cached.value : value;
+		const kept = cached && runtime.deepEquals(cached.value, value) ? cached.value : value;
 		this.#pickerItemCache.set(item.selector, { model, label: item.id, held, epoch: this.#pickerEpoch, value: kept });
 		return kept;
 	}

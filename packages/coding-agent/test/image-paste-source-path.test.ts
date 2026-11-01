@@ -40,7 +40,7 @@ import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
 import { convertToLlm } from "@oh-my-pi/pi-coding-agent/session/messages";
 import { formatSessionHistoryMarkdown } from "@oh-my-pi/pi-coding-agent/session/session-history-format";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
-import { setAgentDir } from "@oh-my-pi/pi-utils";
+import { encodeBase64, setAgentDir } from "@oh-my-pi/pi-utils";
 import { beginSettingsTest, restoreSettingsTestState, type SettingsTestState } from "./helpers/settings-test-state";
 
 const TINY_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
@@ -253,13 +253,13 @@ describe("path-pasted image source path (#12244)", () => {
 		expect(source).toMatch(/^local:\/\/pasted-image-[0-9a-f]+\.png$/);
 		const savedPath = resolveLocalUrlToPath(source, localOptions(sessionManager));
 		expect(savedPath.startsWith(artifactsDir)).toBe(true);
-		expect(Buffer.from(await Bun.file(savedPath).arrayBuffer()).toBase64()).toBe(TINY_PNG);
+		expect(encodeBase64(Buffer.from(await Bun.file(savedPath).arrayBuffer()))).toBe(TINY_PNG);
 		const link = editor.pendingImageLinks[0];
 		if (!link) throw new Error("Expected a clickable pasted image");
 		// Auto-resize upscales the 1x1 payload; the chip must still open the bytes as pasted.
 		expect(editor.pendingImages[0]?.data).not.toBe(TINY_PNG);
 		applyHyperlinkSetting("always");
-		expect(Buffer.from(await Bun.file(chipPath(link)).arrayBuffer()).toBase64()).toBe(TINY_PNG);
+		expect(encodeBase64(Buffer.from(await Bun.file(chipPath(link)).arrayBuffer()))).toBe(TINY_PNG);
 
 		await session.prompt("What is in [Image #1]?", { images: [...editor.pendingImages] });
 		expect(modelVisibleText(session)).toContain(source);
@@ -288,9 +288,9 @@ describe("path-pasted image source path (#12244)", () => {
 			expect(modelVisibleText(moving)).not.toContain(pathBeforeMove);
 			const pathAfterMove = resolveLocalUrlToPath(source, localOptions(sessionManager));
 			expect(pathAfterMove).not.toBe(pathBeforeMove);
-			expect(Buffer.from(await Bun.file(pathAfterMove).arrayBuffer()).toBase64()).toBe(TINY_PNG);
+			expect(encodeBase64(Buffer.from(await Bun.file(pathAfterMove).arrayBuffer()))).toBe(TINY_PNG);
 			applyHyperlinkSetting("always");
-			expect(Buffer.from(await Bun.file(chipPath(link)).arrayBuffer()).toBase64()).toBe(TINY_PNG);
+			expect(encodeBase64(Buffer.from(await Bun.file(chipPath(link)).arrayBuffer()))).toBe(TINY_PNG);
 			// A transcript rebuilt from session images must also link to a file.
 			const { ctx } = createPasteContext(sessionManager);
 			const viewCtx: InteractiveModeContext = {
@@ -306,7 +306,7 @@ describe("path-pasted image source path (#12244)", () => {
 			const rendered = viewCtx.chatContainer.children[0]?.render(100).join("\n");
 			const transcriptTarget = rendered?.match(/\x1b\]8;[^;]*;(file:[^\x1b]*)/)?.[1];
 			if (!transcriptTarget) throw new Error("Expected a linked transcript image chip");
-			expect(Buffer.from(await Bun.file(url.fileURLToPath(transcriptTarget)).arrayBuffer()).toBase64()).toBe(
+			expect(encodeBase64(Buffer.from(await Bun.file(url.fileURLToPath(transcriptTarget)).arrayBuffer()))).toBe(
 				TINY_PNG,
 			);
 			// A draft restored with the image (/tree, rewind, branch) must also link to a file.
@@ -320,7 +320,7 @@ describe("path-pasted image source path (#12244)", () => {
 			await restoredLinks;
 			const restoredLink = restored.imageLinks?.[0];
 			if (!restoredLink) throw new Error("Expected a linked restored draft image");
-			expect(Buffer.from(await Bun.file(chipPath(restoredLink)).arrayBuffer()).toBase64()).toBe(TINY_PNG);
+			expect(encodeBase64(Buffer.from(await Bun.file(chipPath(restoredLink)).arrayBuffer()))).toBe(TINY_PNG);
 			// Tools addressing `attachment://1` get the post-move filesystem path.
 			expect(moving.getImageAttachments()[0]?.sourcePath).toBe(pathAfterMove);
 		} finally {
@@ -336,7 +336,7 @@ describe("path-pasted image source path (#12244)", () => {
 		const source = imageAttachmentSource(editor.pendingImages[0]!)?.path;
 		if (!source) throw new Error("Expected a saved clipboard image source");
 		const savedPath = resolveLocalUrlToPath(source, localOptions(sessionManager));
-		expect(Buffer.from(await Bun.file(savedPath).arrayBuffer()).toBase64()).toBe(TINY_PNG);
+		expect(encodeBase64(Buffer.from(await Bun.file(savedPath).arrayBuffer()))).toBe(TINY_PNG);
 
 		await session.prompt("What is in [Image #1]?", { images: [...editor.pendingImages] });
 		expect(modelVisibleText(session)).toContain(source);

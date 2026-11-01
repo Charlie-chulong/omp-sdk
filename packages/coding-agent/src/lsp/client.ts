@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as os from "node:os";
 import * as path from "node:path";
 import { isEnoent, logger, postmortem, ptree, stableStringifyJson, untilAborted } from "@oh-my-pi/pi-utils";
@@ -1086,7 +1087,7 @@ async function waitForRustAnalyzerWorkspace(client: LspClient, signal?: AbortSig
 			if (!(err instanceof LspRequestTimeoutError) || Date.now() >= deadline) {
 				return;
 			}
-			await Bun.sleep(pollMs);
+			await runtime.sleep(pollMs);
 			continue;
 		}
 		const ready = typeof status === "string" && !status.startsWith("No workspaces");
@@ -1097,7 +1098,7 @@ async function waitForRustAnalyzerWorkspace(client: LspClient, signal?: AbortSig
 		if (Date.now() >= deadline) {
 			return;
 		}
-		await Bun.sleep(pollMs);
+		await runtime.sleep(pollMs);
 	}
 }
 
@@ -1360,7 +1361,7 @@ export async function getOrCreateClient(
 		proc ??= ptree.spawn([command, ...args], {
 			cwd,
 			stdin: "pipe",
-			env: env ? { ...Bun.env, ...env } : undefined,
+			env: env ? { ...process.env, ...env } : undefined,
 		});
 
 		const projectLoad = createProjectLoad();
@@ -1511,7 +1512,7 @@ export async function getActiveOrPendingClient(
  * disk contents have diverged (e.g. an external edit) from the server's copy.
  */
 function documentSignature(content: string): number | bigint {
-	return Bun.hash(content);
+	return runtime.hash(content);
 }
 
 /**
@@ -1900,7 +1901,7 @@ export async function notifySaved(client: LspClient, filePath: string, signal?: 
 	info.lastUsedAt = Date.now();
 
 	throwIfAborted(signal);
-	const text = saveIncludesText(client) ? await Bun.file(filePath).text() : undefined;
+	const text = saveIncludesText(client) ? await runtime.file(filePath).text() : undefined;
 	throwIfAborted(signal);
 	await sendNotification(
 		client,
@@ -2169,7 +2170,7 @@ async function waitForExit(client: LspClient, timeoutMs: number): Promise<boolea
 			() => true,
 			() => true,
 		),
-		Bun.sleep(timeoutMs).then(() => false),
+		runtime.sleep(timeoutMs).then(() => false),
 	]);
 }
 

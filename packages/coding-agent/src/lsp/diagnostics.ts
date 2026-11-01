@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { type FileDiagnosticsResult } from "@oh-my-pi/pi-tui/tools/lsp";
 import * as fs from "node:fs";
 import path from "node:path";
@@ -383,10 +384,10 @@ export async function waitForDiagnostics(
 
 		const pollMs = Math.min(DIAGNOSTICS_POLL_MS, Math.max(0, deadline - Date.now()));
 		if (!pullResultPromise) {
-			await Bun.sleep(pollMs);
+			await runtime.sleep(pollMs);
 			continue;
 		}
-		const pullResult = await Promise.race([pullResultPromise, Bun.sleep(pollMs).then(() => undefined)]);
+		const pullResult = await Promise.race([pullResultPromise, runtime.sleep(pollMs).then(() => undefined)]);
 		if (pullResult) {
 			pullResultPromise = undefined;
 			if (pullResult.diagnostics !== undefined) {
@@ -473,7 +474,7 @@ export async function waitForRebuiltDiagnostics(
 		if (status && status.busySeq > sinceSeq && status.idleSeq > status.busySeq) break;
 		const left = deadline - Date.now();
 		if (left <= 0) return undefined;
-		await Bun.sleep(Math.min(BUILD_STATUS_POLL_MS, left));
+		await runtime.sleep(Math.min(BUILD_STATUS_POLL_MS, left));
 	}
 	// clangd turns idle once its header check ends, which can precede the publish of the AST
 	// built against rebuilt headers; a document request queues behind that build.

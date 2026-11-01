@@ -28,7 +28,7 @@
  */
 import * as fs from "node:fs";
 import { $env, APP_NAME, isRecord, VERSION } from "@oh-my-pi/pi-utils";
-import { $ } from "bun";
+import { $ } from "@oh-my-pi/pi-utils/runtime";
 import {
 	isTimeoutError,
 	isUnsupportedProxyError,

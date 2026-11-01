@@ -198,7 +198,7 @@ export interface AgentSessionConfig {
 	costGate?: CostGate;
 	/** Whether the session spawn policy permits the read-only `scout` subagent. Defaults to true. */
 	scoutAllowedBySpawnPolicy?: boolean;
-	/** Whether the caller explicitly requested yolo/auto-approve behavior for this session. */
+	/** Selects yolo initially; runtime changes use the live approval setting. */
 	autoApprove?: boolean;
 	/** User-authorized model agents inherited from the parent session for nested delegation. */
 	inheritedSessionAgents?: readonly AgentDefinition[];

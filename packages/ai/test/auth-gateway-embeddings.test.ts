@@ -76,7 +76,7 @@ async function boot(trustProxyHeaders = false): Promise<Harness> {
 			usage: { prompt_tokens: 5, total_tokens: 5 },
 		});
 	};
-	const handle = startAuthGateway({
+	const handle = await startAuthGateway({
 		bind: "127.0.0.1:0",
 		bearerTokens: ["gw-token"],
 		trustProxyHeaders,

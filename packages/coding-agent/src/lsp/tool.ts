@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import path from "node:path";
 import type {
@@ -1377,7 +1378,7 @@ export class LspTool implements AgentTool<typeof lspSchema, LspToolDetails, Them
 
 						await waitForProjectLoaded(client, signal);
 						throwIfAborted(signal);
-						await untilAborted(signal, () => Bun.sleep(REFERENCES_RETRY_DELAY_MS));
+						await untilAborted(signal, () => runtime.sleep(REFERENCES_RETRY_DELAY_MS));
 					}
 
 					if (!result || result.length === 0) {

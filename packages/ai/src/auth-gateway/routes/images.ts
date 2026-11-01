@@ -1,5 +1,5 @@
 import { calculateCost } from "@oh-my-pi/pi-catalog/models";
-import { logger } from "@oh-my-pi/pi-utils";
+import * as logger from "@oh-my-pi/pi-utils/logger";
 import { classifyGatewayError } from "../../error/gateway";
 import { generateImage } from "../../images";
 import { validateImageInput } from "../../images/shared";

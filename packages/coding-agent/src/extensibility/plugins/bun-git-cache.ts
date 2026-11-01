@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { Dirent } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -12,7 +13,7 @@ interface CommandResult {
 }
 
 async function runCommand(command: string[], cwd: string): Promise<CommandResult> {
-	const proc = Bun.spawn(command, {
+	const proc = runtime.spawn(command, {
 		cwd,
 		stdin: "ignore",
 		stdout: "pipe",
@@ -47,6 +48,15 @@ function normalizeRepositoryUrl(repository: string): string {
 
 /** Fetches current heads and tags into Bun's matching cached bare clone before a plugin update. */
 export async function refreshBunGitCache(source: GitSource, cwd: string): Promise<void> {
+	if (typeof Bun === "undefined" && !runtime.which("bun")) {
+		const repo = source.repo.includes("://") && !source.repo.startsWith("git+") ? `git+${source.repo}` : source.repo;
+		const result = await runBunCli(
+			["cache", "add", `${repo}${source.ref ? `#${source.ref}` : ""}`, "--prefer-online", "--force"],
+			cwd,
+		);
+		if (result.exitCode !== 0) throw new Error(`npm Git cache refresh failed: ${result.stderr}`);
+		return;
+	}
 	const cacheResult = await runBunCli(["pm", "cache"], cwd);
 	if (cacheResult.exitCode !== 0) {
 		throw new Error(`bun pm cache failed: ${cacheResult.stderr}`);

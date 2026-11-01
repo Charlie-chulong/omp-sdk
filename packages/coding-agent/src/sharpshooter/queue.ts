@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Sharpshooter delta queue.
  *
@@ -39,7 +40,7 @@ function queueFileName(ts: number): string {
 /** Persist one delta into the session's queue directory. */
 export async function appendSharpshooterDelta(agentDir: string, cwd: string, delta: SharpshooterDelta): Promise<void> {
 	const dir = path.join(sharpshooterQueueDir(agentDir, cwd), sanitizeSessionId(delta.sessionId));
-	await Bun.write(path.join(dir, queueFileName(delta.ts)), JSON.stringify(delta));
+	await runtime.write(path.join(dir, queueFileName(delta.ts)), JSON.stringify(delta));
 }
 
 /**
@@ -79,7 +80,7 @@ export async function listSharpshooterDeltas(agentDir: string, cwd: string): Pro
 		for (const name of names) {
 			const file = path.join(dir, name);
 			try {
-				const parsed = (await Bun.file(file).json()) as SharpshooterDelta;
+				const parsed = (await runtime.file(file).json()) as SharpshooterDelta;
 				if (parsed && typeof parsed === "object" && parsed.v === 1 && typeof parsed.statement === "string") {
 					deltas.push({ delta: parsed, file });
 				}

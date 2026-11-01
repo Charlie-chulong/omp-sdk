@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as os from "node:os";
 import * as path from "node:path";
 
@@ -484,7 +485,7 @@ export async function saveStorageState(
 		readOriginStorage(page, signal),
 	]);
 	const state: BrowserStorageState = { cookies: browserCookies.map(cookieView), origins: origin ? [origin] : [] };
-	await untilAborted(signal, () => Bun.write(destination, `${JSON.stringify(state, null, 2)}\n`));
+	await untilAborted(signal, () => runtime.write(destination, `${JSON.stringify(state, null, 2)}\n`));
 	return destination;
 }
 
@@ -497,7 +498,7 @@ export async function readStorageStateFile(
 	if (typeof requestedPath !== "string" || requestedPath.length === 0) throw new ToolError(STORAGE_STATE_ERROR);
 	const source = resolveToCwd(requestedPath, cwd);
 	try {
-		const text = await untilAborted(signal, () => Bun.file(source).text());
+		const text = await untilAborted(signal, () => runtime.file(source).text());
 		return parseStorageState(JSON.parse(text) as unknown);
 	} catch (error) {
 		throwIfAborted(signal);

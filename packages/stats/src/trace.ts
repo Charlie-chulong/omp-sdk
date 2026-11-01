@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Session trace assembly for the Traces dashboard section.
  *
@@ -170,8 +171,8 @@ function resolveSessionPath(fileParam: string): string {
 
 /** Read a transcript, transparently gunzipping gc-compressed sessions. */
 async function readTranscript(resolved: string): Promise<Uint8Array> {
-	const bytes = await Bun.file(resolved).bytes();
-	return resolved.endsWith(".gz") ? Bun.gunzipSync(bytes) : bytes;
+	const bytes = await runtime.file(resolved).bytes();
+	return resolved.endsWith(".gz") ? runtime.gunzipSync(bytes) : bytes;
 }
 
 // ---------------------------------------------------------------------------
@@ -1082,9 +1083,12 @@ const metadataCache = new Map<string, SessionMetadata & { mtimeMs: number }>();
 
 /** Read enough decompressed transcript bytes to cover the title slot and session header. */
 async function readSessionMetadataHead(file: string): Promise<string> {
-	if (!file.endsWith(".gz")) return Bun.file(file).slice(0, TITLE_SCAN_BYTES).text();
+	if (!file.endsWith(".gz")) return runtime.file(file).slice(0, TITLE_SCAN_BYTES).text();
 
-	const reader = Bun.file(file).stream().pipeThrough(new DecompressionStream("gzip")).getReader();
+	// DOM and node:stream/web declarations disagree on backing-buffer types;
+	// both expose the same byte-oriented WHATWG transform at runtime.
+	const decompress = new DecompressionStream("gzip") as unknown as ReadableWritablePair<Uint8Array, Uint8Array>;
+	const reader = runtime.file(file).stream().pipeThrough(decompress).getReader();
 	const decoder = new TextDecoder();
 	let remaining = TITLE_SCAN_BYTES;
 	let head = "";

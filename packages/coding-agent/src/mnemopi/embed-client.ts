@@ -1,8 +1,10 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as path from "node:path";
 import { isFastembedModelCached } from "@oh-my-pi/pi-mnemopi/core/fastembed-model-cache";
 import { getFastembedCacheDir, getMnemopiEmbedRuntimeDir, logger, VERSION } from "@oh-my-pi/pi-utils";
 import { MNEMOPI_EMBED_SERVER_WORKER_ARG } from "../cli/worker-selectors";
 import { trackDownload } from "../downloads/activity";
+import { assertLocalRuntimeAvailable } from "../sdk-profile";
 import {
 	connectSharedWorker,
 	LazyWorkerHandle,
@@ -72,6 +74,7 @@ export const MNEMOPI_EMBED_WORKER_ARG = "__omp_worker_mnemopi_embed";
  * runtime-install knobs.
  */
 export function createMnemopiEmbedSubprocess(): SpawnedSubprocess<MnemopiEmbedWorkerOutbound> {
+	assertLocalRuntimeAvailable("Local memory embeddings");
 	return createWorkerSubprocess<MnemopiEmbedWorkerOutbound>({
 		spawnCommand: resolveWorkerSpawnCmd(MNEMOPI_EMBED_WORKER_ARG),
 		env: inferenceWorkerEnv(),
@@ -130,11 +133,12 @@ export function spawnMnemopiEmbedWorker(): MnemopiEmbedWorkerHandle {
 
 /** Shared-server name for one (model, cache dir): the model id plus a hash of the resolved cache dir. */
 export function mnemopiEmbedServerName(model: MnemopiEmbedModelId, cacheDir: string): string {
-	return `${model}-${Bun.hash.crc32(path.resolve(cacheDir)).toString(16).padStart(8, "0")}`;
+	return `${model}-${runtime.hash.crc32(path.resolve(cacheDir)).toString(16).padStart(8, "0")}`;
 }
 
 /** How to start the shared embedding server for `model`; `env` overlays the inherited environment. @internal */
 export function mnemopiEmbedLaunch(model: MnemopiEmbedModelId, env: Record<string, string> = {}): SharedWorkerLaunch {
+	assertLocalRuntimeAvailable("Local memory embeddings");
 	return {
 		label: `mnemopi embed server for ${model}`,
 		tag: VERSION,
@@ -223,6 +227,7 @@ export class MnemopiEmbedClient {
 		model: MnemopiEmbedModelId,
 		cacheDir: string | undefined,
 	): Promise<MnemopiSubprocessEmbeddingModel | null> {
+		assertLocalRuntimeAvailable("Local memory embeddings");
 		// fastembed exposes no byte progress; any missing model file means this
 		// init downloads it.
 		const cached = await isFastembedModelCached(model, cacheDir ?? getFastembedCacheDir());
@@ -239,6 +244,7 @@ export class MnemopiEmbedClient {
 
 	/** Load the model on its transport; resolves `undefined` once ready, else the failure text. Not bounded by the request timeout. */
 	async load(model: MnemopiEmbedModelId, cacheDir: string | undefined): Promise<string | undefined> {
+		assertLocalRuntimeAvailable("Local memory embeddings");
 		const key = workerKey(model, cacheDir);
 		const id = String(++this.#nextRequestId);
 		const { promise, resolve } = Promise.withResolvers<string | undefined>();
@@ -261,6 +267,7 @@ export class MnemopiEmbedClient {
 		texts: string[],
 		batchSize: number | undefined,
 	): Promise<number[][]> {
+		assertLocalRuntimeAvailable("Local memory embeddings");
 		const key = workerKey(model, cacheDir);
 		const worker = this.#ensureWorker(key, model, cacheDir);
 		const id = String(++this.#nextRequestId);

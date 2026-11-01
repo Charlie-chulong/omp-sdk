@@ -1,4 +1,5 @@
-import { Database, type Statement } from "bun:sqlite";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
+import { Database, type Statement } from "@oh-my-pi/pi-utils/sqlite-driver";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { type AgentTelemetry, instrumentedCompleteSimple } from "@oh-my-pi/pi-agent-core";
@@ -124,7 +125,7 @@ export function createSkillDescriptionCompressor(
 }
 
 function keyFor(skill: Pick<Skill, "name" | "description">): string {
-	return new Bun.CryptoHasher("sha256")
+	return new runtime.CryptoHasher("sha256")
 		.update(compressDescriptionPrompt)
 		.update("\0")
 		.update(skill.name)

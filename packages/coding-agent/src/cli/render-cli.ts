@@ -11,7 +11,7 @@
  * The session file is copied to a temp dir before opening, so rendering never
  * takes the single-writer lock on (or appends breadcrumbs to) a live session.
  */
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { Agent } from "@oh-my-pi/pi-agent-core";

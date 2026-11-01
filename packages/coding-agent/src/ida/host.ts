@@ -11,6 +11,7 @@
 import * as fs from "node:fs";
 import { IpcConnection, IpcServer } from "@oh-my-pi/pi-natives";
 import { acquireFileLock, logger, postmortem, setProcessName } from "@oh-my-pi/pi-utils";
+import { runtime as platformRuntime } from "@oh-my-pi/pi-utils/runtime";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import {
 	errorMessage,
@@ -61,7 +62,7 @@ class IdaHost {
 			worker = await this.#opening;
 		} catch (error) {
 			process.stderr.write(`IDA open failed: ${errorMessage(error)}\n`);
-			await Bun.sleep(OPEN_FAILED_LINGER_MS);
+			await platformRuntime.sleep(OPEN_FAILED_LINGER_MS);
 			await this.shutdown();
 			return 1;
 		}

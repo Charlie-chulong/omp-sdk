@@ -1,3 +1,6 @@
+import type { RuntimeSubprocess } from "@oh-my-pi/pi-utils/runtime";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
+type TunnelProcess = Pick<RuntimeSubprocess, "pid" | "exited" | "exitCode" | "kill" | "unref">;
 /**
  * Exposure backends for the blob broker: make the loopback blob server
  * reachable by provider-side image fetchers.
@@ -203,7 +206,7 @@ export async function probeExposureHealth(
 		} catch (error) {
 			finalStatus = error instanceof DOMException && error.name === "TimeoutError" ? "timeout" : "request failed";
 		}
-		if (attempt + 1 < attempts && backoffMs > 0) await Bun.sleep(backoffMs);
+		if (attempt + 1 < attempts && backoffMs > 0) await runtime.sleep(backoffMs);
 	}
 
 	throw new Error(`Exposure health probe for ${destination} failed with status ${finalStatus}`);
@@ -214,7 +217,7 @@ export async function probeExposureHealth(
  * observably survives a bare SIGTERM mid-startup, and a leaked funnel child
  * blocks every later funnel invocation on the machine.
  */
-function killTunnelProcess(proc: Bun.Subprocess): void {
+function killTunnelProcess(proc: TunnelProcess): void {
 	proc.kill();
 	const timer = setTimeout(() => {
 		if (proc.exitCode === null) proc.kill("SIGKILL");
@@ -237,12 +240,18 @@ async function spawnUrlTunnel(
 	argv: string[],
 	extract: (line: string) => string | null,
 	readyPattern?: RegExp,
-): Promise<{ proc: Bun.Subprocess; baseUrl: string }> {
+): Promise<{ proc: TunnelProcess; baseUrl: string }> {
 	const logPath = path.join(os.tmpdir(), `omp-blob-tunnel-${Date.now().toString(36)}-${process.pid}.log`);
 	const fd = fs.openSync(logPath, "w");
-	let proc: Bun.Subprocess;
+	let proc: TunnelProcess;
 	try {
-		proc = Bun.spawn(argv, { env: process.env, stdin: "ignore", stdout: fd, stderr: fd, cwd: getSafeProjectCwd() });
+		proc = runtime.spawn(argv, {
+			env: process.env,
+			stdin: "ignore",
+			stdout: fd,
+			stderr: fd,
+			cwd: getSafeProjectCwd(),
+		});
 	} finally {
 		fs.closeSync(fd);
 	}
@@ -257,7 +266,7 @@ async function spawnUrlTunnel(
 		const exitCode = proc.exitCode;
 		let text = "";
 		try {
-			text = await Bun.file(logPath).text();
+			text = await runtime.file(logPath).text();
 		} catch {
 			// Log file not flushed yet; keep polling.
 		}
@@ -281,13 +290,13 @@ async function spawnUrlTunnel(
 		if (exitCode !== null) {
 			throw new Error(`${argv[0]} exited with code ${exitCode} before reporting a tunnel URL`);
 		}
-		await Bun.sleep(150);
+		await runtime.sleep(150);
 	}
 	killTunnelProcess(proc);
 	throw new Error(`${argv[0]} did not report a tunnel URL within ${READY_TIMEOUT_MS / 1000}s`);
 }
 
-function processExposure(kind: ExposureKind, baseUrl: string, proc: Bun.Subprocess): ActiveExposure {
+function processExposure(kind: ExposureKind, baseUrl: string, proc: TunnelProcess): ActiveExposure {
 	proc.unref();
 	return {
 		kind,
@@ -302,7 +311,7 @@ function processExposure(kind: ExposureKind, baseUrl: string, proc: Bun.Subproce
  * Random-hostname modes deliberately return their child exit to the broker:
  * restarting those would silently invalidate every already-published URL.
  */
-function restartingPinggyExposure(baseUrl: string, argv: string[], initialProc: Bun.Subprocess): ActiveExposure {
+function restartingPinggyExposure(baseUrl: string, argv: string[], initialProc: TunnelProcess): ActiveExposure {
 	let proc = initialProc;
 	let stopping = false;
 	proc.unref();
@@ -492,7 +501,7 @@ export async function startExposure(config: ExposureConfig, port: number): Promi
 			if (!config.sshTarget) throw new Error('imageUrls exposure "ssh" requires imageUrls.sshTarget');
 			const binary = requireBinary("ssh");
 			const remotePort = config.sshRemotePort ?? 8787;
-			const proc = Bun.spawn(
+			const proc = runtime.spawn(
 				[
 					binary,
 					"-o",
@@ -508,7 +517,7 @@ export async function startExposure(config: ExposureConfig, port: number): Promi
 			);
 			const early = await Promise.race([
 				proc.exited.then(code => code),
-				Bun.sleep(SSH_READY_GRACE_MS).then(() => null),
+				runtime.sleep(SSH_READY_GRACE_MS).then(() => null),
 			]);
 			if (early !== null) {
 				throw new Error(`ssh reverse forward to ${config.sshTarget} exited with code ${early}`);

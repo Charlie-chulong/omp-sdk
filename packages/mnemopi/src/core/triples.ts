@@ -1,4 +1,4 @@
-import { Database, type SQLQueryBindings } from "bun:sqlite";
+import { Database, type SQLQueryBindings } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { copyFileSync, existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";

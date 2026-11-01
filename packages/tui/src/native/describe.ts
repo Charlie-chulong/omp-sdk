@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Builders for {@link NativeNode}s, so `describe()` implementations read as
  * a tree instead of object literals.
@@ -95,7 +96,7 @@ export function propNode(described: NativeNode): TspPropNode {
 
 /** Stable node key for an arbitrary identity string; keys join into `/` keypaths, so identities are hashed. */
 export function stableKey(identity: string): string {
-	return Bun.hash(identity).toString(36);
+	return runtime.hash(identity).toString(36);
 }
 
 /** Drop absent entries (`undefined`, `null`, `false`) from a child list. */

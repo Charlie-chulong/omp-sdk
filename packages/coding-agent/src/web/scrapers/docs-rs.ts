@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { promisify } from "node:util";
@@ -322,7 +323,7 @@ interface CachedRustdocCrate {
 
 async function readCachedRustdocCrate(cachePath: string): Promise<CachedRustdocCrate | null> {
 	try {
-		const [jsonStr, stat] = await Promise.all([Bun.file(cachePath).text(), fs.stat(cachePath)]);
+		const [jsonStr, stat] = await Promise.all([runtime.file(cachePath).text(), fs.stat(cachePath)]);
 		const crate = tryParseJson<RustdocCrate>(jsonStr);
 		if (!crate?.index) return null;
 		return { crate, fetchedAt: stat.mtime.toISOString() };
@@ -335,7 +336,7 @@ async function readCachedRustdocCrate(cachePath: string): Promise<CachedRustdocC
 
 async function writeCachedRustdocCrate(cachePath: string, json: string): Promise<void> {
 	try {
-		await Bun.write(cachePath, json);
+		await runtime.write(cachePath, json);
 	} catch (err) {
 		logger.warn("Failed to write docs.rs cache", { path: cachePath, error: String(err) });
 	}

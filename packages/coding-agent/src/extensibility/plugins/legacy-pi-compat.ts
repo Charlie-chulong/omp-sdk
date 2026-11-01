@@ -1,11 +1,14 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 // oxlint-disable-next-line typescript/triple-slash-reference -- legacy virtual module declarations.
 /// <reference path="./legacy-pi-virtual-modules.d.ts" />
 
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import * as fs from "node:fs";
 import { createRequire, isBuiltin } from "node:module";
 import * as path from "node:path";
 import * as url from "node:url";
+import { loadNodeExtensionModule } from "./node-loader";
+import { resolveNodeSdkModule } from "./node-module-map";
 import type { ParseResult, ParserPlugin } from "@babel/parser";
 import type * as BabelParser from "@babel/parser";
 import {
@@ -18,7 +21,7 @@ import {
 } from "@oh-my-pi/pi-utils";
 import { registerPluginCacheInvalidator } from "../../discovery/helpers";
 
-const USE_BUNDLED_PI_MODULES = isCompiledBinary() || Boolean(process.env.PI_BUNDLED);
+const USE_BUNDLED_PI_MODULES = typeof Bun !== "undefined" && (isCompiledBinary() || Boolean(process.env.PI_BUNDLED));
 
 // === Bundled host modules (issue #3423) ===
 //
@@ -561,7 +564,7 @@ let extensionParseCacheDb: Database | null | undefined;
 const extensionSourceAnalysisCache = new Map<string, ExtensionSourceAnalysis>();
 
 function extensionParseCacheKey(source: string, importerPath: string): string {
-	return `${EXTENSION_PARSE_CACHE_SCHEMA_VERSION}:${path.extname(importerPath).toLowerCase()}:${Bun.hash(source).toString(16)}`;
+	return `${EXTENSION_PARSE_CACHE_SCHEMA_VERSION}:${path.extname(importerPath).toLowerCase()}:${runtime.hash(source).toString(16)}`;
 }
 
 function getExtensionParseCacheDb(): Database | null {
@@ -752,8 +755,10 @@ function ensureBundledModuleLoadersLoaded(): Promise<BundledModuleLoaders> {
 		return Promise.reject(new Error("omp:legacy-pi-shim: bundled modules are only available in bundled mode"));
 	}
 	if (!bundledModuleLoadersPromise) {
-		// This virtual module exists only in compiled/npm builds; source mode cannot import it statically.
-		bundledModuleLoadersPromise = import("omp-legacy-pi-modules").then(module => module.BUNDLED_PI_MODULE_LOADERS);
+		bundledModuleLoadersPromise = Promise.resolve().then(() => {
+			const module: { BUNDLED_PI_MODULE_LOADERS: BundledModuleLoaders } = require("omp-legacy-pi-modules");
+			return module.BUNDLED_PI_MODULE_LOADERS;
+		});
 	}
 	return bundledModuleLoadersPromise;
 }
@@ -927,7 +932,7 @@ export function __computeBundledSelfPackageRoot(metaDir: string, pathImpl: typeo
 
 function resolveBundledSelfPackageRoot(): string | undefined {
 	if (!process.env.PI_BUNDLED) return undefined;
-	return __computeBundledSelfPackageRoot(import.meta.dir);
+	return __computeBundledSelfPackageRoot(import.meta.dirname);
 }
 
 const BUNDLED_SELF_PACKAGE_ROOT = resolveBundledSelfPackageRoot();
@@ -935,7 +940,7 @@ const BUNDLED_SELF_PACKAGE_ROOT = resolveBundledSelfPackageRoot();
 function sourceShimPath(file: string): string {
 	return BUNDLED_SELF_PACKAGE_ROOT
 		? path.join(BUNDLED_SELF_PACKAGE_ROOT, "src", "extensibility", file)
-		: path.resolve(import.meta.dir, "..", file);
+		: path.resolve(import.meta.dirname, "..", file);
 }
 
 /**
@@ -1096,7 +1101,7 @@ function getResolvedSpecifier(specifier: string): string {
 		return cached;
 	}
 
-	const resolved = Bun.resolveSync(specifier, import.meta.dir);
+	const resolved = Bun.resolveSync(specifier, import.meta.dirname);
 	resolvedSpecifierFallbacks.set(specifier, resolved);
 	return resolved;
 }
@@ -1349,7 +1354,7 @@ async function readPackageImports(packageRoot: string): Promise<Record<string, u
 
 	let imports: Record<string, unknown> | null = null;
 	try {
-		const pkg = await Bun.file(path.join(packageRoot, "package.json")).json();
+		const pkg = await runtime.file(path.join(packageRoot, "package.json")).json();
 		if (isRecord(pkg) && isRecord(pkg.imports)) {
 			imports = pkg.imports;
 		}
@@ -1566,7 +1571,7 @@ async function findWorkspaceMemberPackageRoot(dir: string, packageName: string):
 		if (typeof pattern !== "string" || pattern.startsWith("!")) {
 			continue;
 		}
-		const glob = new Bun.Glob(path.join(pattern, "package.json"));
+		const glob = new runtime.Glob(path.join(pattern, "package.json"));
 		for await (const match of glob.scan({ cwd: dir, onlyFiles: true })) {
 			const memberRoot = path.dirname(path.join(dir, match));
 			const memberManifest = await readPackageManifest(memberRoot);
@@ -1589,7 +1594,7 @@ async function readPackageManifest(packageRoot: string): Promise<Record<string, 
 
 async function readPackageManifestUncached(packageRoot: string): Promise<Record<string, unknown> | null> {
 	try {
-		const manifest = await Bun.file(path.join(packageRoot, "package.json")).json();
+		const manifest = await runtime.file(path.join(packageRoot, "package.json")).json();
 		return isRecord(manifest) ? manifest : null;
 	} catch {
 		return null;
@@ -1622,7 +1627,7 @@ class ExtensionGraphSources {
 	read(modulePath: string): Promise<string> {
 		let source = this.#sources.get(modulePath);
 		if (!source) {
-			source = Bun.file(modulePath).text();
+			source = runtime.file(modulePath).text();
 			this.#sources.set(modulePath, source);
 		}
 		return source;
@@ -2042,7 +2047,7 @@ async function moduleRequiresNativeAddon(modulePath: string): Promise<boolean> {
 async function moduleRequiresNativeAddonUncached(modulePath: string): Promise<boolean> {
 	let source: string;
 	try {
-		source = await Bun.file(modulePath).text();
+		source = await runtime.file(modulePath).text();
 	} catch {
 		return false;
 	}
@@ -2086,7 +2091,7 @@ const commonJsModuleCache = new Map<
 		loaded: boolean;
 	}
 >();
-const commonJsTypeScriptTranspiler = new Bun.Transpiler({ loader: "ts" });
+const commonJsTypeScriptTranspiler = typeof Bun !== "undefined" ? new Bun.Transpiler({ loader: "ts" }) : undefined;
 
 /**
  * Node-compatible `require.cache` for graph-owned CommonJS: Bun's process-wide
@@ -2495,7 +2500,7 @@ function prepareGraphCommonJsDefinition(modulePath: string, source: string, targ
 	}
 
 	const executableSource = targetPath.endsWith(".cts")
-		? commonJsTypeScriptTranspiler.transformSync(commonJsSource)
+		? commonJsTypeScriptTranspiler!.transformSync(commonJsSource)
 		: commonJsSource;
 	commonJsModuleDefinitions.set(modulePath, {
 		source: executableSource,
@@ -2518,7 +2523,7 @@ async function prepareGraphCommonJsModule(modulePath: string, source: string): P
 	if (packageRoot && manifest?.name === "linkedom" && packageRelativePath === "commonjs/canvas.cjs") {
 		targetPath = path.join(packageRoot, "commonjs", "canvas-shim.cjs");
 		commonJsFallbackModulePaths.set(modulePath, targetPath);
-		executableSource = await Bun.file(targetPath).text();
+		executableSource = await runtime.file(targetPath).text();
 	}
 	prepareGraphCommonJsDefinition(modulePath, executableSource, targetPath);
 }
@@ -2548,7 +2553,7 @@ async function installExtensionGraphHook(
 	if (asyncModules.size > 0) {
 		const alternation = [...asyncModules.keys()].map(escapeRegExp).join("|");
 		const filter = new RegExp(`^(?:${alternation})(?:\\?mtime=\\d+)?$`);
-		const hookId = Bun.hash(`${entryRealPath}\0async\0${[...asyncModules.keys()].join("\0")}`).toString(36);
+		const hookId = runtime.hash(`${entryRealPath}\0async\0${[...asyncModules.keys()].join("\0")}`).toString(36);
 		Bun.plugin({
 			name: `omp:legacy-pi-ext:${hookId}`,
 			setup(build) {
@@ -2574,7 +2579,7 @@ async function installExtensionGraphHook(
 							asyncModules.delete(sourcePath);
 							raw = cached;
 						} else {
-							raw = await Bun.file(sourcePath).text();
+							raw = await runtime.file(sourcePath).text();
 						}
 						return {
 							contents: await rewriteLegacyExtensionSource(raw, sourcePath, mtimeTag, resolvedImportMtimeTag),
@@ -2589,7 +2594,7 @@ async function installExtensionGraphHook(
 	if (commonJsPaths.size > 0) {
 		const alternation = [...commonJsPaths].map(escapeRegExp).join("|");
 		const filter = new RegExp(`^(?:${alternation})(?:\\?mtime=\\d+)?$`);
-		const hookId = Bun.hash(`${entryRealPath}\0commonjs\0${[...commonJsPaths].join("\0")}`).toString(36);
+		const hookId = runtime.hash(`${entryRealPath}\0commonjs\0${[...commonJsPaths].join("\0")}`).toString(36);
 		Bun.plugin({
 			name: `omp:legacy-pi-ext:${hookId}`,
 			setup(build) {
@@ -2618,7 +2623,9 @@ async function installExtensionGraphHook(
 	if (synchronousSourcePaths.size > 0) {
 		const alternation = [...synchronousSourcePaths].map(escapeRegExp).join("|");
 		const filter = new RegExp(`^(?:${alternation})(?:\\?mtime=\\d+)?$`);
-		const hookId = Bun.hash(`${entryRealPath}\0sync-source\0${[...synchronousSourcePaths].join("\0")}`).toString(36);
+		const hookId = runtime
+			.hash(`${entryRealPath}\0sync-source\0${[...synchronousSourcePaths].join("\0")}`)
+			.toString(36);
 		Bun.plugin({
 			name: `omp:legacy-pi-ext:${hookId}`,
 			setup(build) {
@@ -2737,6 +2744,22 @@ async function ensureExtensionGraphHook(entryRealPath: string): Promise<{ clear(
  * every importer shares them, as a native `import()` would.
  */
 export async function loadLegacyPiModule(resolvedPath: string, options: { reload?: boolean } = {}): Promise<unknown> {
+	if (typeof Bun === "undefined") {
+		return loadNodeExtensionModule(
+			resolvedPath,
+			options.reload === false ? undefined : String(nextLegacyPiLoadTag()),
+			specifier => {
+				if (TYPEBOX_SPECIFIER_FILTER.test(specifier)) return resolveNodeSdkModule("typebox") ?? TYPEBOX_SHIM_PATH;
+				const canonical =
+					remapLegacyPiSpecifier(specifier) ?? (specifier.startsWith("@oh-my-pi/pi-") ? specifier : null);
+				if (!canonical) return null;
+				const emitted = resolveNodeSdkModule(canonical);
+				if (emitted) return emitted;
+				if (canonical === "@oh-my-pi/pi-coding-agent") return LEGACY_PI_CODING_AGENT_SHIM_PATH;
+				return canonical === "@oh-my-pi/pi-ai" ? LEGACY_PI_AI_SHIM_PATH : canonical;
+			},
+		);
+	}
 	// Bun reports the realpath of a loaded module to `onLoad` and exposes it as
 	// `import.meta.url`. Resolve symlinks here too (macOS `/var`→`/private/var`,
 	// `bun link`/pnpm installs) so the rewrite filter matches the path Bun
@@ -2851,6 +2874,7 @@ function resolveTypeBoxSpecifier(): LegacyPiResolveResult | undefined {
 }
 
 export function installLegacyPiSpecifierShim(): void {
+	if (typeof Bun === "undefined") return;
 	if (isLegacyPiSpecifierShimInstalled) {
 		return;
 	}

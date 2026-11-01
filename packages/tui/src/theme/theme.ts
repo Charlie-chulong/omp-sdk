@@ -68,7 +68,7 @@ export function detectTerminalBackground(): "dark" | "light" {
 	}
 
 	// Tier 2: COLORFGBG env var (static at process start, but still terminal-derived).
-	const colorfgbg = Bun.env.COLORFGBG || "";
+	const colorfgbg = process.env.COLORFGBG || "";
 	if (colorfgbg) {
 		const parts = colorfgbg.split(";");
 		if (parts.length >= 2) {

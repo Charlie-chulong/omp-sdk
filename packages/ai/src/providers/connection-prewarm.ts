@@ -1,5 +1,5 @@
 import { isCatalogEndpointUrl } from "@oh-my-pi/pi-catalog/compat/catalog-endpoint";
-import { logger } from "@oh-my-pi/pi-utils";
+import * as logger from "@oh-my-pi/pi-utils/logger";
 import type { Api, FetchImpl, Model } from "../types";
 import { lastDispatchOrigin, transportFetch } from "../utils/transport-fetch";
 import { resolveAnthropicPrewarmTarget } from "./anthropic-http-options";

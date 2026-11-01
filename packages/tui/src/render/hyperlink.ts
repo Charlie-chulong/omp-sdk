@@ -53,8 +53,8 @@ const FILE_LINK_HOST = /^[A-Za-z0-9._-]+(?::\d{1,5})?$/;
  */
 export function applyFileLinkSetting(
 	config: FileLinkConfig = {
-		scheme: Bun.env.PI_LINK_SCHEME,
-		host: Bun.env.PI_LINK_HOST,
+		scheme: process.env.PI_LINK_SCHEME,
+		host: process.env.PI_LINK_HOST,
 	},
 ): void {
 	fileLinkTarget = undefined;
@@ -169,7 +169,7 @@ function resolveHyperlinkMode(mode: HyperlinkMode): boolean {
 	if (mode === "always") return true;
 	// auto: respect the detected capability (immutable snapshot, not the mutable
 	// runtime flag that applyHyperlinkSetting overwrites) and NO_COLOR.
-	if (Bun.env.NO_COLOR) return false;
+	if (process.env.NO_COLOR) return false;
 	if (!process.stdout.isTTY) return false;
 	return DETECTED_TERMINAL_HYPERLINKS;
 }

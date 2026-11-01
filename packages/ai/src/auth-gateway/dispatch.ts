@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Per-request plumbing shared by every auth-gateway route.
  *
@@ -93,7 +94,7 @@ export function normalizeClientSessionKey(clientKey: string | undefined): string
  */
 export function resolveGatewayAccount(resolved: ResolvedApiKey): string {
 	if (resolved.credentialId !== undefined) return `credential:${resolved.credentialId}`;
-	return `key:${Bun.hash(resolved.apiKey).toString(36)}`;
+	return `key:${runtime.hash(resolved.apiKey).toString(36)}`;
 }
 
 /** Who sent a request and which stored credential it started on, for the `auth-gateway request` log line. */

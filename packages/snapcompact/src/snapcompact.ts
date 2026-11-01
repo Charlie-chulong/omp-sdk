@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util";
 /**
  * Snapcompact compaction: archive conversation history as dense bitmap images.
  *
@@ -1327,7 +1328,7 @@ function renderableUnicodeChars(chars: readonly string[], font: Shape["font"] | 
 }
 
 function normalizedInputChars(text: string): string[] {
-	const stripped = text.includes("\u001b") ? Bun.stripANSI(text) : text;
+	const stripped = text.includes("\u001b") ? stripVTControlCharacters(text) : text;
 	const collapsed = stripped
 		// A run of pure format chars (BOM is both \s and Cf) vanishes; only a
 		// run containing genuine whitespace separates words.

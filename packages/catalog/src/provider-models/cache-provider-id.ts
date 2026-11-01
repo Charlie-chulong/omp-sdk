@@ -1,13 +1,9 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { CHARM_HYPER_API_BASE_URL, normalizeCharmHyperBaseUrl } from "../wire/charm-hyper";
 import { CODEX_BASE_URL, CODEX_CLIENT_VERSION } from "../wire/codex";
 import { CURSOR_DEFAULT_BASE_URL } from "../wire/cursor";
 import { type AccountScope, factoryDroidModelCacheProviderId } from "../wire/factory-droid";
 import { PERSONAL_GITHUB_COPILOT_BASE_URL } from "../wire/github-copilot";
-import {
-	SINGULARITYAPI_DEV_API_BASE_URL,
-	SINGULARITYAPI_TECH_API_BASE_URL,
-	normalizeSingularityApiBaseUrl,
-} from "../wire/singularityapi";
 
 export interface ModelCacheProviderIdOptions extends AccountScope {
 	apiKey?: string;
@@ -21,11 +17,6 @@ const CREDENTIAL_SCOPED_MODEL_CACHE_PROVIDERS: Readonly<Record<string, true>> = 
 	"muse-code": true,
 	cursor: true,
 	"factory-droid": true,
-	// Both SingularityAPI rosters are issued per key, so the namespace must be
-	// resolved with the credential (`hydrateCredentialScopedModelCaches`) rather
-	// than from the synchronous, credential-less startup read.
-	"singularityapi-dev": true,
-	"singularityapi-tech": true,
 	// Kimi Code's roster is plan-gated and discovery is authoritative, so a
 	// shared namespace would serve one plan's ids to another plan's credential.
 	"kimi-code": true,
@@ -48,7 +39,7 @@ export function getDefaultModelDiscoveryBaseUrl(providerId: string): string | un
 		case "ollama":
 			return "http://127.0.0.1:11434";
 		case "litellm":
-			return Bun.env.LITELLM_BASE_URL ?? "http://localhost:4000/v1";
+			return process.env.LITELLM_BASE_URL ?? "http://localhost:4000/v1";
 		case "opencode-go":
 			return "https://opencode.ai/inference/go/v1";
 		case "opencode-zen":
@@ -72,7 +63,7 @@ export function resolveOllamaModelCacheProviderId(providerId: string, baseUrl?: 
 	} catch {
 		// Malformed URLs fall back during discovery, so share the default endpoint's cache.
 	}
-	return `${providerId}:ollama-models-v1:${Bun.hash(endpoint).toString(36)}`;
+	return `${providerId}:ollama-models-v1:${runtime.hash(endpoint).toString(36)}`;
 }
 
 /**
@@ -103,7 +94,7 @@ export function resolveModelCacheProviderId(providerId: string, options: ModelCa
 			// unhashed namespace so existing caches stay valid.
 			const baseUrl = options.baseUrl?.trim().replace(/\/+$/, "");
 			if (!baseUrl || baseUrl === CODEX_BASE_URL) return `${providerId}:${CODEX_CLIENT_VERSION}`;
-			return `${providerId}:${CODEX_CLIENT_VERSION}:${Bun.hash(baseUrl).toString(36)}`;
+			return `${providerId}:${CODEX_CLIENT_VERSION}:${runtime.hash(baseUrl).toString(36)}`;
 		}
 		case "ollama":
 			return resolveOllamaModelCacheProviderId(providerId, options.baseUrl);
@@ -118,7 +109,7 @@ export function resolveModelCacheProviderId(providerId: string, options: ModelCa
 			const baseUrl = (options.baseUrl ?? CURSOR_DEFAULT_BASE_URL).replace(/\/+$/, "");
 			const apiKey = options.apiKey ?? "";
 			const scope = `${jwtCredentialSubject(apiKey) ?? apiKey}\u0000${baseUrl}`;
-			return `cursor:rich-models-v5:${Bun.hash(scope).toString(36)}`;
+			return `cursor:rich-models-v5:${runtime.hash(scope).toString(36)}`;
 		}
 		case "charm-hyper": {
 			// Discovery is authoritative for this gateway, so a warm cache is served
@@ -135,7 +126,7 @@ export function resolveModelCacheProviderId(providerId: string, options: ModelCa
 			// Normalized through the shared helper because the registry passes the
 			// raw configured value while `charmHyperModelManagerOptions` passes a
 			// `/v1`-suffixed one; both must land on one namespace.
-			return `charm-hyper:models-v1:${Bun.hash(normalizeCharmHyperBaseUrl(options.baseUrl)).toString(36)}`;
+			return `charm-hyper:models-v1:${runtime.hash(normalizeCharmHyperBaseUrl(options.baseUrl)).toString(36)}`;
 		}
 		case "kimi-code": {
 			// The `/coding/v1/models` roster depends on the subscription plan behind
@@ -146,33 +137,12 @@ export function resolveModelCacheProviderId(providerId: string, options: ModelCa
 			const baseUrl = options.baseUrl ?? getDefaultModelDiscoveryBaseUrl(providerId)!;
 			const apiKey = options.apiKey ?? "";
 			const scope = `${jwtCredentialSubject(apiKey) ?? apiKey}\u0000${baseUrl}`;
-			return `kimi-code:models-v1:${Bun.hash(scope).toString(36)}`;
+			return `kimi-code:models-v1:${runtime.hash(scope).toString(36)}`;
 		}
 		case "muse-code": {
 			const baseUrl = options.baseUrl ?? getDefaultModelDiscoveryBaseUrl(providerId)!;
 			const scope = `${options.apiKey ?? ""}\u0000${baseUrl}`;
-			return `muse-code:models-v1:${Bun.hash(scope).toString(36)}`;
-		}
-		case "singularityapi-dev":
-		case "singularityapi-tech": {
-			// Both products issue their roster per key, and a configured proxy
-			// publishes its own. Discovery is authoritative, so a shared namespace
-			// would serve the previous key's roster for the full 24h TTL — including
-			// ids the current key cannot call. Hashing the pair means switching
-			// either re-runs discovery instead, and the provider-id prefix keeps the
-			// two products from ever reading each other's rows behind one proxy.
-			//
-			// Both call paths must land on one namespace: `ModelRegistry` resolves
-			// this provider through the credential-scoped hydration pass (it is in
-			// CREDENTIAL_SCOPED_MODEL_CACHE_PROVIDERS), while discovery hashes the
-			// `/v1`-suffixed endpoint the matching `singularityApi*ModelManagerOptions`
-			// passes — which is why both normalize through
-			// `normalizeSingularityApiBaseUrl` against their own canonical host.
-			const canonical =
-				providerId === "singularityapi-tech" ? SINGULARITYAPI_TECH_API_BASE_URL : SINGULARITYAPI_DEV_API_BASE_URL;
-			const baseUrl = normalizeSingularityApiBaseUrl(options.baseUrl, canonical);
-			const scope = `${options.apiKey ?? ""}\u0000${baseUrl}`;
-			return `${providerId}:models-v1:${Bun.hash(scope).toString(36)}`;
+			return `muse-code:models-v1:${runtime.hash(scope).toString(36)}`;
 		}
 		case "litellm": {
 			const baseUrl = options.baseUrl ?? getDefaultModelDiscoveryBaseUrl(providerId)!;
@@ -185,7 +155,7 @@ export function resolveModelCacheProviderId(providerId: string, options: ModelCa
 			// declaration into it; earlier versions invalidated rows whose
 			// `compatConfig` retained a colliding bundled model's provider-specific
 			// transport (e.g. Fireworks `wireModelIdMode`) (issue #9938).
-			return `litellm:rich-v14:${Bun.hash(baseUrl).toString(36)}`;
+			return `litellm:rich-v14:${runtime.hash(baseUrl).toString(36)}`;
 		}
 		case "gmi-cloud":
 		case "siliconflow":
@@ -201,7 +171,7 @@ export function resolveModelCacheProviderId(providerId: string, options: ModelCa
 			const trimmedBaseUrl = configuredBaseUrl.endsWith("/") ? configuredBaseUrl.slice(0, -1) : configuredBaseUrl;
 			const discoveryBaseUrl = trimmedBaseUrl.endsWith("/v1") ? trimmedBaseUrl : `${trimmedBaseUrl}/v1`;
 			const scope = `${options.apiKey ?? ""}\u0000${discoveryBaseUrl}`;
-			return `${providerId}:models-v3:${Bun.hash(scope).toString(36)}`;
+			return `${providerId}:models-v3:${runtime.hash(scope).toString(36)}`;
 		}
 		case "github-copilot": {
 			// Copilot model specs bake in the plan-specific endpoint (personal vs
@@ -219,7 +189,7 @@ export function resolveModelCacheProviderId(providerId: string, options: ModelCa
 			// another provider's routing — so version the namespace instead.
 			const baseUrl = options.baseUrl ?? PERSONAL_GITHUB_COPILOT_BASE_URL;
 			const scope = `${options.apiKey ?? ""}\u0000${baseUrl}`;
-			return `github-copilot:models-v2:${Bun.hash(scope).toString(36)}`;
+			return `github-copilot:models-v2:${runtime.hash(scope).toString(36)}`;
 		}
 		case "factory-droid":
 			return factoryDroidModelCacheProviderId(options);
@@ -229,7 +199,7 @@ export function resolveModelCacheProviderId(providerId: string, options: ModelCa
 			// v2: qwen3.8 rows cached before the reasoning/template-effort upgrade
 			// carry `reasoning: false` and must be refetched.
 			const baseUrl = options.baseUrl ?? getDefaultModelDiscoveryBaseUrl(providerId)!;
-			return `vllm:models-v2:${Bun.hash(baseUrl).toString(36)}`;
+			return `vllm:models-v2:${runtime.hash(baseUrl).toString(36)}`;
 		}
 		case "devin":
 			// v2: rows cached before Fusion pairings carried their lead uid as

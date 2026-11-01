@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { ThinkingLevel } from "@oh-my-pi/pi-agent-core";
 import type { Api, ApiKey, AuthStorage, Model } from "@oh-my-pi/pi-ai";
 import { completeSimple } from "@oh-my-pi/pi-ai";
@@ -51,7 +52,7 @@ export class OmpCommitInference implements CommitInference {
 	readonly #authStorage: AuthStorage | null;
 	readonly #onProgress?: CommitProgress;
 	readonly #signal?: AbortSignal;
-	readonly #sessionId = Bun.randomUUIDv7();
+	readonly #sessionId = runtime.randomUUIDv7();
 
 	constructor(options: {
 		primary: ResolvedCommitModel;
@@ -163,7 +164,7 @@ export class OmpCommitInference implements CommitInference {
 					error: lastError.message,
 				});
 				if (attempt < this.#config.maxRetries) {
-					await Bun.sleep(Math.max(0, this.#config.initialBackoffMs) * 2 ** (attempt - 1));
+					await runtime.sleep(Math.max(0, this.#config.initialBackoffMs) * 2 ** (attempt - 1));
 				}
 			}
 		}

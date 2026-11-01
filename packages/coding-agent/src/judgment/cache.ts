@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Local answer cache for native System One judgments (TypeSafe jev, directly
  * or through OpenRouter).
@@ -16,7 +17,7 @@
  * usage   (id, state → states.id, results = JSON [oracle.id…], provider, model, tokens, price)
  * ```
  */
-import type { Database, Statement } from "bun:sqlite";
+import type { Database, Statement } from "@oh-my-pi/pi-utils/sqlite-driver";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Answer, JudgmentRequest, JudgmentResult, Question, Questions } from "@oh-my-pi/pi-ai";
@@ -106,7 +107,7 @@ function cacheStateIdentity(request: JudgmentRequest): string {
 		return {
 			// The wire lowercases MIME types, so case variants of one image share an answer.
 			mimeType: image.mimeType.toLowerCase(),
-			digest: new Bun.CryptoHasher("sha256").update(Buffer.from(image.data, "base64")).digest("hex"),
+			digest: new runtime.CryptoHasher("sha256").update(Buffer.from(image.data, "base64")).digest("hex"),
 			detail: image.detail ?? "auto",
 		};
 	});
@@ -183,7 +184,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
 	 */
 	lookup(model: string, request: JudgmentRequest): CachedAnswers {
 		const state = cacheStateIdentity(request);
-		const stateId = new Bun.CryptoHasher("sha256").update(state).digest("hex");
+		const stateId = new runtime.CryptoHasher("sha256").update(state).digest("hex");
 		const answers: Record<string, Answer> = {};
 		try {
 			for (const name in request.questions) {

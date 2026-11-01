@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { afterEach, beforeEach, describe, expect, test, vi } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
@@ -58,7 +58,7 @@ describe("RemoteAuthCredentialStore SSE integration", () => {
 		await store.saveOAuth("anthropic", mintOAuthCredential("a", Date.now() + 60_000));
 		storage = new AuthStorage(store);
 		await storage.credentials.reload();
-		handle = startAuthBroker({
+		handle = await startAuthBroker({
 			storage,
 			bind: "127.0.0.1:0",
 			bearerTokens: [token],
@@ -193,7 +193,7 @@ describe("RemoteAuthCredentialStore SSE integration", () => {
 			storage = new AuthStorage(store);
 			await storage.credentials.reload();
 			expect(storage.credentials.generation).toBeLessThan(previousGeneration);
-			handle = startAuthBroker({
+			handle = await startAuthBroker({
 				storage,
 				bind,
 				bearerTokens: [token],

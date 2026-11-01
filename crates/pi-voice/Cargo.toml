@@ -10,13 +10,17 @@ repository.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = ["live"]
+live = ["dep:bytes", "dep:opus", "dep:parking_lot", "dep:webrtc"]
+
 [dependencies]
-bytes.workspace = true
+bytes = { workspace = true, optional = true }
 flume.workspace = true
-opus.workspace = true
-parking_lot.workspace = true
+opus = { workspace = true, optional = true }
+parking_lot = { workspace = true, optional = true }
 tokio.workspace = true
-webrtc.workspace = true
+webrtc = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # dlopen/dlsym for the PulseAudio and ALSA backends: no link-time dependency

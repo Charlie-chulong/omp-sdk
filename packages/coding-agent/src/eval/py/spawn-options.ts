@@ -6,7 +6,8 @@
  * The effectful `hostHasInheritableConsole` combines a Win32 FFI probe with
  * TTY evidence and is the function `kernel.ts` actually calls.
  */
-import { dlopen, FFIType } from "bun:ffi";
+import { createRequire } from "node:module";
+import type * as BunFfi from "bun:ffi";
 
 /**
  * Decide whether the long-lived Python kernel subprocess should be spawned
@@ -90,8 +91,10 @@ let cachedWindowsConsoleProbe: { value: ConsoleProbeResult } | undefined;
 
 function probeWindowsConsoleWindow(): ConsoleProbeResult {
 	if (cachedWindowsConsoleProbe) return cachedWindowsConsoleProbe.value;
+	if (typeof Bun === "undefined") return null;
 	let value: ConsoleProbeResult = null;
 	try {
+		const { dlopen, FFIType } = createRequire(import.meta.url)("bun:ffi") as typeof BunFfi;
 		const lib = dlopen("kernel32.dll", {
 			GetConsoleWindow: { args: [], returns: FFIType.ptr },
 		});
@@ -125,6 +128,9 @@ export function __resetWindowsConsoleProbeCache(): void {
  */
 export function hostHasInheritableConsole(): boolean {
 	const nativeConsole = process.platform === "win32" ? probeWindowsConsoleWindow() : null;
+	// Node hosts cannot use Bun FFI to prove a redirected Win32 console is absent.
+	// Conservatively preserve inheritance instead of detaching a real console.
+	if (process.platform === "win32" && typeof Bun === "undefined" && nativeConsole === null) return true;
 	return consoleAttached({
 		nativeConsole,
 		stdinIsTTY: !!process.stdin.isTTY,

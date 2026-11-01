@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { rm } from "node:fs/promises";
 import * as path from "node:path";
 import { type ApiKeyResolver, completeSimple, retryTransientCompletion } from "@oh-my-pi/pi-ai";
@@ -192,7 +193,7 @@ export const mnemopiBackend: MemoryBackend = {
 		// fire-and-forget start() has awaited loadMnemopi() (autolearn disabled, or
 		// taskDepth > 0). resetMemoryForTests is re-exported identically from core.
 		requireMnemopiCore().resetMemoryForTests();
-		await Bun.sleep(0);
+		await runtime.sleep(0);
 		await removeDbFiles(getMnemopiScopedDbPaths(config));
 		if (!session?.sessionId || previous?.aliasOf || cfgMemoryBackend.get(session.settings) !== "mnemopi") return;
 		try {
@@ -763,7 +764,7 @@ async function removeWithRetries(target: string): Promise<void> {
 				typeof err.code === "string" &&
 				kRetryableRemoveErrorCodes.has(err.code);
 			if (!retryable || attempt >= kRemoveRetries) throw err;
-			await Bun.sleep(kRemoveRetryDelayMs);
+			await runtime.sleep(kRemoveRetryDelayMs);
 		}
 	}
 }

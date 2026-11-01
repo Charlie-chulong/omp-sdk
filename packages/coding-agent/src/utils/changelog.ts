@@ -1,7 +1,8 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as path from "node:path";
 import { getLastChangelogVersionPath, isEnoent, logger } from "@oh-my-pi/pi-utils";
 import { Lexer } from "@oh-my-pi/pi-utils/marked";
-import type { BunFile } from "bun";
+import type { RuntimeFile } from "@oh-my-pi/pi-utils/runtime";
 import bundledChangelogPath from "../../CHANGELOG.md" with { type: "file" };
 import type { SettingValueOf } from "../config/registry";
 
@@ -184,14 +185,14 @@ export async function parseChangelog(changelogPath: string | undefined): Promise
 	let content: string | undefined;
 	if (changelogPath) {
 		try {
-			content = await Bun.file(changelogPath).text();
+			content = await runtime.file(changelogPath).text();
 		} catch (error) {
 			if (!isEnoent(error)) {
 				logger.error(`Warning: Could not parse changelog: ${error}`);
 			}
 		}
 	}
-	content ??= await Bun.file(resolveBundledChangelogPath(bundledChangelogPath, import.meta.url)).text();
+	content ??= await runtime.file(resolveBundledChangelogPath(bundledChangelogPath, import.meta.url)).text();
 
 	return parseChangelogContent(content);
 }
@@ -245,7 +246,7 @@ async function parseStartupChangelog(
 ): Promise<{ entries: ChangelogEntry[]; totalUnseenEntries: number }> {
 	if (changelogPath) {
 		try {
-			return await parseStartupChangelogFile(Bun.file(changelogPath), lastVersion);
+			return await parseStartupChangelogFile(runtime.file(changelogPath), lastVersion);
 		} catch (error) {
 			if (!isEnoent(error)) {
 				logger.error(`Warning: Could not parse changelog: ${error}`);
@@ -253,13 +254,13 @@ async function parseStartupChangelog(
 		}
 	}
 	return parseStartupChangelogFile(
-		Bun.file(resolveBundledChangelogPath(bundledChangelogPath, import.meta.url)),
+		runtime.file(resolveBundledChangelogPath(bundledChangelogPath, import.meta.url)),
 		lastVersion,
 	);
 }
 
 async function parseStartupChangelogFile(
-	file: BunFile,
+	file: RuntimeFile,
 	lastVersion: ChangelogEntry,
 ): Promise<{ entries: ChangelogEntry[]; totalUnseenEntries: number }> {
 	const entries: ChangelogEntry[] = [];
@@ -482,7 +483,7 @@ export { getChangelogPath } from "../config";
  */
 export async function readLastChangelogVersion(agentDir?: string): Promise<string | undefined> {
 	try {
-		const value = (await Bun.file(getLastChangelogVersionPath(agentDir)).text()).trim();
+		const value = (await runtime.file(getLastChangelogVersionPath(agentDir)).text()).trim();
 		return value || undefined;
 	} catch (error) {
 		if (!isEnoent(error)) {
@@ -495,7 +496,7 @@ export async function readLastChangelogVersion(agentDir?: string): Promise<strin
 /** Persist the last-seen changelog version marker. Best-effort: failures are logged, never thrown. */
 export async function writeLastChangelogVersion(version: string, agentDir?: string): Promise<void> {
 	try {
-		await Bun.write(getLastChangelogVersionPath(agentDir), version);
+		await runtime.write(getLastChangelogVersionPath(agentDir), version);
 	} catch (error) {
 		logger.warn("Failed to persist last-changelog-version marker", { error: String(error) });
 	}

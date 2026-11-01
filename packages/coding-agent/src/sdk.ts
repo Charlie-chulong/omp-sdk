@@ -39,6 +39,7 @@ import * as logger from "@oh-my-pi/pi-utils/logger";
 import * as postmortem from "@oh-my-pi/pi-utils/postmortem";
 import * as prompt from "@oh-my-pi/pi-utils/prompt";
 import { Snowflake } from "@oh-my-pi/pi-utils/snowflake";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { INTENT_FIELD } from "@oh-my-pi/pi-wire";
 import { DEFAULT_FRAME_DATA_BYTES_BUDGET, frameDataBytesBudget } from "@oh-my-pi/snapcompact";
 import {
@@ -332,6 +333,7 @@ import {
 	cfgSecurityEnabled,
 	cfgSpeechgenEnabled,
 	cfgToolsAbortOnFabricatedResult,
+	cfgToolsApprovalMode,
 	cfgToolsIntentTracing,
 	cfgToolsMaxTimeout,
 	cfgToolsXdev,
@@ -539,7 +541,7 @@ function logMCPLoadErrors(errors: MCPLoadResult["errors"]): void {
 
 function applyMCPEnvironment(result: { exaApiKeys: string[] }): void {
 	if (result.exaApiKeys.length > 0 && !$env.EXA_API_KEY) {
-		Bun.env.EXA_API_KEY = result.exaApiKeys[0];
+		process.env.EXA_API_KEY = result.exaApiKeys[0];
 	}
 }
 
@@ -950,7 +952,7 @@ export interface CreateAgentSessionOptions {
 	 */
 	onFirstChatDispatch?: () => void;
 
-	/** Whether to auto-approve all tool calls (--auto-approve CLI flag). Default: false */
+	/** Select yolo approval mode initially; the live session can change it later. Default: false. */
 	autoApprove?: boolean;
 }
 
@@ -1656,7 +1658,7 @@ export function createAutoLearnCaptureRunner(
 		const captureModel = options.sourceAgent.state.model;
 		if (!captureModel) return;
 
-		const captureSessionId = options.createSessionId?.() ?? Bun.randomUUIDv7();
+		const captureSessionId = options.createSessionId?.() ?? runtime.randomUUIDv7();
 		const captureProviderSessionState = new Map<string, ProviderSessionState>();
 		const stripInheritedReasoning =
 			captureModel.api === "openai-responses" ||
@@ -1760,7 +1762,7 @@ export function createAutoLearnCaptureRunner(
  * // Full control
  * const { session } = await createAgentSession({
  *   model: myModel,
- *   getApiKey: async () => Bun.env.MY_KEY,
+ *   getApiKey: async () => process.env.MY_KEY,
  *   systemPrompt: ['You are helpful.'],
  *   tools: codingTools({ cwd: getProjectDir() }),
  *   skills: [],
@@ -1792,6 +1794,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 	const settings = await (options.settings ??
 		options.settingsManager ??
 		logger.time("settings", Settings.init, { cwd, agentDir }));
+	if (options.autoApprove) cfgToolsApprovalMode.override(settings, "yolo");
 	// Discovery provider toggles and process-wide setting effects (theme, request limits, …)
 	// follow the newest holder: each top-level session holds both on its settings until disposed,
 	// then hands them back to the previous holder. Subagents and helper sessions never take them,
@@ -3597,7 +3600,6 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			},
 			settings,
 			localProtocolOptions,
-			autoApprove: options.autoApprove ?? false,
 		});
 		const toolContextStore = new ToolContextStore(getSessionContext, trackUserWait);
 		toolSession.getToolContext = () => toolContextStore.getContext();
@@ -4856,9 +4858,8 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		}
 		const built = await Promise.all(advisorToolBuilds);
 		// Wrapped like every registry tool: `ExtensionToolWrapper` is where the
-		// approval mode, per-tool `tools.approval.<tool>` policies and
-		// `autoApprove` are enforced. The advisor's loop and its Cursor exec
-		// bridge both run these instances directly, so a raw one would execute a
+		// approval mode and per-tool `tools.approval.<tool>` policies are enforced. The advisor's loop
+		// and its Cursor exec bridge both run these instances directly, so a raw one would execute a
 		// `bash`/`write` the user configured as `ask` or `deny`. Meta-notice
 		// first, matching the registry's wrap order.
 		const advisorTools: Tool[] = built
@@ -4907,7 +4908,6 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			preparedExtensions: extensionsResult.preparedExtensions,
 			extensionPaths,
 			disableExtensionDiscovery: options.disableExtensionDiscovery,
-			autoApprove: options.autoApprove,
 			scoutAllowedBySpawnPolicy: isScoutSpawnable(undefined, options.spawns ?? "*"),
 			evalKernelOwnerId,
 			// Children borrow their parent's manager but never dispose it.

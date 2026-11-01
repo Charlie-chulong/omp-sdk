@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { $which, getRemoteHostDir, getSshControlDir, isEnoent, logger, postmortem, ptree } from "@oh-my-pi/pi-utils";
@@ -76,7 +77,7 @@ export function controlPathFitsBudget(controlDir: string, platform: SshPlatform)
  * path bytes on the decimal uid.
  */
 export function sshControlFallbackDir(canonicalDir: string, uid: number, tmpBase = "/tmp"): string {
-	const key = new Bun.CryptoHasher("sha256")
+	const key = new runtime.CryptoHasher("sha256")
 		.update(String(uid))
 		.update("\0")
 		.update(canonicalDir)
@@ -448,7 +449,7 @@ async function persistHostInfo(host: SSHConnectionTarget, info: SSHHostInfo): Pr
 		const path = getHostInfoPath(host.name);
 		const payload = { ...info, version: HOST_INFO_VERSION };
 		hostInfoCache.set(host.name, payload);
-		await Bun.write(path, JSON.stringify(payload, null, 2), { createPath: true });
+		await runtime.write(path, JSON.stringify(payload, null, 2), { createPath: true });
 	} catch (err) {
 		logger.warn("Failed to persist SSH host info", { host: host.name, error: String(err) });
 	}

@@ -1,7 +1,7 @@
 # SDK
 
 The SDK is the in-process integration surface for `@oh-my-pi/pi-coding-agent`.
-Use it when you want direct access to agent state, event streaming, tool wiring, and session control from a Bun process.
+Use it when you want direct access to agent state, event streaming, tool wiring, and session control from a Bun or headless Node.js process.
 
 If you need cross-language/process isolation, use RPC mode instead.
 
@@ -11,14 +11,147 @@ If you need cross-language/process isolation, use RPC mode instead.
 bun add @oh-my-pi/pi-coding-agent
 ```
 
-Requires Bun 1.4.4 or newer. Before the first model-backed prompt, configure
-credentials for a provider or run a keyless local provider; see
-[Providers](./providers.md). Session construction can succeed without an
-available model, but prompting cannot.
+Requires Bun 1.4.4 or newer, or Node.js 24 or newer for the headless backend (24.14+ recommended).
+Before the first model-backed prompt, configure credentials for a provider or run
+a keyless local provider; see [Providers](./providers.md). Session construction can
+succeed without an available model, but prompting cannot.
+
+### Node.js and Electron
+
+The package root and `/sdk` select the compiled headless SDK under Node. No Bun
+installation or embedded Bun runtime is needed by the application. The Bun CLI,
+interactive terminal UI, and CLI-based RPC launcher remain separate Bun entrypoints.
+
+For a source checkout, build the Node artifacts before importing the package:
+
+```bash
+bun --cwd=packages/coding-agent run gen:bundle:node
+node client.mjs
+```
+
+Building uses Bun; running the resulting SDK does not. Keep the complete
+`packages/coding-agent/dist/node/` directory, including `host.mjs`, `plugins.mjs`,
+`modules.json`, chunks, and assets, together. Also retain `pi-utils/dist/node/`
+adapters and package dependencies. Copying only `sdk.mjs` is insufficient.
+
+Desktop can build a separate, bounded artifact without replacing the generic SDK:
+
+```bash
+bun --cwd=packages/coding-agent run gen:bundle:desktop
+```
+
+This writes `dist/node-desktop/`. Desktop staging selects it with
+`OMP_DESKTOP_SDK_TARGET=desktop` and installs the complete artifact at the normal
+`dist/node/` location. Its extension module map retains package roots plus the
+coding-agent `/sdk`, `/headless`, `/async`, and `/extensibility/host-api` aliases,
+plus the provider helpers `pi-ai/providers/transform-messages`,
+`pi-ai/utils/{retry-after,tool-call-arguments,empty-completion-retry}`,
+`pi-catalog/build`, and `pi-tui/chrome/qrcode` (all under `@oh-my-pi/`).
+It does not mirror every source-file export. Extensions needing other deep SDK
+imports should use the generic target. Tools, workers, RPC, and session
+persistence remain reachable through the same SDK APIs.
+`gen:bundle:node` still writes the independent, generic `dist/node/` artifact.
+
+Node uses its native SQLite driver with the existing OMP schemas and JSONL
+session format. Extension TypeScript is compiled in-process; extension imports
+resolve to the host's shared SDK modules. Workers re-enter a single Node host
+using the same selectors as the Bun CLI. Installing additional JS dependencies
+or plugin packages under Node requires npm on PATH.
+
+In Electron, run the SDK in a Node-enabled utility process or backend rather
+than an isolated renderer. Package the platform-specific native addon outside
+the ASAR archive. The macOS arm64 addon has been exercised with Electron 41.2.0
+(Node 24.14.0); other platforms require their matching addon and validation.
+
+The macOS arm64 Desktop runtime `@iriscat/mini-electron` 0.1.12 (embedded Node
+24.0.0-pre) has also exercised model streaming, native write/read/bash tools,
+session save/restore and cancellation through the SDK RPC host.
+
+Node-only entrypoints include targeted `core-js` shims and initialize them only
+when the embedded engine lacks `RegExp.escape` or `DisposableStack`; native
+implementations are retained. The complete `core-js` npm tree is not required.
+Bun CLI entrypoints do not load this compatibility initialization.
+
+Compact Desktop bundles can select the `core` profile when staging the SDK.
+The loaded package's `ompNodeSdk.profile` marker determines the runtime profile,
+not the launcher's environment. Unmarked packages and Bun retain the full profile.
+Core keeps remote/API models, native tools, browser support, RPC, saved sessions,
+and cancellation, but does not bundle local embedding, offline speech, or tiny
+helper inference runtimes. Those offline operations fail with guidance to use a
+remote service or the full profile instead of downloading missing runtimes.
+Memory can use remote embeddings and remote inference, or explicitly disabled
+embeddings/inference; default local memory configuration is unavailable in core.
+
+The JavaScript `core` profile is independent of native Cargo features. Desktop
+also uses an isolated native addon built with:
+
+```bash
+bun run --cwd packages/natives build:desktop
+```
+
+This forces the release profile with `--no-default-features`, uses
+`target/desktop`, and writes the canonical addon and JSON sidecar to
+`packages/natives/native/desktop/`. Rebuild it after native source or package
+version changes before staging Desktop. It disables only the default-on
+`pi-natives` features `smollm` (SmolLM/Candle), `live-voice` (native WebRTC/Opus),
+and `wasm-grammars` (downloadable WASM grammars). Ngram and macOS Apple prediction,
+macOS spelling, audio capture/playback, and built-in-language parsing and AST
+operations remain available.
+
+With `OMP_DESKTOP_SDK_TARGET=desktop`, staging requires this isolated artifact,
+checks its sidecar and raw binary capabilities, package version, and SHA-256,
+and excludes optional full-native platform leaf packages so they cannot
+reintroduce the full addon. The `generic` target retains normal full-native
+selection; generic SDK and Bun CLI defaults remain full. Rebuild full bindings
+with `bun run --cwd packages/natives build:bindings`; only a full build
+regenerates the full native declarations and exports.
+
+Import `readNativeCapabilities()` from the SDK to inspect the loaded binary's
+`smollm`, `liveVoice`, and `wasmGrammars` flags rather than inferring support from
+the JS profile or declarations. Disabled-feature requests fail with guidance
+before downloads or optional native construction. Live sessions with a
+caller-supplied `sdpOffer` still support signaling and return `sdpAnswer` without
+native WebRTC: the caller owns its peer, microphone, playback, and track muting.
+The Desktop cuts are build tradeoffs, not removal of prediction, audio, or AST
+support as a whole.
+
+For an isolated Node child that needs the existing full RPC protocol rather than
+an in-process session, import `startNodeRpcHost` from
+`@oh-my-pi/pi-coding-agent/sdk/rpc`:
+
+```ts
+import { startNodeRpcHost } from "@oh-my-pi/pi-coding-agent/sdk/rpc";
+
+await startNodeRpcHost({ cwd: process.cwd(), protocolMode: "rpc-ui" });
+```
+
+This owns stdin/stdout for the RPC protocol and runs until shutdown. Use a separate
+process for each top-level agent to isolate environment, extension hooks and
+cancellation. Discovered extensions must support Node; Bun-only extensions fail
+startup rather than being silently ignored.
+
+### Plugin management in a dedicated Node child
+
+`@oh-my-pi/pi-coding-agent/sdk/plugins` exports `runNodePluginCommand(args)`.
+Pass the complete plugin argv, including `plugin`:
+
+```ts
+import { runNodePluginCommand } from "@oh-my-pi/pi-coding-agent/sdk/plugins";
+
+await runNodePluginCommand(["plugin", "list", "--json"]);
+```
+
+Run this entry in a separate child: it preserves the CLI parser, stdout/stderr,
+exit codes, cwd, profiles, plugin stores and marketplace behavior, including
+commands that call `process.exit`. It does not create a model session. Local
+linking, listing and toggling do not need a package manager; npm/Git package
+installation still needs npm or Bun on PATH. Do not silently substitute a CLI
+when a selected SDK is missing or incompatible.
+
 
 ## Entry points
 
-The package root, `@oh-my-pi/pi-coding-agent`, is the complete embedding surface. It includes `createAgentSession` and the focused `/sdk` exports, plus lower-level session, auth, model, mode, extension, and tool APIs.
+Under Bun, the package root, `@oh-my-pi/pi-coding-agent`, is the complete embedding surface. Under Node, it exports the headless surface without CLI modes or interactive frontend exports. Both include session, auth, model, extension, and tool APIs.
 
 Import these core embedding APIs from the package root:
 
@@ -32,7 +165,7 @@ Import these core embedding APIs from the package root:
 - Discovery helpers (`discoverExtensions`, `discoverSkills`, `discoverContextFiles`, `discoverPromptTemplates`, `discoverSlashCommands`, `discoverCustomTSCommands`, `discoverMCPServers`)
 - Tool factory surface (`createTools`, `BUILTIN_TOOLS`, tool classes)
 
-The narrower `@oh-my-pi/pi-coding-agent/sdk` subpath exports `createAgentSession`, its option/result types, `Settings`, `AgentRegistry`, discovery and system-prompt helpers, workspace-tree helpers, selected extension/MCP/tool types, and selected tool classes/factories. It does **not** export `SessionManager`, `AuthStorage`, or `ModelRegistry`; import those three from the package root as the examples below do.
+Under Bun, the narrower `@oh-my-pi/pi-coding-agent/sdk` subpath exports `createAgentSession`, its option/result types, `Settings`, `AgentRegistry`, discovery and system-prompt helpers, workspace-tree helpers, selected extension/MCP/tool types, and selected tool classes/factories. It does **not** export `SessionManager`, `AuthStorage`, or `ModelRegistry`; import those three from the package root as the examples below do. Under Node, `/sdk` and the package root share the same headless entry and include these three APIs.
 
 The injected `api.pi` in extensions, hooks, custom commands, and custom tools resolves the host SDK on first access. Registering callbacks or loading bundled commands does not eagerly load the full SDK and interactive composer.
 
@@ -294,6 +427,20 @@ During asynchronous disposal, the session records and synchronously flushes its 
 Only after work capable of appending session entries has settled does disposal clean up an empty moved session, close the `SessionManager`, close provider session state, disconnect the agent, and remove listeners. A failure from the final persistence cleanup or `SessionManager.close()` rejects the shared disposal promise; individual provider-session close failures are logged.
 
 ## Tools and extension integration
+
+### Live tool approval mode
+
+Read `session.approvalMode` or call `session.setApprovalMode(mode)` to change permissions while the session is working or awaiting approval:
+
+```ts
+session.setApprovalMode("always-ask");
+session.setApprovalMode("yolo");
+```
+
+Supported modes are `always-ask`, `always-ask-cached`, `write`, and `yolo`. `createAgentSession({ autoApprove: true })` selects `yolo` initially; it does not prevent later changes. The setter writes the session's in-memory settings override, not a persisted default. Embedders sharing one `Settings` instance also share its approval mode.
+
+Session-generated tool calls use the live mode. Pending approvals are re-evaluated without restarting the turn; already-executing tools continue. Explicit tool/user policies, restricted folders, and provider safety checks remain authoritative. For process-isolated backends, use RPC [`set_approval_mode`](./rpc.md#set_approval_mode-payload).
+
 
 ### Built-ins and filtering
 

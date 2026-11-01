@@ -5,7 +5,7 @@
  * `pi.registerProvider(name, { usage })` was never consulted and the account
  * landed in `accountsWithoutUsage` instead of producing a report.
  */
-import { Database } from "bun:sqlite";
+import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import * as path from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "bun:test";
 import { AuthStorage, SqliteAuthCredentialStore, type UsageReport } from "@oh-my-pi/pi-ai";

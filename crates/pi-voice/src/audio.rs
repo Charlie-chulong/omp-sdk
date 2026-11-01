@@ -3,8 +3,8 @@
 //! The per-platform backends in [`crate::device`] own device access, format
 //! conversion, channel mixing, and resampling. The engine exposes one stable
 //! mono `f32` contract: the N-API classes in pi-natives adapt it to
-//! TypeScript, and [`crate::live`] shares [`PlaybackStream`] for remote-audio
-//! rendering.
+//! TypeScript, and the optional live transport shares [`PlaybackStream`]
+//! for remote-audio rendering.
 
 use std::sync::{
 	Arc,
@@ -43,6 +43,12 @@ const PLAYBACK_DRAIN_MARGIN_CALLBACKS: usize = 1;
 // up when audio resumes, so a producer stall is a soft dropout instead of a
 // waveform step (a click). Short enough to stay inaudible as a fade.
 const PLAYBACK_FADE_MS: usize = 5;
+
+/// Remote speech held back before playback starts and after each underrun.
+/// Packets arrive paced by the network, one 20 ms frame per device period on
+/// macOS/Windows; three frames of slack absorb ordinary jitter and spikes.
+#[cfg(any(feature = "live", test))]
+pub(crate) const OUTPUT_JITTER_BUFFER_MS: u32 = 60;
 
 /// Shared render-time state for one playback device: gain, queue depth,
 /// drain, stop.
@@ -604,7 +610,7 @@ mod tests {
 		const SAMPLE_RATE: usize = 48_000;
 		const FRAME: usize = SAMPLE_RATE / 50;
 		const PERIOD_US: u64 = 20_000;
-		let reserve = SAMPLE_RATE * crate::live::OUTPUT_JITTER_BUFFER_MS as usize / 1000;
+		let reserve = SAMPLE_RATE * OUTPUT_JITTER_BUFFER_MS as usize / 1000;
 		let mut seed: u64 = 17_114;
 		let mut random = move |modulo: u64| {
 			seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
@@ -669,7 +675,7 @@ mod tests {
 		const HZ: f32 = 440.0;
 		// Largest step the tone itself takes between adjacent samples.
 		let natural = AMPLITUDE * std::f32::consts::TAU * HZ / SAMPLE_RATE as f32;
-		let live_reserve = SAMPLE_RATE * crate::live::OUTPUT_JITTER_BUFFER_MS as usize / 1000;
+		let live_reserve = SAMPLE_RATE * OUTPUT_JITTER_BUFFER_MS as usize / 1000;
 		let fade = SAMPLE_RATE * PLAYBACK_FADE_MS / 1000;
 		// Live on macOS/Windows (stall lands on a callback boundary), live on
 		// Linux (stall lands mid-callback), and reserve-free local playback

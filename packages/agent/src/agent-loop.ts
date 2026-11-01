@@ -1021,7 +1021,7 @@ function injectIntentIntoSchema(
 		...schemaRecord,
 		properties: {
 			[INTENT_FIELD]: describeIntent
-				? { type: "string", description: Bun.env.PI_INTENT_DESC || DEFAULT_INTENT_FIELD_DESCRIPTION }
+				? { type: "string", description: process.env.PI_INTENT_DESC || DEFAULT_INTENT_FIELD_DESCRIPTION }
 				: { type: "string" },
 			...properties,
 		},
@@ -1038,7 +1038,7 @@ export interface NormalizeToolsOptions {
 
 export function normalizeTools(tools: AgentContext["tools"], options: NormalizeToolsOptions): Context["tools"] {
 	const pruneDescriptions = options.pruneDescriptions === true;
-	const injectIntent = options.injectIntent && Bun.env.PI_NO_INTENT !== "1";
+	const injectIntent = options.injectIntent && process.env.PI_NO_INTENT !== "1";
 	return tools?.map(t => {
 		const intentMode = resolveIntentMode(t.intent);
 		const doInjectIntent =
@@ -1957,7 +1957,8 @@ async function prepareProviderCall(
 	const llmMessages = await config.convertToLlm(messages);
 	const normalizedMessages = normalizeMessagesForProvider(llmMessages, model);
 	const ownedDialect: Dialect | undefined =
-		(config.getDialect ? config.getDialect(model) : config.dialect) ?? resolveOwnedDialectFromEnv(Bun.env.PI_DIALECT);
+		(config.getDialect ? config.getDialect(model) : config.dialect) ??
+		resolveOwnedDialectFromEnv(process.env.PI_DIALECT);
 	const pruneToolDescriptions = !!config.pruneToolDescriptions && !ownedDialect;
 	let llmContext: Context;
 	if (config.appendOnlyContext) {

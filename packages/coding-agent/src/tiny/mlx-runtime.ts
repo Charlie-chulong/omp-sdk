@@ -1,6 +1,7 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { $ } from "bun";
+import { $ } from "@oh-my-pi/pi-utils/runtime";
 import { $which, getTinyModelsCacheDir, isEnoent, type RuntimeInstallPhase, withFileLock } from "@oh-my-pi/pi-utils";
 
 /**
@@ -32,7 +33,7 @@ function venvPython(runtimeDir: string): string {
 
 async function readReadyMarker(runtimeDir: string): Promise<string | null> {
 	try {
-		return (await Bun.file(path.join(runtimeDir, READY_MARKER)).text()).trim();
+		return (await runtime.file(path.join(runtimeDir, READY_MARKER)).text()).trim();
 	} catch (error) {
 		if (isEnoent(error)) return null;
 		throw error;
@@ -90,7 +91,7 @@ export async function ensureTinyMlxRuntime(onPhase?: (phase: RuntimeInstallPhase
 			if (!python3) throw new Error("MLX backend needs `uv` or `python3` (>= 3.10) on PATH to install mlx-lm");
 			await installWithSystemPython(python3, runtimeDir);
 		}
-		await Bun.write(path.join(runtimeDir, READY_MARKER), `${MLX_LM_VERSION}\n`);
+		await runtime.write(path.join(runtimeDir, READY_MARKER), `${MLX_LM_VERSION}\n`);
 		onPhase?.("done");
 		return venvPython(runtimeDir);
 	});

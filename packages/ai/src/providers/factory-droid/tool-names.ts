@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { Tool } from "../../types";
 
 /**
@@ -10,7 +11,7 @@ import type { Tool } from "../../types";
 export function sanitizeFactoryDroidToolName(name: string, maxLength = 64): string {
 	const sanitized = name.replace(/[^a-zA-Z0-9_-]/g, "_");
 	if (sanitized.length <= maxLength) return sanitized;
-	return `${sanitized.slice(0, maxLength - 9)}_${Bun.SHA256.hash(sanitized, "hex").slice(0, 8)}`;
+	return `${sanitized.slice(0, maxLength - 9)}_${runtime.SHA256.hash(sanitized, "hex").slice(0, 8)}`;
 }
 
 /**

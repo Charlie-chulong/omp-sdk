@@ -10,6 +10,7 @@
  * move data to the new locations. No filesystem existence checks are performed
  * — if the env var is set, omp trusts that the migration has been done.
  */
+import { runtime } from "./runtime";
 
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -822,12 +823,12 @@ export function getAutoQaDbPath(): string {
  *
  * Used to pack the project identity into a single short fs-safe segment
  * (e.g. PR-checkout and task-isolation worktree dirs under `~/.omp/wt/`).
- * Bun.hash is non-cryptographic — collision space is ~2^28, which is fine
- * for naming a handful of repos on a single machine. Same input on the
- * same Bun runtime yields the same output.
+ * The shared wyhash implementation is non-cryptographic; the shortened key
+ * has ~2^28 possibilities, sufficient for a handful of repos. Bun and Node
+ * preserve the same hash so existing worktree paths do not change.
  */
 export function hashPath(absPath: string): string {
-	return Bun.hash(path.resolve(absPath)).toString(16).padStart(16, "0").slice(-7);
+	return runtime.hash(path.resolve(absPath)).toString(16).padStart(16, "0").slice(-7);
 }
 
 /** Get the path to a single worktree directory (~/.omp/wt/<segment>). */
@@ -1125,7 +1126,7 @@ export function getDaemonRuntimeRoot(): string {
 
 /** Get the daemon runtime directory for a project (~/.omp/run/daemons/<hash>; XDG default: $XDG_STATE_HOME/omp/run/daemons/<hash>). */
 export function getDaemonRuntimeDir(projectDir: string): string {
-	const key = Bun.hash.wyhash(path.resolve(projectDir)).toString(16).padStart(16, "0");
+	const key = runtime.hash.wyhash(path.resolve(projectDir)).toString(16).padStart(16, "0");
 	return path.join(getDaemonRuntimeRoot(), key);
 }
 

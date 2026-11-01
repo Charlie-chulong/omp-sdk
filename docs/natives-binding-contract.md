@@ -11,6 +11,15 @@ This page defines the public JS/TS boundary between `@oh-my-pi/pi-natives` calle
 
 There is no `NativeBindings` declaration-merging lifecycle or `packages/natives/src/<module>` wrapper convention. The loader checks release identity for install/compiled loads (with a narrow pre-sentinel compatibility exception), not every public symbol; a function export the loaded addon omits is `missingNativeExport(name)` — `undefined` on a current addon, and on a stale workspace addon a throwing stub that names the addon and the rebuild command (`bun run build:native`).
 
+Optional functionality is reported by the addon's `nativeCapabilities()` export
+(`smollm`, `liveVoice`, `wasmGrammars`), not inferred from this generated type
+surface. The SDK's `readNativeCapabilities()` reads those binary facts and
+guards disabled operations before downloads or optional native construction.
+All three Cargo features are default-on; the isolated Desktop build disables
+them without regenerating the full declarations. See
+[build guidance](./natives-build-release-debugging.md#isolated-desktop-addon)
+for build/rebuild commands and retained functionality.
+
 ## Public entrypoints
 
 `packages/natives/package.json` exports:

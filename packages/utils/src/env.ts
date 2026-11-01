@@ -126,8 +126,8 @@ function readLaunchEnv(): ReadonlyMap<string, string> | undefined {
 	}
 	if (!process.execArgv.includes("--no-env-file")) return undefined;
 	const values = new Map<string, string>();
-	for (const key in Bun.env) {
-		const value = Bun.env[key];
+	for (const key in process.env) {
+		const value = process.env[key];
 		if (value !== undefined) values.set(key, value);
 	}
 	return values;
@@ -157,7 +157,7 @@ function filterChildShellEnvInternal(
 	cwd: string,
 	onDotenvValue?: (value: string) => void,
 ): Record<string, string> {
-	const runtimeLaunchEnvValues = env === Bun.env || env === process.env ? launchEnvValues : undefined;
+	const runtimeLaunchEnvValues = env === process.env ? launchEnvValues : undefined;
 	const result = filterProcessEnv(env);
 	const projectEnv = parseEnvFile(path.join(cwd, ".env"));
 	const launchNodeEnv = runtimeLaunchEnvValues ? runtimeLaunchEnvValues.get("NODE_ENV") : env.NODE_ENV;
@@ -292,17 +292,17 @@ const piEnv = parseEnvFile(path.join(getConfigRootDir(), ".env"));
 const agentEnv = parseEnvFile(path.join(getAgentDir(), ".env"));
 const projectEnv = parseEnvFile(path.join(getProjectDir(), ".env"));
 
-for (const key of Object.keys(Bun.env)) {
-	const value = Bun.env[key];
+for (const key of Object.keys(process.env)) {
+	const value = process.env[key];
 	if (!isSafeEnvName(key) || isMacosMallocStackLoggingEnvName(key) || value === undefined || !isSafeEnvValue(value)) {
-		delete Bun.env[key];
+		delete process.env[key];
 	}
 }
 
 for (const file of [projectEnv, agentEnv, piEnv, homeEnv]) {
 	for (const key in file) {
-		if (!isMacosMallocStackLoggingEnvName(key) && !Bun.env[key]) {
-			Bun.env[key] = file[key];
+		if (!isMacosMallocStackLoggingEnvName(key) && !process.env[key]) {
+			process.env[key] = file[key];
 			if (file === projectEnv) projectEnvNamesLoadedByOmp.add(key);
 		}
 	}
@@ -316,13 +316,13 @@ for (const file of [projectEnv, agentEnv, piEnv, homeEnv]) {
 refreshDirsFromEnv();
 
 /**
- * Intentional re-export of Bun.env.
+ * Intentional re-export of the runtime process environment.
  *
  * All users should import this env module (import { $env } from "@oh-my-pi/pi-utils")
  * before using environment variables. This ensures that .env files have been loaded and
  * overrides (project, home) have been applied, so $env always reflects the correct values.
  */
-export const $env: Record<string, string> = Bun.env as Record<string, string>;
+export const $env: Record<string, string> = process.env as Record<string, string>;
 
 /**
  * Resolve the first environment variable value from the given keys.
@@ -331,7 +331,7 @@ export const $env: Record<string, string> = Bun.env as Record<string, string>;
  */
 export function $pickenv(...keys: string[]): string | undefined {
 	for (const key of keys) {
-		const value = Bun.env[key]?.trim();
+		const value = process.env[key]?.trim();
 		if (value) {
 			return value;
 		}
@@ -380,14 +380,14 @@ export function $envpos(name: string, defaultValue: number): number {
 	return parsed;
 }
 
-let terminalHeadless = isBunTestRuntime();
+let terminalHeadless = typeof Bun === "undefined" || isBunTestRuntime();
 
 /**
  * True when real-terminal side effects must be suppressed: stdout escape/frame
  * writes, stdin raw-mode + resume, CSI/OSC capability probes, SIGWINCH, window
- * title changes, and emergency restore. Defaults to {@link isBunTestRuntime} so
- * `bun test` launched inside a real TTY never paints the TUI, leaks probe
- * queries, or hijacks the developer's stdin; production runtimes stay
+ * title changes, and emergency restore. Defaults on for Node/Electron SDK
+ * embedding and {@link isBunTestRuntime}, so importing headless sessions never
+ * paints the host's terminal or hijacks stdin. Bun production runtimes remain
  * interactive.
  *
  * Terminal-contract tests that must exercise the real I/O path opt out with
@@ -457,7 +457,7 @@ export function getDbBusyTimeoutMs(): number {
  * first for cheap fast-path detection.
  */
 export function isCompiledBinary(): boolean {
-	if (process.env.PI_COMPILED || Bun.env.PI_COMPILED) return true;
+	if (process.env.PI_COMPILED) return true;
 	const url = import.meta.url;
 	return url.includes("$bunfs") || url.includes("~BUN") || url.includes("%7EBUN");
 }

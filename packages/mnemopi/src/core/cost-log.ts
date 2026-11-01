@@ -1,4 +1,4 @@
-import type { Database } from "bun:sqlite";
+import type { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import * as os from "node:os";
 import * as path from "node:path";
 import { openDatabase } from "../db";

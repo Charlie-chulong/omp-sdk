@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Client-side wait for the relay's extension handshake.
  *
@@ -141,7 +142,7 @@ export async function waitForRelayExtension(cdpUrl: string, signal?: AbortSignal
 			if (Date.now() >= deadline) return staleRelay ? "outdated-relay" : "extension-gone";
 		}
 		if (Date.now() >= deadline) return staleRelay ? "outdated-relay" : "no-extension";
-		await Bun.sleep(POLL_INTERVAL_MS);
+		await runtime.sleep(POLL_INTERVAL_MS);
 	}
 }
 

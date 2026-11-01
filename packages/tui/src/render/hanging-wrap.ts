@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { visibleWidth, wrapTextWithAnsi } from "../utils";
 import type { Theme } from "../theme/theme";
 
@@ -17,7 +18,7 @@ export function wrapTreeLine(line: string, width: number, theme: Theme): string[
 		const index = line.indexOf(marker);
 		if (index < 0) continue;
 		const before = line.slice(0, index);
-		if (!/^ *$/.test(Bun.stripANSI(before).replaceAll(theme.tree.vertical, ""))) continue;
+		if (!/^ *$/.test(runtime.stripANSI(before).replaceAll(theme.tree.vertical, ""))) continue;
 		const end = index + marker.length + 1;
 		if (line[end - 1] !== " ") continue;
 		const connectorWidth = visibleWidth(connector);

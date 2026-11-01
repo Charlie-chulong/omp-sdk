@@ -7,6 +7,7 @@
 import * as path from "node:path";
 import { scheduler } from "node:timers/promises";
 import { FileLock as NativeFileLock } from "@oh-my-pi/pi-natives";
+import { runtime } from "./runtime";
 
 /** Controls bounded waiting when an advisory file lock is contended. */
 export interface FileLockOptions {
@@ -67,7 +68,7 @@ function acquireLockSync(filePath: string, options: FileLockOptions = {}): Nativ
 		opts.signal?.throwIfAborted();
 		const lock = tryAcquireLock(lockPath);
 		if (lock) return lock;
-		if (attempt + 1 < opts.retries && opts.retryDelayMs > 0) Bun.sleepSync(opts.retryDelayMs);
+		if (attempt + 1 < opts.retries && opts.retryDelayMs > 0) runtime.sleepSync(opts.retryDelayMs);
 	}
 
 	throw new Error(`Failed to acquire lock for ${filePath} after ${opts.retries} attempts`);

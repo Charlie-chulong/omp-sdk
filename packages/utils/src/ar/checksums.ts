@@ -1,12 +1,13 @@
 // Shared checksum primitives for archive containers. CRC-32 (IEEE, reflected)
-// delegates to Bun's native implementation; CRC-64/XZ and CRC-16/ARC are
+// delegates to the shared runtime; CRC-64/XZ and CRC-16/ARC are
 // table-driven so format modules never hand-roll per-bit loops. Format-owned
 // oddballs (bzip2's MSB-first CRC-32, CAB's block checksum, cpio/tar sums)
 // stay in their modules.
+import { runtime } from "../runtime";
 
 /** CRC-32 (IEEE 802.3, reflected). Chainable: pass the previous value as `seed`. */
 export function crc32(bytes: Uint8Array, seed = 0): number {
-	return Bun.hash.crc32(bytes, seed) >>> 0;
+	return runtime.hash.crc32(bytes, seed) >>> 0;
 }
 
 const CRC64_LO = new Uint32Array(256);

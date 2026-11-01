@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /** Handoff document generation. Committing the document as a compaction entry is owned by SessionMaintenance. */
 
 import * as path from "node:path";
@@ -215,7 +216,7 @@ export class SessionHandoff {
 				if (artifactsDir) {
 					const handoffFilePath = path.join(artifactsDir, createHandoffFileName());
 					try {
-						await Bun.write(handoffFilePath, `${handoffText}\n`);
+						await runtime.write(handoffFilePath, `${handoffText}\n`);
 						savedPath = handoffFilePath;
 					} catch (error) {
 						logger.warn("Failed to save handoff document to disk", {

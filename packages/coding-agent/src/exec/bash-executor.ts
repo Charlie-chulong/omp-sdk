@@ -442,7 +442,7 @@ function buildUserShellCommand(shell: string, args: string[], command: string): 
 
 function resolveUserShellConfig(settings: Settings, baseConfig: ShellConfig): ShellConfig {
 	const customShellPath = cfgShellPath.get(settings);
-	const envShell = Bun.env.SHELL;
+	const envShell = process.env.SHELL;
 	if (customShellPath || process.platform === "win32" || !envShell || envShell === baseConfig.shell) {
 		return baseConfig;
 	}

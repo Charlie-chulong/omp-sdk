@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { ImageContent } from "@oh-my-pi/pi-ai";
 import { logger } from "@oh-my-pi/pi-utils";
 import type { TspSpan } from "@oh-my-pi/pi-wire";
@@ -143,7 +144,7 @@ export function transcriptImageLink(
 	if (!imageLinksEnabled()) return undefined;
 	if (sourcePath) return sourcePath;
 	if (!hostBlobWriter || !image.data) return undefined;
-	const key = `${image.mimeType}:${Bun.hash(image.data)}`;
+	const key = `${image.mimeType}:${runtime.hash(image.data)}`;
 	const cached = blobLinks.get(key);
 	if (cached) return cached;
 	const link = materializeImageReferenceLink({ type: "image", ...image }, 1, hostBlobWriter);

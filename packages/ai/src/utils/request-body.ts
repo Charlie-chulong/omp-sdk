@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Bytes of a request body as the server reads them: the `gzip`/`zstd`
  * `Content-Encoding` applied by request compression is undone, any other
@@ -6,9 +7,9 @@
 export function decodeRequestBodyBytes(bytes: Uint8Array, contentEncoding: string | null): Uint8Array {
 	switch (contentEncoding?.trim().toLowerCase()) {
 		case "gzip":
-			return Bun.gunzipSync(bytes as Uint8Array<ArrayBuffer>);
+			return runtime.gunzipSync(bytes as Uint8Array<ArrayBuffer>);
 		case "zstd":
-			return Bun.zstdDecompressSync(bytes);
+			return runtime.zstdDecompressSync(bytes);
 		default:
 			return bytes;
 	}

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * `/wt` backing: fork the current checkout into a fresh linked git worktree on
  * a new branch, carrying the uncommitted changes along, so the session can be
@@ -205,7 +206,7 @@ async function snapshotSessionWorktree(wt: SessionWorktree): Promise<WorktreeSna
 	}
 	return {
 		state: { dirty: status.length > 0, moved, offBranch: Boolean(head) && head !== tip },
-		fingerprint: Bun.hash(parts.join("\0")).toString(16),
+		fingerprint: runtime.hash(parts.join("\0")).toString(16),
 		present: true,
 	};
 }

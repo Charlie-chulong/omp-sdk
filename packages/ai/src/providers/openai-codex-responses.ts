@@ -1,3 +1,6 @@
+import { createModelWebSocket } from "../utils/model-websocket";
+import type { ModelWebSocket } from "../utils/model-websocket";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { scheduler } from "node:timers/promises";
 import { type } from "@oh-my-pi/omptype";
 import { getSupportedEfforts } from "@oh-my-pi/pi-catalog/model-thinking";
@@ -1093,7 +1096,7 @@ function updateCodexSessionMetadataFromHeaders(
 	}
 }
 
-function extractCodexWebSocketHandshakeHeaders(socket: Bun.WebSocket, openEvent?: Event): Headers | undefined {
+function extractCodexWebSocketHandshakeHeaders(socket: ModelWebSocket, openEvent?: Event): Headers | undefined {
 	const eventRecord = openEvent as Record<string, unknown> | undefined;
 	const eventResponse = eventRecord?.response as Record<string, unknown> | undefined;
 	const socketRecord = socket as unknown as Record<string, unknown>;
@@ -3452,7 +3455,7 @@ function getCodexWebSocketSessionKey(
 	responsesLite: boolean,
 ): string | undefined {
 	if (!normalizedSessionId) return undefined;
-	const credentialKey = accountId ? `account:${accountId}` : `token:${Bun.hash(apiKey).toString(36)}`;
+	const credentialKey = accountId ? `account:${accountId}` : `token:${runtime.hash(apiKey).toString(36)}`;
 	// Responses Lite is connection-scoped on the WebSocket upgrade, so lite and
 	// non-lite turns must never share a pooled socket or append state.
 	const liteSuffix = responsesLite ? ":lite" : "";
@@ -3531,7 +3534,7 @@ function shouldUseCodexWebSocket(
 
 function hashJson(value: unknown): string {
 	const json = JSON.stringify(value);
-	return String(Bun.hash(json === undefined ? "undefined" : json));
+	return String(runtime.hash(json === undefined ? "undefined" : json));
 }
 
 function parseCodexResponseStatus(value: unknown): ResponseStatus | undefined {
@@ -3830,7 +3833,7 @@ class CodexWebSocketConnection {
 	#headers: Record<string, string>;
 	#proxy?: string;
 	#onHandshakeHeaders?: (headers: Headers) => void;
-	#socket: Bun.WebSocket | null = null;
+	#socket: ModelWebSocket | null = null;
 	#queue: Array<Record<string, unknown> | Error | null> = [];
 	#waiters: Array<() => void> = [];
 	#connectPromise?: Promise<void>;
@@ -3943,10 +3946,7 @@ class CodexWebSocketConnection {
 		}
 		const { promise, resolve, reject } = Promise.withResolvers<void>();
 		this.#connectPromise = promise;
-		const socket = new (WebSocket as unknown as new (url: string, opts: Bun.WebSocketOptions) => Bun.WebSocket)(
-			this.#url,
-			{ headers: this.#headers, proxy: this.#proxy },
-		);
+		const socket = createModelWebSocket(this.#url, { headers: this.#headers, proxy: this.#proxy });
 		socket.binaryType = "nodebuffer";
 		this.#socket = socket;
 		let settled = false;
@@ -4361,7 +4361,7 @@ class CodexWebSocketConnection {
 		for (const waiter of waiters) waiter.reject(new CodexWebSocketTransportError(reason));
 	}
 
-	#captureHandshakeHeaders(socket: Bun.WebSocket, openEvent?: Event): void {
+	#captureHandshakeHeaders(socket: ModelWebSocket, openEvent?: Event): void {
 		const headers = extractCodexWebSocketHandshakeHeaders(socket, openEvent);
 		if (!headers) return;
 		this.#handshakeHeaders = headers;
@@ -4386,19 +4386,27 @@ class CodexWebSocketConnection {
 		log.write(String(data));
 	}
 
-	#startHeartbeat(socket: Bun.WebSocket): void {
+	#startHeartbeat(socket: ModelWebSocket): void {
 		this.#stopHeartbeat();
 		const intervalMs = CODEX_WEBSOCKET_PING_INTERVAL_MS;
 		if (intervalMs <= 0) return;
 
 		this.#lastPingAt = 0;
 		const socketEventTarget = socket as EventTarget;
+		// Node ws exposes control frames through EventEmitter, not its DOM facade.
+		const pongSource = socket as unknown as {
+			on?: (event: string, listener: () => void) => void;
+			off?: (event: string, listener: () => void) => void;
+		};
 		const onPong = () => {
 			// Pongs are inbound activity — refresh the reuse-health clock so a quiet
 			// but ping-responsive socket stays trustworthy across requests.
 			this.#lastInboundAt = Date.now();
 		};
-		if (
+		if (typeof pongSource.on === "function" && typeof pongSource.off === "function") {
+			pongSource.on("pong", onPong);
+			this.#removePongListener = () => pongSource.off?.("pong", onPong);
+		} else if (
 			typeof socketEventTarget.addEventListener === "function" &&
 			typeof socketEventTarget.removeEventListener === "function"
 		) {
@@ -4866,7 +4874,7 @@ function convertMessages(model: Model<"openai-codex-responses">, context: Contex
 		const sep = id.search(/[\n|]/);
 		const [callId, itemId] = sep > 0 ? [id.slice(0, sep), id.slice(sep + 1)] : [id, undefined];
 		const normalizedCallId = sanitizeCodexCallId(callId);
-		const rawItemId = itemId ?? Bun.hash(id).toString(36);
+		const rawItemId = itemId ?? runtime.hash(id).toString(36);
 		const normalizedItemId = normalizeToolCallId(rawItemId.startsWith("fc") ? rawItemId : `fc_${rawItemId}`).replace(
 			/_+$/,
 			"",

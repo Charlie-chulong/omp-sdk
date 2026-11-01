@@ -1,3 +1,4 @@
+import { visibleWidth } from "../utils";
 import type { Component } from "../index";
 import { isRecord } from "@oh-my-pi/pi-utils";
 import type { NativeToolHead, NativeToolView, RenderResultOptions } from "./renderer";
@@ -74,7 +75,7 @@ function buildDefaultToolBody(input: DefaultToolRenderInput, uiTheme: Theme, con
 	const body: string[] = [];
 	const args = isRecord(input.args) ? input.args : undefined;
 	if (!options.expanded && args && Object.keys(args).length > 0) {
-		const inlineBudget = Math.max(20, contentWidth - Bun.stringWidth(uiTheme.tree.last) - 2);
+		const inlineBudget = Math.max(20, contentWidth - visibleWidth(uiTheme.tree.last) - 2);
 		const preview = formatArgsInline(args, inlineBudget);
 		if (preview) {
 			body.push(` ${uiTheme.fg("dim", uiTheme.tree.last)} ${uiTheme.fg("dim", preview)}`);

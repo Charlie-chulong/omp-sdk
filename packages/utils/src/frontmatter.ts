@@ -1,4 +1,4 @@
-import { YAML } from "bun";
+import { YAML } from "./runtime-parsers";
 import { truncate } from "./format";
 import * as logger from "./logger";
 

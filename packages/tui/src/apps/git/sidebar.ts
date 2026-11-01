@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Right sidebar of the git TUI.
  *
@@ -1644,12 +1645,13 @@ export class Sidebar {
 			rows.push({ text: "" }, { text: theme.fg("dim", " No commits yet") });
 			return rows;
 		}
-		for (const line of Bun.wrapAnsi(theme.bold(head.subject), width - 2).split("\n")) {
+		for (const line of runtime.wrapAnsi(theme.bold(head.subject), width - 2).split("\n")) {
 			rows.push({ text: ` ${line}` });
 		}
 		if (head.body) {
 			rows.push({ text: "" });
-			const bodyLines = Bun.wrapAnsi(head.body, width - 2)
+			const bodyLines = runtime
+				.wrapAnsi(head.body, width - 2)
 				.split("\n")
 				.slice(0, 8);
 			for (const line of bodyLines) rows.push({ text: theme.fg("muted", ` ${line}`) });

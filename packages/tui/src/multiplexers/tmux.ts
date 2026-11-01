@@ -11,7 +11,7 @@ export const tmuxMultiplexer = {
 	sessionEnvKeys: ["TMUX"],
 	termPrefix: "tmux",
 	ownsScreenGrid: true,
-	isInside(env: NodeJS.ProcessEnv = Bun.env): boolean {
+	isInside(env: NodeJS.ProcessEnv = process.env): boolean {
 		return Boolean(env.TMUX);
 	},
 	notifier: {

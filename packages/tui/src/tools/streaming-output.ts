@@ -1,3 +1,4 @@
+import { runtime, type RuntimeFileSink } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs";
 import type { AgentToolUpdateCallback } from "@oh-my-pi/pi-agent-core";
 import { formatBytes, materializeString, sanitizeText } from "@oh-my-pi/pi-utils";
@@ -955,7 +956,7 @@ export class OutputSink {
 	#file?: {
 		path: string;
 		artifactId?: string;
-		sink: Bun.FileSink;
+		sink: RuntimeFileSink;
 	};
 
 	// Queue of chunks waiting for the file sink to be created.
@@ -1427,7 +1428,7 @@ export class OutputSink {
 			// directory) only fails on the first write, misreported as a write
 			// failure. Probe the open eagerly so it stays classified — and terminal.
 			if (process.platform === "win32") fs.closeSync(fs.openSync(this.#artifactPath, "w"));
-			const sink = Bun.file(this.#artifactPath).writer();
+			const sink = runtime.file(this.#artifactPath).writer();
 			this.#file = { path: this.#artifactPath, artifactId: this.#artifactId, sink };
 			this.#fileReady = true;
 

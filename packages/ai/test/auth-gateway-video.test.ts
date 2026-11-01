@@ -86,7 +86,7 @@ async function boot(): Promise<Harness> {
 		}
 		return Response.json({ error: { message: "unexpected upstream request" } }, { status: 500 });
 	};
-	const handle = startAuthGateway({
+	const handle = await startAuthGateway({
 		bind: "127.0.0.1:0",
 		bearerTokens: ["gw-token"],
 		storage,
@@ -135,6 +135,22 @@ async function submit(harness: Harness): Promise<{ response: Response; body: Rec
 	});
 	return { response, body: (await response.json()) as Record<string, unknown> };
 }
+
+describe("gateway video job identity codec", () => {
+	it("round-trips Unicode routing identities as unpadded Base64url", () => {
+		const identity = { provider: "openrouter", modelId: "video/日本語", upstreamId: "job-😀" };
+		const id = encodeGatewayJobId(identity);
+		expect(id).toBe(Buffer.from(JSON.stringify(identity)).toString("base64url"));
+		expect(decodeGatewayJobId(id)).toEqual(identity);
+	});
+
+	it("rejects invalid syntax that Buffer decoding would otherwise ignore", () => {
+		const id = encodeGatewayJobId({ provider: "openrouter", modelId: "video", upstreamId: "job" });
+		for (const malformed of [`${id}!`, `${id}===`, "A", "====", "e30"]) {
+			expect(() => decodeGatewayJobId(malformed)).toThrow("invalid video job id");
+		}
+	});
+});
 
 describe("auth-gateway asynchronous video generation", () => {
 	let harness: Harness | undefined;

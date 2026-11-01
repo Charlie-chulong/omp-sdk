@@ -83,6 +83,49 @@ bun run build
 bun run check
 ```
 
+### Full and Desktop native builds
+
+The `pi-natives` Cargo features `smollm`, `live-voice`, and `wasm-grammars`
+are optional and **enabled by default**. Normal native builds, the generic SDK,
+and the Bun CLI retain all three:
+
+- `smollm` includes SmolLM/Candle word prediction. Disabling it preserves ngram
+  prediction, macOS Apple prediction, and macOS spelling services.
+- `live-voice` includes native WebRTC/Opus live media. Disabling it preserves
+  microphone capture and speaker playback.
+- `wasm-grammars` includes on-demand WebAssembly tree-sitter grammar support.
+  Disabling it preserves built-in languages and their parsing, AST search/edit,
+  and summaries; languages requiring a WASM grammar are unavailable.
+
+From the workspace root:
+
+```bash
+# Full host build; regenerate the full declarations and ESM exports
+bun run --cwd packages/natives build:bindings
+
+# Isolated Desktop host build; release profile, --no-default-features
+bun run --cwd packages/natives build:desktop
+```
+
+The Desktop build uses `target/desktop` for Cargo output and installs its
+canonical `.node` addon plus JSON metadata sidecar under `native/desktop/`.
+It does not replace the full addon or regenerate the full public declarations.
+Rebuild this artifact after native source, feature, or package-version changes;
+use `build:bindings` when changing the full exported API. Desktop staging
+validates the isolated addon's version, SHA-256, and raw capability report
+against its sidecar before packaging it.
+
+`nativeCapabilities()` reports the loaded binary's `smollm`, `liveVoice`, and
+`wasmGrammars` facts; declarations do not imply that every optional feature is
+enabled. The SDK exposes these facts through `readNativeCapabilities()` and
+rejects disabled-feature operations with actionable guidance before model or
+grammar downloads or optional native resource construction. A caller-owned
+WebRTC peer can still supply an SDP offer and use signaling without native
+WebRTC/Opus.
+
+These native features are separate from the SDK's JavaScript `core` profile.
+No measured Desktop size savings are claimed here.
+
 ## Architecture
 
 `@oh-my-pi/pi-natives` publishes a small core package plus generated

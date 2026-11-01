@@ -1,3 +1,4 @@
+import { encodeBase64 } from "@oh-my-pi/pi-utils";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
 import * as path from "node:path";
 import type { AssistantMessage } from "@oh-my-pi/pi-ai";
@@ -376,9 +377,9 @@ describe("AssistantMessageComponent images", () => {
 	});
 
 	it("converts WebP tool images for Kitty terminal rendering", async () => {
-		const webpBase64 = Buffer.from(
+		const webpBase64 = encodeBase64(Buffer.from(
 			await Bun.file(path.join(import.meta.dir, "../../../../../assets/python.webp")).arrayBuffer(),
-		).toBase64();
+		));
 		setTerminalImageProtocol(ImageProtocol.Kitty);
 
 		const converted = Promise.withResolvers<void>();

@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as path from "node:path";
 import { getTinyModelsCacheDir } from "@oh-my-pi/pi-utils";
 
@@ -13,7 +14,9 @@ export function getTtsRuntimeDir(): string {
 
 export async function isTtsRuntimeCached(): Promise<boolean> {
 	try {
-		const pkg = await Bun.file(path.join(getTtsRuntimeDir(), "node_modules", KOKORO_PACKAGE, "package.json")).json();
+		const pkg = await runtime
+			.file(path.join(getTtsRuntimeDir(), "node_modules", KOKORO_PACKAGE, "package.json"))
+			.json();
 		return typeof pkg === "object" && pkg !== null && "version" in pkg && pkg.version === KOKORO_VERSION;
 	} catch {
 		return false;

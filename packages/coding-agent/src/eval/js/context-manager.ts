@@ -1,9 +1,11 @@
 import * as path from "node:path";
+import { Worker as NodeWorker } from "node:worker_threads";
 import { logger, Snowflake, workerHostEntry } from "@oh-my-pi/pi-utils";
 import {
 	createWorkerHandle,
 	createWorkerSubprocess,
 	resolveWorkerSpawnCmd,
+	resolveNodeWorkerHost,
 	workerEnvFromParent,
 } from "../../subprocess/worker-client";
 import type { ToolSession } from "../../tools";
@@ -123,7 +125,7 @@ const WORKER_CLOSE_TIMEOUT_MS = 1_000;
 const JS_EVAL_PROCESS_ARG = "__omp_worker_js_eval_process";
 const productionWorkerFactories: JsEvalWorkerFactories = {
 	spawnProcess: spawnJsProcess,
-	spawnWorker: spawnBunWorker,
+	spawnWorker: spawnIsolatedWorker,
 };
 let workerFactories = productionWorkerFactories;
 
@@ -644,7 +646,7 @@ async function acquireSession(
 			} catch (error) {
 				// Runtime crash/load failures surface asynchronously via the runtime's
 				// error callback, after the synchronous spawn try/catch has returned.
-				// Recover once from the subprocess into a Bun Worker. A second isolated
+				// Recover once from the subprocess into an isolated worker thread. A second isolated
 				// runtime failure must surface; running the cell on this host thread
 				// would make synchronous user code impossible to cancel.
 				const failed = session.worker;
@@ -655,7 +657,7 @@ async function acquireSession(
 						{ cause: error },
 					);
 				}
-				logger.warn("JS eval subprocess init failed; retrying with a Bun Worker", {
+				logger.warn("JS eval subprocess init failed; retrying with an isolated worker thread", {
 					error: error instanceof Error ? error.message : String(error),
 				});
 				session.worker = workerFactories.spawnWorker();
@@ -901,7 +903,7 @@ function markJsSessionAlive(session: JsSession, toolSession: ToolSession, enviro
 		kernelId: session.kernelId,
 		alive: true,
 		environment,
-		interpreter: `Bun ${Bun.version}`,
+		interpreter: process.versions.bun ? `Bun ${process.versions.bun}` : `Node ${process.versions.node}`,
 	});
 }
 
@@ -970,15 +972,23 @@ function spawnJsWorker(): JsEvalWorkerHandle {
 	} catch (error) {
 		// A worker thread remains isolated and can interrupt synchronous user code
 		// via terminate(), so it is the only safe recovery from subprocess spawn.
-		logger.warn("JS eval subprocess spawn failed; falling back to a Bun Worker", {
+		logger.warn("JS eval subprocess spawn failed; falling back to an isolated worker thread", {
 			error: error instanceof Error ? error.message : String(error),
 		});
 	}
 	return workerFactories.spawnWorker();
 }
 
-function spawnBunWorker(): JsEvalWorkerHandle {
+function spawnIsolatedWorker(): JsEvalWorkerHandle {
 	try {
+		if (typeof Bun === "undefined") {
+			return wrapNodeWorker(
+				new NodeWorker(resolveNodeWorkerHost(), {
+					argv: ["__omp_worker_js_eval"],
+					execArgv: ["--experimental-vm-modules"],
+				}),
+			);
+		}
 		const hostEntry = workerHostEntry();
 		const worker = hostEntry
 			? new Worker(hostEntry, { type: "module", argv: ["__omp_worker_js_eval"] })
@@ -990,6 +1000,52 @@ function spawnBunWorker(): JsEvalWorkerHandle {
 			{ cause: error },
 		);
 	}
+}
+
+function wrapNodeWorker(worker: NodeWorker): JsEvalWorkerHandle {
+	return {
+		mode: "worker",
+		send(message) {
+			worker.postMessage(message);
+		},
+		onMessage(handler) {
+			worker.on("message", handler);
+			return () => worker.off("message", handler);
+		},
+		onError(handler) {
+			const onExit = (code: number) => handler(new Error(`JS eval worker exited with code ${code}`));
+			worker.on("error", handler);
+			worker.on("messageerror", handler);
+			worker.on("exit", onExit);
+			return () => {
+				worker.off("error", handler);
+				worker.off("messageerror", handler);
+				worker.off("exit", onExit);
+			};
+		},
+		async close() {
+			const { promise, resolve } = Promise.withResolvers<boolean>();
+			let acknowledged = false;
+			const onMessage = (message: WorkerOutbound) => {
+				if (message.type === "closed") acknowledged = true;
+			};
+			const onExit = () => finish(acknowledged);
+			const finish = (closed: boolean) => {
+				clearTimeout(timer);
+				worker.off("message", onMessage);
+				worker.off("exit", onExit);
+				resolve(closed);
+			};
+			const timer = setTimeout(() => finish(false), WORKER_CLOSE_TIMEOUT_MS);
+			worker.on("message", onMessage);
+			worker.once("exit", onExit);
+			worker.postMessage({ type: "close" } satisfies WorkerInbound);
+			return await promise;
+		},
+		async terminate() {
+			await worker.terminate();
+		},
+	};
 }
 
 function spawnJsProcess(): JsEvalWorkerHandle {

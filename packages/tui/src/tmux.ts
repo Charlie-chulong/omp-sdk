@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { $which } from "@oh-my-pi/pi-utils";
 import { isBunTestRuntime } from "@oh-my-pi/pi-utils/env";
 import { tmuxMultiplexer, wrapTmuxPassthrough } from "./multiplexers/tmux";
@@ -5,7 +6,7 @@ import { tmuxMultiplexer, wrapTmuxPassthrough } from "./multiplexers/tmux";
 export { wrapTmuxPassthrough } from "./multiplexers/tmux";
 
 /** Pass a control sequence through tmux, leaving direct-terminal output unchanged. */
-export function wrapTmuxPassthroughIfNeeded(payload: string, env: NodeJS.ProcessEnv = Bun.env): string {
+export function wrapTmuxPassthroughIfNeeded(payload: string, env: NodeJS.ProcessEnv = process.env): string {
 	return tmuxMultiplexer.isInside(env) ? wrapTmuxPassthrough(payload) : payload;
 }
 
@@ -48,7 +49,7 @@ function queryTmuxClientTerminalNames(env: NodeJS.ProcessEnv): readonly string[]
 	const tmux = $which("tmux", { PATH: env.PATH });
 	if (!tmux) return [];
 	try {
-		const result = Bun.spawnSync([tmux, "display-message", "-p", "#{client_termtype}\t#{client_termname}"], {
+		const result = runtime.spawnSync([tmux, "display-message", "-p", "#{client_termtype}\t#{client_termname}"], {
 			env,
 			stdout: "pipe",
 			stderr: "ignore",
@@ -69,7 +70,7 @@ function runTmux(args: string[], env: NodeJS.ProcessEnv): string | null {
 	const tmux = $which("tmux", { PATH: env.PATH });
 	if (!tmux) return null;
 	try {
-		const result = Bun.spawnSync([tmux, ...args], {
+		const result = runtime.spawnSync([tmux, ...args], {
 			env,
 			stdout: "pipe",
 			stderr: "ignore",
@@ -86,7 +87,7 @@ function runTmux(args: string[], env: NodeJS.ProcessEnv): string | null {
  * Whether the terminal hosting this tmux session draws TSP programs natively:
  * it sets the session user option `@tern-tsp` while it watches the session.
  */
-export function tmuxSessionSpeaksTsp(env: NodeJS.ProcessEnv = Bun.env): boolean {
+export function tmuxSessionSpeaksTsp(env: NodeJS.ProcessEnv = process.env): boolean {
 	return (runTmux(["show-options", "-qv", "@tern-tsp"], env)?.trim() ?? "") !== "";
 }
 
@@ -94,7 +95,7 @@ export function tmuxSessionSpeaksTsp(env: NodeJS.ProcessEnv = Bun.env): boolean 
  * Stop (`on` false) or restore (`on` true) tmux turning this pane's APC
  * strings into its title, which would otherwise swallow every TSP message.
  */
-export function setTmuxPaneApcTitles(on: boolean, env: NodeJS.ProcessEnv = Bun.env): void {
+export function setTmuxPaneApcTitles(on: boolean, env: NodeJS.ProcessEnv = process.env): void {
 	const pane = env.TMUX_PANE;
 	if (!pane) return;
 	runTmux(
@@ -113,7 +114,7 @@ export function setTmuxPaneApcTitles(on: boolean, env: NodeJS.ProcessEnv = Bun.e
  * in `#{client_termname}` (see {@link tmuxClientProgramsFromReport}). The local
  * IPC query runs once per process and degrades to `[]` when unavailable.
  */
-export function resolveTmuxClientTerminalNames(env: NodeJS.ProcessEnv = Bun.env): readonly string[] {
+export function resolveTmuxClientTerminalNames(env: NodeJS.ProcessEnv = process.env): readonly string[] {
 	if (!tmuxMultiplexer.isInside(env) || isBunTestRuntime()) return [];
 	cachedClientTerminalNames ??= queryTmuxClientTerminalNames(env);
 	return cachedClientTerminalNames;
@@ -144,7 +145,7 @@ function queryTmuxClientRendersSixel(env: NodeJS.ProcessEnv): boolean {
  * the outer tmux, whose DA1 starts with level 1, which tmux does not parse
  * for features.
  */
-export function tmuxClientRendersSixel(env: NodeJS.ProcessEnv = Bun.env): boolean {
+export function tmuxClientRendersSixel(env: NodeJS.ProcessEnv = process.env): boolean {
 	const tmux = env.TMUX;
 	if (!tmux) return false;
 	if (cachedClientSixel?.tmux !== tmux) cachedClientSixel = { tmux, renders: queryTmuxClientRendersSixel(env) };
@@ -171,7 +172,7 @@ function queryTmuxPaneAllowsPassthrough(env: NodeJS.ProcessEnv): boolean {
  * effective pane value (pane → window → global). Queried once per pane;
  * `false` outside tmux or when the query fails.
  */
-export function tmuxPaneAllowsPassthrough(env: NodeJS.ProcessEnv = Bun.env): boolean {
+export function tmuxPaneAllowsPassthrough(env: NodeJS.ProcessEnv = process.env): boolean {
 	const tmux = env.TMUX;
 	if (!tmux) return false;
 	const key = `${tmux}\0${env.TMUX_PANE ?? ""}`;

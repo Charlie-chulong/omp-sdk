@@ -1,3 +1,4 @@
+import { runtime as platformRuntime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -180,7 +181,7 @@ function semanticResultAnchor(
 	message: string,
 	locations: readonly SecurityLocation[],
 ): string {
-	return `sarif-result/v1:sha256:${Bun.SHA256.hash(
+	return `sarif-result/v1:sha256:${platformRuntime.SHA256.hash(
 		canonicalSecurityJson({
 			ruleId,
 			category,
@@ -328,7 +329,7 @@ export async function importSarif(input: unknown, options: SarifImportOptions): 
 				displayName: path.basename(canonicalRoot),
 				includePaths: [],
 				excludePaths: [],
-				treeDigest: Bun.SHA256.hash(JSON.stringify(input), "hex"),
+				treeDigest: platformRuntime.SHA256.hash(JSON.stringify(input), "hex"),
 			},
 			producer,
 			provenance: scanProvenance,
@@ -347,7 +348,7 @@ export async function importSarifFile(
 	filePath: string,
 	options: Omit<SarifImportOptions, "sourcePath">,
 ): Promise<SecurityScanBundle> {
-	return importSarif(JSON.parse(await Bun.file(filePath).text()) as unknown, {
+	return importSarif(JSON.parse(await platformRuntime.file(filePath).text()) as unknown, {
 		...options,
 		sourcePath: path.resolve(filePath),
 	});

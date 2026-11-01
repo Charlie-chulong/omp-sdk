@@ -1,3 +1,4 @@
+import { compareVersions } from "@oh-my-pi/pi-utils";
 /**
  * Wire protocol between the relay server and the Chrome extension.
  *
@@ -49,7 +50,7 @@ export const EXTENSION_RELOAD_PROTOCOL_VERSION = 1;
 
 /**
  * Whether a relay or extension reported a well-formed omp release version.
- * Stricter than `Bun.semver.order`, which ranks strings with trailing text;
+ * Stricter than the shared version comparator, which accepts partial versions;
  * peers supply these and results quote them.
  */
 export function isOmpVersion(version: string): boolean {
@@ -63,7 +64,7 @@ export function isOmpVersion(version: string): boolean {
  */
 export function isOlderOmpVersion(version: string, than: string): boolean {
 	if (version === "") return than !== "";
-	return isOmpVersion(version) && isOmpVersion(than) && Bun.semver.order(version, than) < 0;
+	return isOmpVersion(version) && isOmpVersion(than) && compareVersions(version, than) < 0;
 }
 
 /**

@@ -2,7 +2,13 @@
  * CPU profiling and aggregate memory statistics for debug reports.
  */
 
-import { type HeapStats, heapStats } from "bun:jsc";
+import { createRequire } from "node:module";
+import type * as V8 from "node:v8";
+import type * as Jsc from "bun:jsc";
+import type { HeapStats } from "bun:jsc";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
+
+const profilerRequire = createRequire(import.meta.url);
 
 export interface CpuProfile {
 	data: string;
@@ -152,22 +158,30 @@ export async function startCpuProfile(): Promise<ProfilerSession> {
 /** Numeric-only process and heap statistics for memory reports, without heap contents. */
 export interface MemoryStats {
 	process: NodeJS.MemoryUsage;
-	heap: Pick<
-		HeapStats,
-		| "heapSize"
-		| "heapCapacity"
-		| "extraMemorySize"
-		| "objectCount"
-		| "protectedObjectCount"
-		| "globalObjectCount"
-		| "protectedGlobalObjectCount"
-	>;
+	heap: Pick<HeapStats, "heapSize" | "heapCapacity" | "extraMemorySize"> &
+		Partial<
+			Pick<HeapStats, "objectCount" | "protectedObjectCount" | "globalObjectCount" | "protectedGlobalObjectCount">
+		>;
 }
 
-/** Collect post-GC memory counters for reports without capturing credentials or other live strings. */
+/** Numeric heap counters only; request collection when the engine exposes it. */
 export function collectMemoryStats(): MemoryStats {
+	if (typeof Bun === "undefined") {
+		runtime.gc?.();
+		const v8: typeof V8 = profilerRequire("node:v8");
+		const heap = v8.getHeapStatistics();
+		return {
+			process: process.memoryUsage(),
+			heap: {
+				heapSize: heap.used_heap_size,
+				heapCapacity: heap.total_heap_size,
+				extraMemorySize: heap.external_memory,
+			},
+		};
+	}
 	Bun.gc(true);
-	const heap = heapStats();
+	const jsc: typeof Jsc = profilerRequire("bun:jsc");
+	const heap = jsc.heapStats();
 
 	// Never serialize a heap snapshot or runtime-derived type names: both can contain secrets.
 	return {

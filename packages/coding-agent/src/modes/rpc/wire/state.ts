@@ -15,6 +15,7 @@ export const stateDefs = {
 	StreamingBehavior: "'steer' | 'followUp'",
 	QueuedMessageQueue: "'steering' | 'followUp'",
 	CacheWarmingMode: "'off' | 'streaming' | 'idle'",
+	ApprovalMode: "'always-ask' | 'always-ask-cached' | 'write' | 'yolo'",
 	MessageUpdates: doc(
 		"'full' | 'delta'",
 		"`set_event_filter` projection: `delta` replaces the accumulated snapshots with the block a start/end event touches.",
@@ -105,6 +106,7 @@ export const stateDefs = {
 	SessionState: {
 		"model?": "ModelInfo",
 		"thinkingLevel?": "ThinkingLevel",
+		approvalMode: absentAs("ApprovalMode", "always-ask"),
 		isStreaming: absentAs("boolean", false),
 		isCompacting: absentAs("boolean", false),
 		steeringMode: absentAs("QueueMode", "one-at-a-time"),

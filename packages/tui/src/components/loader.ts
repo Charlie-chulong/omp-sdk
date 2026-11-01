@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { TspProps } from "@oh-my-pi/pi-wire";
 import { formatTooltipKey } from "../key-hint-format";
 import type { KeyId } from "../keys";
@@ -172,7 +173,7 @@ export class Loader extends Text {
 				const remainder = spinner ? content.slice(this.#layoutFrame.length) : content;
 				const separator = spinner && remainder.startsWith(" ") ? " " : "";
 				const message = remainder.slice(separator.length);
-				const plainMessage = i === 0 ? Bun.stripANSI(message) : "";
+				const plainMessage = i === 0 ? runtime.stripANSI(message) : "";
 				// A visible non-whitespace ending makes trimEnd independent of
 				// colorizer ANSI placement. The separator isolates spinner width
 				// from message graphemes; other cases retain whole-body measuring.

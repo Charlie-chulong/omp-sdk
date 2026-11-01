@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -140,7 +141,7 @@ async function buildFileResource(
 	if (resolved.size > LOCAL_TEXT_RESOURCE_MAX_BYTES) {
 		return buildLargeLocalTextResource(url, resolved.path, resolved.size);
 	}
-	const content = await Bun.file(resolved.path).text();
+	const content = await runtime.file(resolved.path).text();
 	return {
 		url: url.href,
 		content,

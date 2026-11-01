@@ -1,3 +1,4 @@
+import { runtime, type RuntimeGlob } from "@oh-my-pi/pi-utils/runtime";
 /**
  * `xd://` virtual tool devices.
  *
@@ -216,12 +217,12 @@ function promptCatalogSummary(inst: Tool, maxBytes?: number): string {
 
 /** Compile the `tools.xdevInlineDevices` allowlist once per render, dropping
  *  non-string entries so malformed user config cannot break prompt builds. */
-function compileInlineGlobs(patterns: readonly string[]): Bun.Glob[] {
+function compileInlineGlobs(patterns: readonly string[]): RuntimeGlob[] {
 	if (!Array.isArray(patterns)) return [];
-	const globs: Bun.Glob[] = [];
+	const globs: RuntimeGlob[] = [];
 	for (const pattern of patterns) {
 		if (typeof pattern !== "string" || pattern.length === 0) continue;
-		globs.push(new Bun.Glob(pattern));
+		globs.push(new runtime.Glob(pattern));
 	}
 	return globs;
 }
@@ -411,7 +412,7 @@ function shouldInlineXdevTool(
 	state: XdevState,
 	tool: Tool,
 	mode: XdevDocsMode,
-	inlineGlobs: readonly Bun.Glob[],
+	inlineGlobs: readonly RuntimeGlob[],
 ): boolean {
 	return (
 		mode !== "catalog" &&

@@ -9,6 +9,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { OmpErrors, type } from "@oh-my-pi/omptype";
 import { getAgentDir, hasFsCode, isEnoent } from "@oh-my-pi/pi-utils";
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { resolveOrDefaultProjectRegistryPath } from "../discovery/helpers";
 import { replaceFileAtomically } from "../utils/atomic-file";
 
@@ -185,7 +186,7 @@ async function writeJsonAtomic(file: string, value: unknown): Promise<void> {
 	await fs.mkdir(path.dirname(file), { recursive: true });
 	const tempPath = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
 	try {
-		await Bun.write(tempPath, `${JSON.stringify(value, null, 2)}\n`);
+		await runtime.write(tempPath, `${JSON.stringify(value, null, 2)}\n`);
 		await replaceFileAtomically(tempPath, file);
 	} catch (error) {
 		await fs.rm(tempPath, { force: true });

@@ -338,7 +338,7 @@ class "anthropic" {
 		thinking-efforts "minimal" "low" "medium" "high" "xhigh"
 	}
 	on "amazon-bedrock" "anthropic" "cloudflare-ai-gateway" "github-copilot" "gitlab-duo" \
-		"google-antigravity" "google-vertex" "opencode-zen" "snowflake" "vercel-ai-gateway" "zenmux" {
+		"google-antigravity" "google-vertex" "opencode-zen" "snowflake" "vercel-ai-gateway"  {
 		family "sonnet" {
 			revision ">=3.7 <4.6" {
 				thinking-mode "budget"
@@ -360,7 +360,7 @@ class "anthropic" {
 		}
 	}
 	on "amazon-bedrock" "anthropic" "cloudflare-ai-gateway" "github-copilot" "gitlab-duo" \
-		"google-vertex" "opencode-zen" "snowflake" "vercel-ai-gateway" "zenmux" {
+		"google-vertex" "opencode-zen" "snowflake" "vercel-ai-gateway"  {
 		family "opus" {
 			revision ">=4.5 <4.6" {
 				thinking-mode "anthropic-budget-effort"
@@ -368,7 +368,7 @@ class "anthropic" {
 		}
 	}
 	on "amazon-bedrock" "anthropic" "cloudflare-ai-gateway" "github-copilot" "google-vertex" \
-		"opencode-zen" "openrouter" "snowflake" "vercel-ai-gateway" "zenmux" {
+		"opencode-zen" "openrouter" "snowflake" "vercel-ai-gateway"  {
 		family "opus" {
 			revision ">=4.6 <4.7" {
 				thinking-efforts "low" "medium" "high" "max"
@@ -376,13 +376,12 @@ class "anthropic" {
 		}
 	}
 	on "amazon-bedrock" "anthropic" "cloudflare-ai-gateway" "github-copilot" "google-vertex" \
-		"opencode-zen" "snowflake" "vercel-ai-gateway" "zenmux" {
+		"opencode-zen" "snowflake" "vercel-ai-gateway"  {
 		revision ">=4.7 <45.1" {
 			thinking-mode "anthropic-adaptive"
 		}
 	}
-	on "amazon-bedrock" "anthropic" "cloudflare-ai-gateway" "opencode-zen" "vercel-ai-gateway" \
-		"zenmux" {
+	on "amazon-bedrock" "anthropic" "cloudflare-ai-gateway" "opencode-zen" "vercel-ai-gateway" {
 		family "opus" {
 			revision ">=4 <4.5" {
 				thinking-mode "budget"
@@ -407,13 +406,13 @@ class "anthropic" {
 		}
 	}
 	on "anthropic" "cloudflare-ai-gateway" "github-copilot" "google-vertex" "opencode-zen" \
-		"openrouter" "snowflake" "vercel-ai-gateway" "zenmux" {
+		"openrouter" "snowflake" "vercel-ai-gateway"  {
 		revision ">=4.7 <45.1" {
 			thinking-efforts "low" "medium" "high" "xhigh" "max"
 		}
 	}
 	on "anthropic" "cloudflare-ai-gateway" "github-copilot" "google-vertex" "opencode-zen" \
-		"snowflake" "vercel-ai-gateway" "zenmux" {
+		"snowflake" "vercel-ai-gateway"  {
 		family "sonnet" {
 			revision ">=4.6 <5" {
 				thinking-efforts "low" "medium" "high"

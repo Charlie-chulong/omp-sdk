@@ -1972,8 +1972,7 @@ export async function runRootCommand(
 		// Process-lifetime: broker/account-policy edits reconfigure the shared credential store.
 		createAuthStorageSettingsSync(settingsInstance, authStorage);
 		if (parsedArgs.approvalMode) {
-			// Runtime override (not persisted): every `tools.approvalMode` read downstream
-			// sees this value. The wrapper still honours --auto-approve / --yolo on top of it.
+			// Initial session mode (not persisted); live permission controls can replace it.
 			cfgToolsApprovalMode.override(settingsInstance, parsedArgs.approvalMode);
 		} else if (parsedArgs.autoApprove) {
 			// --auto-approve / --yolo without an explicit --approval-mode: reflect in settings so

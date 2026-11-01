@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { Effort } from "@oh-my-pi/pi-catalog/effort";
 import {
 	$flag,
@@ -1395,8 +1396,8 @@ function matchesResponsesCacheBaseline(
 		if (!baselineBlock || !currentBlock) return false;
 		const breakpoint = baselineBlock.prompt_cache_breakpoint;
 		if (breakpoint) {
-			if (!Bun.deepEquals(baselineBlock, { ...currentBlock, prompt_cache_breakpoint: breakpoint })) return false;
-		} else if (!Bun.deepEquals(baselineBlock, currentBlock)) {
+			if (!runtime.deepEquals(baselineBlock, { ...currentBlock, prompt_cache_breakpoint: breakpoint })) return false;
+		} else if (!runtime.deepEquals(baselineBlock, currentBlock)) {
 			return false;
 		}
 	}

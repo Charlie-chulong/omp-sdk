@@ -15,7 +15,7 @@
  * Payload formats are versioned by `PRAGMA user_version`; a mismatch clears the
  * store, which only ever holds speculation.
  */
-import type { Database, Statement } from "bun:sqlite";
+import type { Database, Statement } from "@oh-my-pi/pi-utils/sqlite-driver";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { getComposerCacheDbPath } from "@oh-my-pi/pi-utils/dirs";

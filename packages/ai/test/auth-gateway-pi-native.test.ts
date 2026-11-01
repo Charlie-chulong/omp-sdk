@@ -247,7 +247,7 @@ describe("pi-native gateway cache controls", () => {
 		const storage = await AuthStorage.create(path.join(dir, "auth.db"));
 		storage.keys.setRuntime("openrouter", "test-key");
 		const mock = createMockModel({ provider: "openrouter", id: "pi-native-cache" });
-		const handle = startAuthGateway({
+		const handle = await startAuthGateway({
 			bind: "127.0.0.1:0",
 			bearerTokens: ["test-token"],
 			storage,
@@ -301,7 +301,7 @@ describe("pi-native gateway retry budgets", () => {
 			maxTokens: 4096,
 		});
 		let upstreamRequests = 0;
-		const handle = startAuthGateway({
+		const handle = await startAuthGateway({
 			bind: "127.0.0.1:0",
 			bearerTokens: ["test-token"],
 			storage,
@@ -344,7 +344,7 @@ describe("pi-native gateway reasoning flags", () => {
 		const storage = await AuthStorage.create(path.join(dir, "auth.db"));
 		storage.keys.setRuntime("openrouter", "test-key");
 		const mock = createMockModel({ provider: "openrouter", id: "pi-native-reasoning" });
-		const handle = startAuthGateway({
+		const handle = await startAuthGateway({
 			bind: "127.0.0.1:0",
 			bearerTokens: ["test-token"],
 			storage,
@@ -397,7 +397,7 @@ describe("pi-native gateway usage attribution", () => {
 			recorded.push(entry);
 		});
 		const mock = createMockModel({ provider: "openrouter", id: "pi-native-usage" });
-		const handle = startAuthGateway({
+		const handle = await startAuthGateway({
 			bind: "127.0.0.1:0",
 			bearerTokens: ["test-token"],
 			storage,

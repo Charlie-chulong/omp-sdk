@@ -45,7 +45,7 @@ describe("#4297 anthropic-messages replay-unsigned-thinking hint", () => {
 		expect(isInvalidThinkingSignatureError("Invalid `signature` in `thinking` block")).toBe(true);
 		expect(isInvalidThinkingSignatureError("Invalid signature in thinking block")).toBe(true);
 		// #4192 fixture wording — no trailing `block`. The pattern MUST accept
-		// both because ZenMux / #4192 documents the failure this shorter way.
+		// both because #4192 documents the failure this shorter way.
 		expect(isInvalidThinkingSignatureError("messages.1.content.0: Invalid `signature` in `thinking`")).toBe(true);
 		expect(isInvalidThinkingSignatureError("messages.1.content.0: Invalid signature in thinking")).toBe(true);
 	});

@@ -5,7 +5,7 @@ import type { Model, ServiceTier } from "@oh-my-pi/pi-ai";
 import type { AgentsHubDeps } from "@oh-my-pi/pi-tui/overlays/agents-hub";
 import { shortenPath } from "@oh-my-pi/pi-tui/render/render-utils";
 import { isEnoent, prompt } from "@oh-my-pi/pi-utils";
-import { YAML } from "bun";
+import { YAML } from "@oh-my-pi/pi-utils/runtime";
 import type { EffectiveExtensionRoots } from "../capability/types";
 import { getConfigDirs } from "../config";
 import type { ModelRegistry } from "../config/model-registry";

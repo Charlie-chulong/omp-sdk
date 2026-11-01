@@ -1,3 +1,4 @@
+import { runtime } from "@oh-my-pi/pi-utils/runtime";
 /**
  * Session-file persistence of the OAuth account that served a session.
  *
@@ -50,7 +51,7 @@ export function credentialPinHash(provider: string, identity: CredentialPinIdent
 		identity.orgId ?? "",
 		identity.projectId ?? "",
 	].join("\0");
-	return new Bun.CryptoHasher("sha256").update(key).digest("hex");
+	return new runtime.CryptoHasher("sha256").update(key).digest("hex");
 }
 
 /**
