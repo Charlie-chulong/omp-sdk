@@ -34,6 +34,9 @@ Building uses Bun; running the resulting SDK does not. Keep the complete
 `modules.json`, chunks, and assets, together. Also retain `pi-utils/dist/node/`
 adapters and package dependencies. Copying only `sdk.mjs` is insufficient.
 
+Bundling itself does not load `pi-natives`. Build the matching platform's native
+addon before staging or running the SDK.
+
 Desktop can build a separate, bounded artifact without replacing the generic SDK:
 
 ```bash

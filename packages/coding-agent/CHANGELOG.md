@@ -21,6 +21,7 @@
 
 ### Fixed
 
+- Fixed Node SDK builds requiring a generic native addon when packaging an isolated Desktop addon.
 - Fixed concurrent Node plugin imports/reloads invalidating CommonJS cache entries while another module graph is evaluating.
 - Fixed relative JavaScript eval `require()` resolution for cells without a file-backed path.
 - Explicit user Stop now waits for owned background jobs, child agents, host calls, retained shell processes, JS/Python kernels, and browser/computer workers to stop; independent owners remain alive and subsequent prompts resume the same conversation with fresh eval kernels.

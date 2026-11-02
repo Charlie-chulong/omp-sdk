@@ -4,7 +4,7 @@ import * as os from "node:os";
 import { isBuiltin } from "node:module";
 import * as path from "node:path";
 import type { BunPlugin } from "bun";
-import { isEnoent } from "@oh-my-pi/pi-utils";
+import { isEnoent } from "@oh-my-pi/pi-utils/fs-error";
 import { bundleNodeRuntime } from "../../utils/scripts/bundle-node";
 import { createNodeSourceMetadataPlugin } from "../../utils/scripts/node-source-metadata";
 import { buildDocsIndexPayload } from "./generate-docs-index";
