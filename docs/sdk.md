@@ -40,8 +40,8 @@ Desktop can build a separate, bounded artifact without replacing the generic SDK
 bun --cwd=packages/coding-agent run gen:bundle:desktop
 ```
 
-This writes `dist/node-desktop/`. Desktop staging selects it with
-`OMP_DESKTOP_SDK_TARGET=desktop` and installs the complete artifact at the normal
+This writes `dist/node-desktop/`. The reusable `stageNodeSdk` API selects it with
+`buildTarget: "desktop"` and installs the complete artifact at the normal
 `dist/node/` location. Its extension module map retains package roots plus the
 coding-agent `/sdk`, `/headless`, `/async`, and `/extensibility/host-api` aliases,
 plus the provider helpers `pi-ai/providers/transform-messages`,
@@ -108,13 +108,17 @@ AST operations remain available. Browser PDF screenshots/printing are independen
 of native PDF extraction; remote TTS/transcription data APIs remain independent
 of local capture/playback.
 
-With `OMP_DESKTOP_SDK_TARGET=desktop`, staging requires this isolated artifact,
+With `buildTarget: "desktop"`, staging requires this isolated artifact,
 checks its sidecar and raw binary capabilities, package version, and SHA-256,
 and excludes optional full-native platform leaf packages so they cannot
 reintroduce the full addon. The `generic` target retains normal full-native
 selection; generic SDK and Bun CLI defaults remain full. Rebuild full bindings
 with `bun run --cwd packages/natives build:bindings`; only a full build
 regenerates the full native declarations and exports.
+
+For an x64 shipping build, pass `--baseline` to `build:desktop`. It selects the
+existing x86-64-v2 baseline filename and CPU floor even on an AVX2 build host;
+ordinary local builds retain their automatic baseline/modern selection.
 
 Import `readNativeCapabilities()` from the SDK to inspect the loaded binary's
 `smollm`, `liveVoice`, `wasmGrammars`, `pdf`, `jujutsu`, `snapcompact`, `audio`, and
@@ -140,6 +144,94 @@ This owns stdin/stdout for the RPC protocol and runs until shutdown. Use a separ
 process for each top-level agent to isolate environment, extension hooks and
 cancellation. Discovered extensions must support Node; Bun-only extensions fail
 startup rather than being silently ignored.
+
+### Platform-specific Desktop core releases
+
+`scripts/stage-node-sdk.mjs` owns the single staging implementation. Its API is:
+
+```js
+import { stageNodeSdk } from "./scripts/stage-node-sdk.mjs";
+
+const staged = await stageNodeSdk(absoluteCodingAgentPackageRoot, outputDirectory, {
+  platform: process.platform,
+  arch: process.arch,
+  buildTarget: "desktop",
+  profile: "core",
+});
+```
+
+The source is an absolute package root with built SDK artifacts and installed
+production dependencies, not `dist/node` or an entry file. All four options have
+the defaults shown above. `generic`/`full` remain available explicitly. Staging
+returns the existing manifest fields plus `archive` (`omp-sdk.tgz`) and
+`directory` (the staged SDK package). It never reads Desktop environment
+configuration or mutates the source checkout. Native staging is host-only: a
+macOS arm64 installation cannot generate a Linux or x64 native dependency closure.
+The complete modules, worker host, chunks, runtime resources and licenses are
+preserved; staging verifies the final npm archive rather than just the build tree.
+
+The pinned release contract is `sdk/node-release.json`:
+`iris-cat-dev/omp-sdk`, tag `sdk-v18.14.0-desktop-core.1`, Desktop/core, and
+`darwin-x64`, `darwin-arm64`, `linux-x64`, `linux-arm64`. Linux hosts must use
+glibc; Windows and musl are not supported. The SDK version comes from the
+coding-agent package manifest, not a separate npm version or a `latest` tag.
+Each target asset is `omp-sdk-desktop-core-${target}.tgz` and is an installable npm
+archive with its real matching native dependencies. The index asset is
+`omp-sdk-release.json` (schema 1), containing package/version/minimum Node version,
+build target/profile and the exact asset name, SHA-256, byte size and SHA-512 SRI
+for every target.
+
+On **each matching native host**, using Node.js 24.14.0, npm 11.17.0, Bun 1.4.4
+and the repository-pinned Rust toolchain:
+
+```bash
+bun install --frozen-lockfile
+# x64: use --baseline; arm64: omit --baseline.
+bun --cwd=packages/natives run build:desktop --baseline
+bun --cwd=packages/coding-agent run gen:bundle:desktop
+node scripts/release-node-sdk.mjs stage sdk-release-dist
+node scripts/smoke-node-sdk.mjs sdk-release-dist
+```
+
+The smoke copies the exact tarball into a throwaway npm project, generates its
+lockfile, checks the archive integrity, and runs `npm ci --offline --ignore-scripts`.
+Its installed Node probe exercises SDK imports, native version/capabilities,
+write/read/Shell tools, embedded SDK documentation, native SQLite, the real sharp
+image codec, koffi, an extension-module alias and the installed shared worker host.
+It cannot import the source SDK or silently use the source `node_modules` tree.
+A successful smoke produces a target/byte-hash/Node-version receipt; a failed
+smoke removes any old receipt. Local model/API credentials are not needed.
+
+Collect all four tarballs, target records and smoke receipts in one directory:
+
+```bash
+node scripts/release-node-sdk.mjs index sdk-release-dist
+```
+
+Index generation rejects missing, duplicate or incompatible targets, modified
+bytes, non-baseline x64 addons and absent/mismatched installed-smoke receipts.
+It also writes bilingual `release-notes.txt`. Dispatch **Node SDK release (draft
+only)** (`.github/workflows/sdk-node-release.yml`) to do this end-to-end on public
+GitHub-hosted native runners. Only after all four jobs pass does the workflow
+generate an index and upload four tarballs plus the index to the same draft,
+then download and hash the uploaded bytes. It uses the repository Actions token,
+not private CI runners/caches, signing credentials or local `gh` login. It never
+publishes npm packages, upstream CLI binaries or the draft itself. Review the
+bilingual notes and all five assets before publishing in GitHub. A published tag
+is immutable for this workflow; use a new pinned SDK release tag for new bytes.
+
+**中文：** SDK 暂存实现统一位于子模块 `stageNodeSdk`，通过显式参数选择
+desktop/core；不会读取 Desktop 环境配置，也不会伪造跨平台原生依赖。
+四个平台必须分别在对应真实主机安装锁定依赖、构建原生插件并运行最终压缩包
+的 npm ci 烟测。x64 发布使用 `--baseline`，Linux 仅支持 glibc。
+固定发布配置为 `sdk/node-release.json`；SDK npm 版本不变，每个平台发布独立
+压缩包，完整索引记录文件名、大小、SHA-256 与 SHA-512 SRI。
+手动运行独立的 **Node SDK release (draft only)** 工作流即可构建四个平台，
+无需上游私有运行器或密钥，也不会触发 npm/CLI 发布。
+只有四个平台烟测全部通过后才生成索引、上传同一发布草稿并重新下载校验资产。
+必须人工核对双语说明和四个压缩包加索引，再正式发布；失败或资产缺失时不得
+声称发布就绪。已发布标签不会被覆盖，更新时必须使用新的固定 SDK 标签。
+
 
 ### Plugin management in a dedicated Node child
 

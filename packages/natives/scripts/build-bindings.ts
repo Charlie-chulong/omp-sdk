@@ -23,6 +23,10 @@ import { stampNativeVersion } from "../../../scripts/stamp-native-version";
 import { generateEnumExports } from "./gen-enums";
 
 const desktopBuild = process.argv.includes("--desktop");
+const baselineBuild = process.argv.includes("--baseline");
+if (baselineBuild && (!desktopBuild || process.arch !== "x64")) {
+	throw new Error("--baseline is only supported for Desktop x64 addon builds.");
+}
 
 // pcre2-sys prefers a system libpcre2 when pkg-config finds one. Keep the
 // static build so the local addon never retains host Homebrew paths.
@@ -69,10 +73,19 @@ const packageJsonPath = path.join(import.meta.dir, "../package.json");
 const localAddon = resolveLocalHostAddon({
 	platform: process.platform,
 	arch: process.arch,
-	avx2: detectHostAvx2Support(),
+	avx2: !baselineBuild && detectHostAvx2Support(),
 });
 const effectiveVariant = localAddon.x64Variant;
 const variantSuffix = effectiveVariant ? `-${effectiveVariant}` : "";
+
+// An explicit shipping baseline must not inherit a modern/native ISA from the
+// invoking shell. Cargo's encoded flags otherwise take priority over RUSTFLAGS.
+if (baselineBuild) {
+	Bun.env.RUSTFLAGS = process.platform === "win32"
+		? "-C target-feature=+crt-static -C target-cpu=x86-64-v2"
+		: "-C target-cpu=x86-64-v2";
+	delete Bun.env.CARGO_ENCODED_RUSTFLAGS;
+}
 
 // Pin Rust target-cpu so x64 baseline/modern variants get a reproducible ISA floor
 // instead of inheriting the host CPU when RUSTFLAGS is unset. Non-x64 builds keep

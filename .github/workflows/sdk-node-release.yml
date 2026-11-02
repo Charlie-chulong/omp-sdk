@@ -1,0 +1,103 @@
+name: Node SDK release (draft only)
+
+# Deliberately independent of upstream ci.yml: no npm/CLI publication, private
+# cache, self-hosted runner, signing credential, or repository-dispatch event.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-node-release
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  native_sdk:
+    name: SDK and installed smoke (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-15-intel, target: darwin-x64, native_args: '--baseline', rustflags: '-C target-cpu=x86-64-v2' }
+          - { os: macos-15, target: darwin-arm64, native_args: '', rustflags: '' }
+          - { os: ubuntu-22.04, target: linux-x64, native_args: '--baseline', rustflags: '-C target-cpu=x86-64-v2' }
+          - { os: ubuntu-24.04-arm, target: linux-arm64, native_args: '', rustflags: '' }
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '24.14.0'
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: '1.4.4'
+      - name: Pin npm to the existing release toolchain
+        run: npm install -g npm@11.17.0
+      - name: Require a matching native host
+        env:
+          SDK_TARGET: ${{ matrix.target }}
+        run: node --input-type=module -e 'if (`${process.platform}-${process.arch}` !== process.env.SDK_TARGET) throw new Error("SDK runner target mismatch");'
+      - name: Install public Linux native build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev clang libclang-dev cmake ninja-build
+      - name: Install public macOS native build dependencies
+        if: runner.os == 'macOS'
+        run: brew install pkg-config cmake ninja
+      - name: Install the repository Rust toolchain
+        run: rustup show active-toolchain
+      - name: Install this host's locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Build matching isolated release addon
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
+          PCRE2_SYS_STATIC: '1'
+        run: bun --cwd=packages/natives run build:desktop ${{ matrix.native_args }}
+      - name: Build the complete Desktop Node SDK
+        run: bun --cwd=packages/coding-agent run gen:bundle:desktop
+      - name: Stage exact host tarball
+        run: node scripts/release-node-sdk.mjs stage sdk-release-dist
+      - name: npm ci and real installed SDK/native/resource/worker smoke
+        run: node scripts/smoke-node-sdk.mjs sdk-release-dist
+      - name: Upload tested tarball and receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sdk-node-${{ matrix.target }}
+          path: sdk-release-dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  draft:
+    name: Index and complete SDK-only draft
+    needs: native_sdk
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '24.14.0'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: sdk-node-*
+          path: sdk-release-dist
+          merge-multiple: true
+      - name: Require all four exact targets and installed-smoke receipts
+        run: node scripts/release-node-sdk.mjs index sdk-release-dist
+      - name: Retain complete assets, index, bilingual notes and receipts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sdk-node-release
+          path: sdk-release-dist/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload and byte-verify all assets in one draft (never publish)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/release-node-sdk.mjs draft sdk-release-dist
