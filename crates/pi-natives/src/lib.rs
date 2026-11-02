@@ -27,8 +27,10 @@
 use phf_shared as _;
 
 pub mod appearance;
+#[cfg(feature = "local-assistance")]
 pub mod applefm;
 pub mod ast;
+#[cfg(feature = "audio")]
 pub mod audio;
 pub mod block;
 mod capabilities;
@@ -57,11 +59,15 @@ pub mod live;
 pub mod memory;
 pub mod mermaid;
 pub mod oauth_callback;
+#[cfg(feature = "pdf")]
 /// PDF inspection and Markdown conversion.
 pub mod pdf;
+#[cfg(feature = "local-assistance")]
 pub mod predict;
 pub mod sixel;
+#[cfg(feature = "snapcompact")]
 pub mod snapcompact;
+#[cfg(feature = "local-assistance")]
 pub mod spelling;
 pub mod svg;
 pub mod utok;

@@ -1,4 +1,5 @@
 import * as vcs from "@oh-my-pi/pi-natives/vcs";
+import { assertNativeCapability } from "../../../../native-capabilities";
 import { parseReviewDiffSnapshot, type ReviewDiffSnapshot } from "./diff";
 
 export type LocalReviewKind = "base-branch" | "uncommitted" | "commit";
@@ -69,6 +70,7 @@ function errorMessage(error: unknown): string {
 
 /** Read staged + unstaged (or jj working-copy) changes; throws when no repository is available. */
 export async function readUncommittedReviewTarget(cwd: string): Promise<ResolvedReviewTarget> {
+	if (vcs.isPureJj(cwd)) assertNativeCapability("jujutsu", "Jujutsu working-copy review");
 	const repository = vcs.require(cwd);
 	const diffText = await repository.uncommittedDiff([]);
 	const isJj = repository.kind() === "jj";

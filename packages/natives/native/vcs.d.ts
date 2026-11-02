@@ -60,7 +60,7 @@ export declare function requireGit(dir: string): VcsGitRepo;
 /** Repository metadata only (cheap fs walk) — for synchronous render paths. */
 export declare function gitInfo(dir: string): VcsGitRepoInfo | null;
 
-/** Discover the Jujutsu workspace containing `dir`; `null` when absent. */
+/** Discover the Jujutsu workspace containing `dir`; `null` when absent. Throws Unsupported if Jujutsu was not compiled. */
 export declare function jj(dir: string): VcsJjWorkspace | null;
 
 /** Whether jj is the nearest VCS ancestor, making git automation unsafe. */

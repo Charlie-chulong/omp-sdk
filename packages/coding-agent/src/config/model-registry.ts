@@ -56,6 +56,7 @@ import { generateCodexAttestation } from "../live/attestation";
 import { redactUrlForLog } from "../mcp/json-rpc";
 import type { AuthStorage } from "../session/auth-storage";
 import { isCoreSdk } from "../sdk-profile";
+import { readNativeCapabilities } from "../native-capabilities";
 import { type ApiKeyResolverModel, type ApiKeyResolverOptions, createApiKeyResolver } from "./api-key-resolver";
 import type { ConfigError, ConfigFile } from "./config-file";
 import {
@@ -429,6 +430,8 @@ export class ModelRegistry {
 	/** Final pass over every published model list: catalog metrics, then implicit local providers last. */
 	#finalizeModels(models: Model<Api>[]): Model<Api>[] {
 		if (isCoreSdk()) models = models.filter(model => model.api !== "local-inference");
+		if (!readNativeCapabilities().localAssistance)
+			models = models.filter(model => model.api !== "apple-foundation-models");
 		return this.#orderImplicitProvidersLast(applyCatalogMetrics(models, this.#catalogMetrics));
 	}
 
@@ -1701,6 +1704,7 @@ export class ModelRegistry {
 		if (
 			process.platform === "darwin" &&
 			process.arch === "arm64" &&
+			readNativeCapabilities().localAssistance &&
 			!configuredProviders.has("apple") &&
 			!disabledProviders.has("apple")
 		) {

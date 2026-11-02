@@ -15,6 +15,7 @@ import type { Context, ImageContent, Model } from "@oh-my-pi/pi-ai";
 import { encodeBase64, getBlobsDir, logger } from "@oh-my-pi/pi-utils";
 import * as snapcompact from "@oh-my-pi/snapcompact";
 import type { Settings } from "../config/settings";
+import { assertNativeCapability } from "../native-capabilities";
 import { type BlobBackend, LocalBlobBackend } from "./broker";
 import {
 	contextHasImages,
@@ -438,6 +439,7 @@ export class ImageUrlService {
 	get frameSink(): SnapcompactFrameSink {
 		return {
 			framesFor: async (text, shape, maxFrames) => {
+				assertNativeCapability("snapcompact", "Snapcompact frame rendering");
 				// A leading provider-file source needs eager bytes so the later
 				// model-aware decoration phase can upload them natively.
 				if (this.#providerFiles && this.#providerFilePosition === 0) return null;
@@ -694,6 +696,7 @@ export class LiveImageUrlService implements SnapcompactFrameSink {
 
 	/** Lazy snapcompact frames from the current service; `null` (render eagerly) while disabled. */
 	async framesFor(text: string, shape: snapcompact.Shape, maxFrames?: number): Promise<ImageContent[] | null> {
+		assertNativeCapability("snapcompact", "Snapcompact frame rendering");
 		const service = this.#current;
 		return service ? service.frameSink.framesFor(text, shape, maxFrames) : null;
 	}

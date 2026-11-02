@@ -49,6 +49,7 @@ import {
 	wordCompletionQuery,
 } from "@oh-my-pi/pi-tui/prompt/word-completion";
 import { requestTextPrediction, textPredictionBackend } from "../../predict/client";
+import { assertNativeCapability } from "../../native-capabilities";
 import { type AgentSession, type NavigateTreeResult, SessionBusyError } from "../../session/agent-session";
 import type { MCPManager } from "../../mcp/manager";
 import { reconnectMcpManagerServer } from "../../mcp/oauth-reauth";
@@ -2411,6 +2412,7 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 				if (command.type === "live_connect" && (typeof sdpOffer !== "string" || !sdpOffer.trim())) {
 					return error(id, command.type, "live_connect requires a non-empty sdpOffer");
 				}
+				if (sdpOffer === undefined) assertNativeCapability("liveVoice", "Live voice");
 				if (dictationBridge.active) return error(id, command.type, "End dictation before starting live voice");
 				if (sessionChangesInProgress > 0 || shutdownState.requested)
 					return error(id, command.type, "Session is changing or shutting down");
@@ -2439,6 +2441,7 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 			}
 
 			case "dictation_start": {
+				assertNativeCapability("audio", "Dictation recording");
 				if (liveBridge.active) return error(id, "dictation_start", "End live voice before starting dictation");
 				if (sessionChangesInProgress > 0 || shutdownState.requested)
 					return error(id, "dictation_start", "Session is changing or shutting down");
@@ -2885,6 +2888,7 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 			// =================================================================
 
 			case "predict_word": {
+				assertNativeCapability("localAssistance", "Word prediction");
 				if (!isTextCursor(command.text, command.cursor)) {
 					return error(id, "predict_word", INVALID_TEXT_CURSOR_ERROR);
 				}
@@ -2898,6 +2902,7 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 			}
 
 			case "predict_word_feedback": {
+				assertNativeCapability("localAssistance", "Word prediction feedback");
 				if (!isTextCursor(command.text, command.cursor)) {
 					return error(id, "predict_word_feedback", INVALID_TEXT_CURSOR_ERROR);
 				}

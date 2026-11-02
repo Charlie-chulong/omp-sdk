@@ -255,7 +255,7 @@ pi-shell = { path = "crates/pi-shell" }
 pi-predict = { path = "crates/pi-predict", default-features = false }
 pi-voice = { path = "crates/pi-voice", default-features = false }
 pi-walker = { path = "crates/pi-walker" }
-pi-vcs = { path = "crates/pi-vcs" }
+pi-vcs = { path = "crates/pi-vcs", default-features = false }
 pi-vfs = { path = "crates/pi-vfs" }
 brush-core = { path = "crates/vendor/brush-core" }
 pi-builtins = { path = "crates/pi-builtins" }

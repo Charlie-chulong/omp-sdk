@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Reject frame rendering and font scanning when the loaded native build omits Snapcompact, while preserving stored archive reads.
+
 ## [18.13.3] - 2026-10-28
 
 ### Changed

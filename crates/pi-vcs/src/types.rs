@@ -11,6 +11,7 @@ use std::{path::PathBuf, time::Duration};
 pub enum VcsKind {
 	/// A git repository (possibly a linked worktree).
 	Git,
+	#[cfg(feature = "jj")]
 	/// A Jujutsu workspace (possibly colocated with git).
 	Jj,
 }

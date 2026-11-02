@@ -76,9 +76,17 @@ export function gitInfo(dir) {
 	return api().vcsGitRepoInfo(dir);
 }
 
-/** Discover the Jujutsu workspace containing `dir`; `null` when absent. */
+/** Discover the Jujutsu workspace containing `dir`; `null` when absent. Throws Unsupported if Jujutsu was not compiled. */
 export function jj(dir) {
-	return api().vcsJjDiscover(dir);
+	const bindings = api();
+	if (
+		typeof bindings.nativeCapabilities !== "function" ||
+		bindings.nativeCapabilities()?.jujutsu !== true ||
+		typeof bindings.vcsJjDiscover !== "function"
+	) {
+		throw vcsError("Unsupported", "Jujutsu is not supported by this native addon");
+	}
+	return bindings.vcsJjDiscover(dir);
 }
 
 /** Whether jj is the nearest VCS ancestor, making git automation unsafe. */

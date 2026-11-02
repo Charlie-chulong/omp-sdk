@@ -9,6 +9,7 @@
 ### Fixed
 
 - Fixed Node.js 24 clipboard image and binary export encoding without TypedArray Base64 methods.
+- Editors continue rendering when the native build omits spelling services.
 
 ## [18.14.0] - 2026-10-29
 

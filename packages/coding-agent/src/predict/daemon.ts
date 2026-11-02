@@ -237,6 +237,7 @@ class TextPredictDaemon {
 
 	/** Bind `endpoint` and serve until idle exit or `shutdown`. */
 	serve(endpoint: string): Promise<void> {
+		assertNativeCapability("localAssistance", "Word prediction daemon");
 		return this.#server.serve(endpoint);
 	}
 
@@ -335,6 +336,7 @@ class TextPredictDaemon {
 	}
 
 	async #open(method: TextPredictMethod): Promise<Engine> {
+		assertNativeCapability("localAssistance", "Word prediction");
 		let modelDir: string | undefined;
 		if (method === "smollm") {
 			assertNativeCapability("smollm", "SmolLM word completion (choose ngram or apple instead)");
@@ -387,6 +389,7 @@ class TextPredictDaemon {
 
 /** Worker entry: serve the endpoint and agent directory named by the broker spec environment. */
 export async function startTextPredictDaemonFromEnvironment(): Promise<void> {
+	assertNativeCapability("localAssistance", "Word prediction daemon");
 	const endpoint = runtime.env[TEXT_PREDICT_SOCKET_ENV];
 	const agentDir = runtime.env[TEXT_PREDICT_AGENT_DIR_ENV];
 	if (!endpoint || !agentDir) {

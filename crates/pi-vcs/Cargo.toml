@@ -10,11 +10,15 @@ repository.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = ["jj"]
+jj = ["dep:jj-lib", "dep:futures"]
+
 [dependencies]
-futures.workspace = true
+futures = { workspace = true, optional = true }
 gix.workspace = true
 gix-utils = { version = "0.3.6", default-features = false }
-jj-lib.workspace = true
+jj-lib = { workspace = true, optional = true }
 pi-iso.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

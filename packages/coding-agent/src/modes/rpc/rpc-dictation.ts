@@ -1,5 +1,6 @@
 import type { AgentSession } from "../../session/agent-session";
 import { STTController, type SttCallbacks, type SttTarget } from "../../stt";
+import { assertNativeCapability } from "../../native-capabilities";
 import type { RpcDictationFrame } from "./rpc-types";
 
 /** The controller surface used by RPC; tests can substitute the microphone boundary. */
@@ -48,6 +49,7 @@ export class RpcDictationBridge {
 
 	/** Resolves only when the microphone is recording; stopping a pending start cancels it. */
 	async start(id: string): Promise<void> {
+		assertNativeCapability("audio", "Dictation recording");
 		if (typeof id !== "string" || id.length > 128 || !id.trim()) {
 			throw new Error("captureId must be a non-blank string of at most 128 characters");
 		}

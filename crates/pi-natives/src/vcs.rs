@@ -518,6 +518,7 @@ impl VcsRepo {
 	pub fn kind(&self) -> String {
 		match self.inner.kind() {
 			core::VcsKind::Git => "git",
+			#[cfg(feature = "vcs-jj")]
 			core::VcsKind::Jj => "jj",
 		}
 		.to_owned()
@@ -569,15 +570,6 @@ impl VcsRepo {
 			.inner
 			.as_git()
 			.map(|inner| VcsGitRepo { inner: inner.clone() })
-	}
-
-	/// Jujutsu-specific handle when this repository is backed by Jujutsu.
-	#[napi]
-	pub fn as_jj(&self) -> Option<VcsJjWorkspace> {
-		self
-			.inner
-			.as_jj()
-			.map(|inner| VcsJjWorkspace { inner: inner.clone() })
 	}
 
 	/// Human label for the working copy.
@@ -696,6 +688,19 @@ impl VcsRepo {
 		repo_blocking("vcs.lsFiles", self.inner.clone(), signal, move |repo| {
 			repo.ls_files(others, exclude_standard)
 		})
+	}
+}
+
+#[cfg(feature = "vcs-jj")]
+#[napi]
+impl VcsRepo {
+	/// Jujutsu-specific handle when this repository is backed by Jujutsu.
+	#[napi]
+	pub fn as_jj(&self) -> Option<VcsJjWorkspace> {
+		self
+			.inner
+			.as_jj()
+			.map(|inner| VcsJjWorkspace { inner: inner.clone() })
 	}
 }
 
@@ -1453,11 +1458,13 @@ pub fn vcs_is_pure_jj(env: Env, dir: String) -> Result<bool> {
 	pi_vcs::is_pure_jj(Path::new(&dir)).map_err(|err| rich_error(env, err))
 }
 
+#[cfg(feature = "vcs-jj")]
 /// In-process Jujutsu workspace handle.
 #[napi]
 pub struct VcsJjWorkspace {
 	inner: Arc<pi_vcs::jj::JjWorkspace>,
 }
+#[cfg(feature = "vcs-jj")]
 /// Discover a Jujutsu workspace.
 #[napi]
 pub fn vcs_jj_discover(env: Env, dir: String) -> Result<Option<VcsJjWorkspace>> {
@@ -1465,6 +1472,7 @@ pub fn vcs_jj_discover(env: Env, dir: String) -> Result<Option<VcsJjWorkspace>> 
 		.map(|v| v.map(|inner| VcsJjWorkspace { inner: Arc::new(inner) }))
 		.map_err(|err| rich_error(env, err))
 }
+#[cfg(feature = "vcs-jj")]
 fn jj_blocking<T: Send + 'static + ToNapiValue + TypeName>(
 	tag: &'static str,
 	ws: Arc<pi_vcs::jj::JjWorkspace>,
@@ -1479,6 +1487,7 @@ fn jj_blocking<T: Send + 'static + ToNapiValue + TypeName>(
 		catch_panic(tag, || f(&ws))
 	})
 }
+#[cfg(feature = "vcs-jj")]
 #[napi]
 impl VcsJjWorkspace {
 	/// Workspace root.

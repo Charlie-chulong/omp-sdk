@@ -22,6 +22,8 @@ import { detectHostAvx2Support, resolveLocalHostAddon } from "../../../scripts/h
 import { stampNativeVersion } from "../../../scripts/stamp-native-version";
 import { generateEnumExports } from "./gen-enums";
 
+const desktopBuild = process.argv.includes("--desktop");
+
 // pcre2-sys prefers a system libpcre2 when pkg-config finds one. Keep the
 // static build so the local addon never retains host Homebrew paths.
 process.env.PCRE2_SYS_STATIC ??= "1";
@@ -32,7 +34,7 @@ process.env.PCRE2_SYS_STATIC ??= "1";
 // without exposing them, so outside a vcvars prompt the build dies on
 // "cmake not found". Resolve the VS install via vswhere and append its
 // CMake/Ninja dirs, keeping any user-provided tools ahead.
-if (process.platform === "win32" && (!Bun.which("cmake") || !Bun.which("ninja"))) {
+if (!desktopBuild && process.platform === "win32" && (!Bun.which("cmake") || !Bun.which("ninja"))) {
 	const vcToolsComponent =
 		process.arch === "arm64"
 			? "Microsoft.VisualStudio.Component.VC.Tools.ARM64"
@@ -61,7 +63,6 @@ if (process.platform === "win32" && (!Bun.which("cmake") || !Bun.which("ninja"))
 
 const repoRoot = path.join(import.meta.dir, "../../..");
 const rustDir = path.join(repoRoot, "crates/pi-natives");
-const desktopBuild = process.argv.includes("--desktop");
 const nativeDir = path.join(import.meta.dir, "../native", desktopBuild ? "desktop" : "");
 const packageJsonPath = path.join(import.meta.dir, "../package.json");
 
@@ -289,8 +290,46 @@ try {
 			throw new Error("Desktop addon is missing nativeCapabilities(); rebuild the current native Rust sources.");
 		}
 		const capabilities = bindings.nativeCapabilities();
-		if (capabilities.smollm !== false || capabilities.liveVoice !== false || capabilities.wasmGrammars !== false) {
-			throw new Error("Desktop addon unexpectedly enables SmolLM, live voice, or WASM grammars.");
+		const disabledCapabilities = [
+			"smollm",
+			"liveVoice",
+			"wasmGrammars",
+			"pdf",
+			"jujutsu",
+			"snapcompact",
+			"audio",
+			"localAssistance",
+		] as const;
+		for (const capability of disabledCapabilities) {
+			if (capabilities?.[capability] !== false) {
+				throw new Error(`Desktop addon must report ${capability}=false.`);
+			}
+		}
+		const removedExports = [
+			"pdfToMarkdown",
+			"VcsJjWorkspace",
+			"vcsJjDiscover",
+			"renderSnapcompactPng",
+			"snapcompactSupportedChars",
+			"AudioCapture",
+			"AudioPlayback",
+			"LiveWebRtcPeer",
+			"TextPredictor",
+			"macOSSpellCheckerAvailable",
+			"macOSCheckSpelling",
+			"macOSAutocorrectWord",
+			"macOSSpellingGuesses",
+			"appleFmAvailability",
+			"appleFmGenerate",
+			"appleFmCancel",
+		];
+		for (const name of removedExports) {
+			if (name in bindings) {
+				throw new Error(`Desktop addon unexpectedly exports removed capability ${name}.`);
+			}
+		}
+		if (bindings.VcsRepo?.prototype && "asJj" in bindings.VcsRepo.prototype) {
+			throw new Error("Desktop addon unexpectedly exports removed capability VcsRepo.asJj.");
 		}
 		const metadata = {
 			schemaVersion: 1,

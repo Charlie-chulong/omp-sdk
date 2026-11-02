@@ -198,6 +198,7 @@ class TextPredictionClient {
 	#backends = new Map<TextPredictMethod, WordPredictionBackend>();
 
 	backend(method: WordCompletionEngine): WordPredictionBackend {
+		assertNativeCapability("localAssistance", "Word prediction");
 		const resolved = resolveTextPredictMethod(method);
 		let backend = this.#backends.get(resolved);
 		if (!backend) {
@@ -295,6 +296,7 @@ let sharedClient: TextPredictionClient | undefined;
 
 /** Word-prediction backend for a configured engine, served by the daemon. */
 export function textPredictionBackend(method: WordCompletionEngine): WordPredictionBackend {
+	assertNativeCapability("localAssistance", "Word prediction");
 	sharedClient ??= new TextPredictionClient();
 	return sharedClient.backend(method);
 }
@@ -309,6 +311,7 @@ export function requestTextPrediction(
 	before: string,
 	prefix: string,
 ): Promise<TextPrediction> {
+	assertNativeCapability("localAssistance", "Word prediction");
 	sharedClient ??= new TextPredictionClient();
 	return sharedClient.complete(resolveTextPredictMethod(method), before, prefix);
 }

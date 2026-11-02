@@ -102,6 +102,7 @@ pub enum Error {
 		"`{operation}` is not supported on a {} repository",
 		match backend {
 			crate::VcsKind::Git => "git",
+			#[cfg(feature = "jj")]
 			crate::VcsKind::Jj => "jj",
 		}
 	)]

@@ -72,6 +72,7 @@ import {
 } from "@oh-my-pi/pi-tui/chat/image-loading";
 import { askImageQuestion, resolveImageQuestionModel } from "../utils/image-question";
 import { CONVERTIBLE_EXTENSIONS, convertFileWithMarkit } from "../utils/markit";
+import { assertNativeCapability } from "../native-capabilities";
 import { isSampleProfilePath, renderSampleProfile } from "../utils/sample-profile";
 import { buildDirectoryTree, type DirectoryTree } from "../workspace-tree";
 import {
@@ -2276,6 +2277,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 				entityLabel: "notebook",
 			});
 		} else if (shouldConvertWithMarkit) {
+			if (ext === ".pdf") assertNativeCapability("pdf", "PDF document reading");
 			// Convert document via markit.
 			const result = await convertFileWithMarkit(absolutePath, signal);
 			if (result.ok) {

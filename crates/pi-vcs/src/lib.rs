@@ -5,17 +5,16 @@
 //!   handles credential-bound network transfers, reftable repositories,
 //!   whole-worktree status/untracked walks whose resource failures must stay
 //!   outside the driving process, and configured commit signing.
-//! - **jj** ([`jj::JjWorkspace`]) runs on jj-lib, which shares the same
-//!   gitoxide stack for its git backend. No subprocess at all.
+//! - **jj**, enabled by the default `jj` feature, runs on jj-lib, which shares
+//!   the same gitoxide stack for its git backend. No subprocess at all.
 //!
-//! Discovery ([`GitRepo::discover`], [`JjWorkspace::discover`], [`detect`]) is
-//! a pure filesystem walk, cheap enough to call from synchronous render paths.
-//!
-//! [`GitRepo::discover`]: git::GitRepo::discover
-//! [`JjWorkspace::discover`]: jj::JjWorkspace::discover
+//! Repository discovery is a pure filesystem walk, cheap enough to call from
+//! synchronous render paths. Git-only builds still recognize Jujutsu ownership
+//! so Git automation never targets an unrelated enclosing checkout.
 
 pub mod error;
 pub mod git;
+#[cfg(feature = "jj")]
 pub mod jj;
 pub mod types;
 
@@ -54,6 +53,7 @@ impl Feature {
 pub enum Repo {
 	/// Git owns the directory (including jj-git colocated workspaces).
 	Git(Arc<git::GitRepo>),
+	#[cfg(feature = "jj")]
 	/// Jujutsu owns the directory (its root is strictly deeper than any git
 	/// checkout).
 	Jj(Arc<jj::JjWorkspace>),
@@ -64,6 +64,7 @@ impl Repo {
 	pub const fn kind(&self) -> VcsKind {
 		match self {
 			Self::Git(_) => VcsKind::Git,
+			#[cfg(feature = "jj")]
 			Self::Jj(_) => VcsKind::Jj,
 		}
 	}
@@ -72,6 +73,7 @@ impl Repo {
 	pub fn root(&self) -> &Path {
 		match self {
 			Self::Git(repo) => repo.root(),
+			#[cfg(feature = "jj")]
 			Self::Jj(workspace) => workspace.root(),
 		}
 	}
@@ -80,6 +82,7 @@ impl Repo {
 	pub fn primary_root(&self) -> PathBuf {
 		match self {
 			Self::Git(repo) => repo.primary_root(),
+			#[cfg(feature = "jj")]
 			Self::Jj(workspace) => workspace.primary_root(),
 		}
 	}
@@ -88,15 +91,17 @@ impl Repo {
 	pub fn prefix_of(&self, dir: &Path) -> Option<String> {
 		match self {
 			Self::Git(repo) => repo.prefix_of(dir),
+			#[cfg(feature = "jj")]
 			Self::Jj(workspace) => git::relative_prefix(workspace.root(), dir),
 		}
 	}
 
 	/// Whether this backend implements `feature`.
-	pub const fn supports(&self, feature: Feature) -> bool {
+	pub const fn supports(&self, _feature: Feature) -> bool {
 		match self {
 			Self::Git(_) => true,
-			Self::Jj(_) => match feature {
+			#[cfg(feature = "jj")]
+			Self::Jj(_) => match _feature {
 				Feature::StagedDiff | Feature::RevDiff => false,
 			},
 		}
@@ -107,6 +112,7 @@ impl Repo {
 	pub fn label(&self) -> Result<Option<String>> {
 		match self {
 			Self::Git(repo) => repo.current_branch(),
+			#[cfg(feature = "jj")]
 			Self::Jj(workspace) => workspace.working_copy_label(),
 		}
 	}
@@ -115,6 +121,7 @@ impl Repo {
 	pub fn head_id(&self) -> Result<Option<String>> {
 		match self {
 			Self::Git(repo) => repo.head_sha(),
+			#[cfg(feature = "jj")]
 			Self::Jj(workspace) => workspace.head_id(),
 		}
 	}
@@ -123,6 +130,7 @@ impl Repo {
 	pub fn status_summary(&self) -> Result<StatusSummary> {
 		match self {
 			Self::Git(repo) => repo.status_summary(),
+			#[cfg(feature = "jj")]
 			Self::Jj(workspace) => workspace.status_summary(),
 		}
 	}
@@ -131,6 +139,7 @@ impl Repo {
 	pub fn status_porcelain(&self, options: &StatusOptions) -> Result<String> {
 		match self {
 			Self::Git(repo) => repo.status_porcelain(options),
+			#[cfg(feature = "jj")]
 			Self::Jj(workspace) => workspace.status_porcelain(options),
 		}
 	}
@@ -139,6 +148,7 @@ impl Repo {
 	pub fn diff_text(&self, options: &DiffOptions) -> Result<String> {
 		match self {
 			Self::Git(repo) => repo.diff_text(options),
+			#[cfg(feature = "jj")]
 			Self::Jj(workspace) => {
 				require_jj_diff_options(options)?;
 				// Jujutsu rendering has no cap to enforce (`JjWorkspace::diff_text`
@@ -163,6 +173,7 @@ impl Repo {
 	pub fn changed_files(&self, options: &DiffOptions) -> Result<Vec<String>> {
 		match self {
 			Self::Git(repo) => repo.changed_files(options),
+			#[cfg(feature = "jj")]
 			Self::Jj(workspace) => {
 				require_jj_diff_options(options)?;
 				workspace.changed_files(&options.files, true)
@@ -174,6 +185,7 @@ impl Repo {
 	pub fn numstat(&self, options: &DiffOptions) -> Result<Vec<NumstatEntry>> {
 		match self {
 			Self::Git(repo) => repo.numstat(options),
+			#[cfg(feature = "jj")]
 			Self::Jj(workspace) => {
 				require_jj_diff_options(options)?;
 				workspace.numstat(&options.files)
@@ -202,6 +214,7 @@ impl Repo {
 					})
 				}
 			},
+			#[cfg(feature = "jj")]
 			Self::Jj(workspace) => workspace.diff_text(files, true),
 		}
 	}
@@ -210,6 +223,7 @@ impl Repo {
 	pub fn log_subjects(&self, count: usize) -> Result<Vec<String>> {
 		match self {
 			Self::Git(repo) => repo.log_subjects(count),
+			#[cfg(feature = "jj")]
 			Self::Jj(workspace) => workspace.log_subjects(count),
 		}
 	}
@@ -218,6 +232,7 @@ impl Repo {
 	pub fn log_onelines(&self, count: usize) -> Result<Vec<String>> {
 		match self {
 			Self::Git(repo) => repo.log_onelines(count),
+			#[cfg(feature = "jj")]
 			Self::Jj(workspace) => workspace.log_onelines(count),
 		}
 	}
@@ -226,6 +241,7 @@ impl Repo {
 	pub fn commit_details(&self, rev: &str) -> Result<CommitDetails> {
 		match self {
 			Self::Git(repo) => repo.commit_details(rev),
+			#[cfg(feature = "jj")]
 			Self::Jj(workspace) => workspace.commit_details(rev),
 		}
 	}
@@ -234,6 +250,7 @@ impl Repo {
 	pub fn ls_files(&self, others: bool, exclude_standard: bool) -> Result<Vec<String>> {
 		match self {
 			Self::Git(repo) => repo.ls_files(others, exclude_standard),
+			#[cfg(feature = "jj")]
 			Self::Jj(workspace) => workspace.ls_files(others),
 		}
 	}
@@ -242,6 +259,7 @@ impl Repo {
 	pub fn watch_target(&self) -> PathBuf {
 		match self {
 			Self::Git(repo) => repo.head_watch_target(),
+			#[cfg(feature = "jj")]
 			Self::Jj(workspace) => workspace.watch_target(),
 		}
 	}
@@ -250,10 +268,12 @@ impl Repo {
 	pub const fn as_git(&self) -> Option<&Arc<git::GitRepo>> {
 		match self {
 			Self::Git(repo) => Some(repo),
+			#[cfg(feature = "jj")]
 			Self::Jj(_) => None,
 		}
 	}
 
+	#[cfg(feature = "jj")]
 	/// Access the Jujutsu-specific handle when this is a Jujutsu workspace.
 	pub const fn as_jj(&self) -> Option<&Arc<jj::JjWorkspace>> {
 		match self {
@@ -263,6 +283,7 @@ impl Repo {
 	}
 }
 
+#[cfg(feature = "jj")]
 /// Options rejected on every Jujutsu operation: staged diffs and revision
 /// ranges have no jj-lib equivalent this backend implements. `max_bytes` is
 /// deliberately excluded — it only constrains rendering, so `diff_text`
@@ -279,6 +300,7 @@ const fn require_jj_diff_options(options: &DiffOptions) -> Result<()> {
 	Ok(())
 }
 
+#[cfg(feature = "jj")]
 /// Detect which VCS owns `dir`.
 ///
 /// Both lookups walk upward; the deeper root wins because it is the tree the
@@ -300,6 +322,7 @@ pub fn detect(dir: &Path) -> Result<Option<Repo>> {
 	}
 }
 
+#[cfg(feature = "jj")]
 /// Detect which VCS should present `dir` in the status line and footer.
 ///
 /// Same as [`detect`], except equal-root jj+git ties prefer Jujutsu:
@@ -329,7 +352,67 @@ pub fn detect_for_display(dir: &Path) -> Result<Option<Repo>> {
 /// Colocated
 /// workspaces and git checkouts nested under a jj tree return `false`.
 pub fn is_pure_jj(dir: &Path) -> Result<bool> {
-	Ok(matches!(detect(dir)?, Some(Repo::Jj(_))))
+	let Some((jj_root, _)) = discover_jj(dir)? else {
+		return Ok(false);
+	};
+	Ok(git::GitRepo::discover(dir)?.is_none_or(|repo| is_strict_descendant(&jj_root, repo.root())))
+}
+
+/// Git-only discovery respects a nearer Jujutsu workspace without exposing it
+/// as an unrelated enclosing Git checkout. Colocated and deeper Git stay safe.
+#[cfg(not(feature = "jj"))]
+pub fn detect(dir: &Path) -> Result<Option<Repo>> {
+	let jj = discover_jj(dir)?;
+	let git = git::GitRepo::discover(dir)?;
+	Ok(git
+		.filter(|repo| {
+			jj.as_ref()
+				.is_none_or(|(root, _)| !is_strict_descendant(root, repo.root()))
+		})
+		.map(|repo| Repo::Git(Arc::new(repo))))
+}
+
+/// Git-only presentation uses the same ownership boundary as automation.
+#[cfg(not(feature = "jj"))]
+pub fn detect_for_display(dir: &Path) -> Result<Option<Repo>> {
+	detect(dir)
+}
+
+/// Discover workspace metadata without loading the optional Jujutsu backend.
+fn discover_jj(dir: &Path) -> Result<Option<(PathBuf, PathBuf)>> {
+	let start = std::path::absolute(dir)?;
+	let mut current = start.as_path();
+	loop {
+		if let Some(repo_dir) = resolve_jj_repo_dir(current) {
+			return Ok(Some((current.to_owned(), repo_dir)));
+		}
+		match current.parent() {
+			Some(parent) => current = parent,
+			None => return Ok(None),
+		}
+	}
+}
+
+/// Resolve the `.jj/repo` directory for `root`, or `None` when `root` is not
+/// a workspace. jj marks a workspace via `.jj/repo`: a directory in the
+/// default workspace, or a FILE (created by `jj workspace add`) whose contents
+/// are a path — relative to `.jj` — to the default workspace's repo dir.
+fn resolve_jj_repo_dir(root: &Path) -> Option<PathBuf> {
+	let jj_dir = root.join(".jj");
+	let repo_path = jj_dir.join("repo");
+	let meta = std::fs::metadata(&repo_path).ok()?;
+	if meta.is_dir() {
+		return Some(repo_path);
+	}
+	if !meta.is_file() {
+		return None;
+	}
+	let target = std::fs::read_to_string(&repo_path).ok()?;
+	let target = target.trim();
+	if target.is_empty() {
+		return None;
+	}
+	Some(crate::git::normalize_path(&jj_dir.join(target)))
 }
 
 /// Whether `child` is a strict descendant of `ancestor` (equal paths are not).
@@ -369,13 +452,17 @@ mod tests {
 		assert!(git.supports(Feature::StagedDiff));
 		assert!(git.supports(Feature::RevDiff));
 
-		let jj_dir = tempfile::tempdir().unwrap();
-		fs::create_dir_all(jj_dir.path().join(".jj/repo")).unwrap();
-		let jj = detect(jj_dir.path()).unwrap().unwrap();
-		assert!(!jj.supports(Feature::StagedDiff));
-		assert!(!jj.supports(Feature::RevDiff));
+		#[cfg(feature = "jj")]
+		{
+			let jj_dir = tempfile::tempdir().unwrap();
+			fs::create_dir_all(jj_dir.path().join(".jj/repo")).unwrap();
+			let jj = detect(jj_dir.path()).unwrap().unwrap();
+			assert!(!jj.supports(Feature::StagedDiff));
+			assert!(!jj.supports(Feature::RevDiff));
+		}
 	}
 
+	#[cfg(feature = "jj")]
 	#[test]
 	fn jj_rejects_git_only_diff_options() {
 		let temp = tempfile::tempdir().unwrap();
@@ -432,6 +519,7 @@ mod tests {
 		assert_eq!(actual, expected);
 	}
 
+	#[cfg(feature = "jj")]
 	#[test]
 	fn display_prefers_jj_on_equal_root_ties() {
 		let temp = tempfile::tempdir().unwrap();
@@ -441,6 +529,7 @@ mod tests {
 		assert!(matches!(detect_for_display(temp.path()).unwrap(), Some(Repo::Jj(_))));
 	}
 
+	#[cfg(feature = "jj")]
 	#[test]
 	fn display_matches_detect_for_pure_and_nested_roots() {
 		// Pure git.
@@ -473,6 +562,62 @@ mod tests {
 		fs::create_dir_all(jj_inner.join(".jj/repo")).unwrap();
 		assert!(matches!(detect(&jj_inner).unwrap(), Some(Repo::Jj(_))));
 		assert!(matches!(detect_for_display(&jj_inner).unwrap(), Some(Repo::Jj(_))));
+	}
+
+	#[cfg(not(feature = "jj"))]
+	#[test]
+	fn git_only_discovery_does_not_escape_a_jj_workspace() {
+		let pure = tempfile::tempdir().unwrap();
+		fs::create_dir_all(pure.path().join(".jj/repo")).unwrap();
+		assert!(detect(pure.path()).unwrap().is_none());
+		assert!(detect_for_display(pure.path()).unwrap().is_none());
+		assert!(is_pure_jj(pure.path()).unwrap());
+
+		let outer = tempfile::tempdir().unwrap();
+		init_git(outer.path());
+		let inner = outer.path().join("nested-jj");
+		fs::create_dir_all(inner.join(".jj/repo")).unwrap();
+		let child = inner.join("src");
+		fs::create_dir(&child).unwrap();
+		assert!(detect(&child).unwrap().is_none());
+		assert!(detect_for_display(&child).unwrap().is_none());
+		assert!(is_pure_jj(&child).unwrap());
+		assert!(matches!(detect(outer.path()).unwrap(), Some(Repo::Git(_))));
+	}
+
+	#[cfg(not(feature = "jj"))]
+	#[test]
+	fn git_only_discovery_keeps_colocated_and_deeper_git() {
+		let outer = tempfile::tempdir().unwrap();
+		init_git(outer.path());
+		fs::create_dir_all(outer.path().join(".jj/repo")).unwrap();
+		assert_eq!(detect(outer.path()).unwrap().unwrap().root(), outer.path());
+		assert_eq!(detect_for_display(outer.path()).unwrap().unwrap().root(), outer.path());
+		assert!(!is_pure_jj(outer.path()).unwrap());
+
+		let inner = outer.path().join("nested-git");
+		fs::create_dir(&inner).unwrap();
+		init_git(&inner);
+		let child = inner.join("src");
+		fs::create_dir(&child).unwrap();
+		assert_eq!(detect(&child).unwrap().unwrap().root(), inner);
+		assert_eq!(detect_for_display(&child).unwrap().unwrap().root(), inner);
+		assert!(!is_pure_jj(&child).unwrap());
+	}
+
+	#[test]
+	fn jj_guard_recognizes_indirected_workspaces() {
+		let outer = tempfile::tempdir().unwrap();
+		init_git(outer.path());
+		let store = outer.path().join("store");
+		fs::create_dir(&store).unwrap();
+		let workspace = outer.path().join("workspace");
+		fs::create_dir_all(workspace.join(".jj")).unwrap();
+		fs::write(workspace.join(".jj/repo"), "../../store\n").unwrap();
+		assert!(is_pure_jj(&workspace).unwrap());
+		assert!(!is_pure_jj(outer.path()).unwrap());
+		#[cfg(not(feature = "jj"))]
+		assert!(detect(&workspace).unwrap().is_none());
 	}
 
 	#[test]

@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { getTinyModelsCacheDir, isEnoent, logger, withFileLock } from "@oh-my-pi/pi-utils";
 import { withDownload } from "../downloads/activity";
 import { assertLocalRuntimeAvailable, isCoreSdk } from "../sdk-profile";
-import { assertNativeCapability } from "../native-capabilities";
+import { assertNativeCapability, readNativeCapabilities } from "../native-capabilities";
 import { sha256File } from "../utils/file-hash";
 import { downloadFile } from "../utils/tools-manager";
 
@@ -143,7 +143,7 @@ async function fetchVerified(
 
 /** Whether the pinned weights are fully downloaded and verified (one small file read). */
 export async function smolLmWeightsReady(): Promise<boolean> {
-	if (isCoreSdk()) return false;
+	if (isCoreSdk() || !readNativeCapabilities().localAssistance || !readNativeCapabilities().smollm) return false;
 	return (await readReadyMarker(getSmolLmModelDir())) === READY_STAMP;
 }
 
@@ -164,6 +164,7 @@ export interface EnsureSmolLmWeightsOptions {
  */
 export async function ensureSmolLmWeights(options: EnsureSmolLmWeightsOptions = {}): Promise<string> {
 	assertLocalRuntimeAvailable("SmolLM word completion");
+	assertNativeCapability("localAssistance", "SmolLM word completion");
 	assertNativeCapability("smollm", "SmolLM word completion (choose ngram or apple instead)");
 	const { signal, onProgress } = options;
 	const dir = getSmolLmModelDir();
@@ -200,8 +201,7 @@ let weightsReady = false;
  * request, so the fetch starts on first use; cheap after that.
  */
 export function prefetchSmolLmWeights(): void {
-	if (isCoreSdk()) return;
-	assertNativeCapability("smollm", "SmolLM word completion (choose ngram or apple instead)");
+	if (isCoreSdk() || !readNativeCapabilities().localAssistance || !readNativeCapabilities().smollm) return;
 	if (weightsReady || prefetching || Date.now() < prefetchRetryAt) return;
 	prefetching = true;
 	void (async () => {

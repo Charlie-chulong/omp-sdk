@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { untilAborted } from "@oh-my-pi/pi-utils";
 import type { ConversionResult, Markit, StreamInfo } from "../markit";
 import { ToolAbortError } from "../tools/tool-errors";
+import { assertNativeCapability } from "../native-capabilities";
 import {
 	type MarkitConversionCacheStatus,
 	markitConversionCacheKey,
@@ -100,6 +101,8 @@ async function runCachedBufferConversion(
 	signal?: AbortSignal,
 	cacheEnabled = true,
 ): Promise<MarkitConversionResult> {
+	if (streamInfo.extension === ".pdf" || streamInfo.mimetype?.split(";")[0] === "application/pdf")
+		assertNativeCapability("pdf", "PDF document conversion");
 	const cacheKey = cacheEnabled
 		? markitConversionCacheKey(bytes, streamInfo.extension ?? streamInfo.mimetype ?? ".bin")
 		: undefined;
@@ -136,6 +139,7 @@ export async function convertFileWithMarkit(
 	signal?: AbortSignal,
 	options?: MarkitFileConversionOptions,
 ): Promise<MarkitConversionResult> {
+	if (path.extname(filePath).toLowerCase() === ".pdf") assertNativeCapability("pdf", "PDF document conversion");
 	if (options?.imageDir) {
 		// Image extraction writes files into imageDir as a side effect; a
 		// markdown-only cache hit would leave the directory missing members, so

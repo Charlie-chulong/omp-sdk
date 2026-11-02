@@ -10,7 +10,7 @@
  * resumes by sending their outputs in the next request.
  */
 import type { Effort } from "@oh-my-pi/pi-catalog/effort";
-import { appleFmAvailability, appleFmCancel, appleFmGenerate } from "@oh-my-pi/pi-natives";
+import { appleFmAvailability, appleFmCancel, appleFmGenerate, nativeCapabilities } from "@oh-my-pi/pi-natives";
 import { parseStreamingJsonThrottled } from "@oh-my-pi/pi-utils";
 import * as AIError from "../error";
 import { parseToolCallArguments } from "../utils/tool-call-arguments";
@@ -103,6 +103,7 @@ type ToolCallBlock = Extract<AssistantMessage["content"][number], { type: "toolC
 
 /** Probes whether the on-device model can generate on this machine. */
 export async function getAppleFoundationModelsAvailability(): Promise<AppleFoundationModelsAvailability> {
+	if (nativeCapabilities().localAssistance !== true) return { available: false, reason: "not_built" };
 	const { type: _, ...availability } = JSON.parse(await appleFmAvailability()) as AppleFoundationModelsAvailability & {
 		type: string;
 	};
@@ -291,6 +292,11 @@ export const streamAppleFoundationModels: StreamFunction<"apple-foundation-model
 			thinkingIndex = undefined;
 		};
 		try {
+			if (nativeCapabilities().localAssistance !== true) {
+				throw new Error(
+					"Apple Foundation Models is unavailable in this native build. Use the full generic SDK/CLI build for this feature.",
+				);
+			}
 			const { request, encodedPaths } = buildRequest(model, context, options);
 			await options.onPayload?.(request, model);
 			stream.push({ type: "start", partial: output });

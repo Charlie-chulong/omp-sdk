@@ -1,10 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "bun:test";
 import * as piNatives from "@oh-my-pi/pi-natives";
 import { PdfConverter } from "../src/markit/converters/pdf";
+import * as nativeCapabilities from "../src/native-capabilities";
 
 describe("PdfConverter", () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
+	});
+
+	it("rejects PDF conversion before invoking an absent native parser", async () => {
+		const compiled = nativeCapabilities.readNativeCapabilities();
+		vi.spyOn(nativeCapabilities, "readNativeCapabilities").mockReturnValue({ ...compiled, pdf: false });
+		const parser = vi.spyOn(piNatives, "pdfToMarkdown");
+		await expect(new PdfConverter().convert(Buffer.from("%PDF-1.7"), { extension: ".pdf" })).rejects.toThrow(
+			/PDF document conversion.*unavailable/,
+		);
+		expect(parser).not.toHaveBeenCalled();
 	});
 
 	it("keeps accepting PDF extensions and MIME types", () => {

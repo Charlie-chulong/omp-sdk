@@ -13,6 +13,7 @@ import * as asr from "@oh-my-pi/pi-coding-agent/stt/asr-client";
 import * as downloader from "@oh-my-pi/pi-coding-agent/stt/downloader";
 import { STTController, type SttCallbacks, type SttState, type SttTarget } from "@oh-my-pi/pi-coding-agent/stt";
 import { readLines, removeWithRetries } from "@oh-my-pi/pi-utils";
+import * as nativeCapabilities from "../src/native-capabilities";
 
 class FakeController implements RpcDictationController {
 	state: SttState = "idle";
@@ -65,6 +66,17 @@ function harness(controller = new FakeController()) {
 afterEach(() => vi.restoreAllMocks());
 
 describe("RpcDictationBridge", () => {
+	test("rejects unavailable recording before creating a capture or publishing dictation frames", async () => {
+		const compiled = nativeCapabilities.readNativeCapabilities();
+		vi.spyOn(nativeCapabilities, "readNativeCapabilities").mockReturnValue({ ...compiled, audio: false });
+		const { bridge, frames, controller } = harness();
+		const start = vi.spyOn(controller, "start");
+		await expect(bridge.start("unsupported-capture")).rejects.toThrow(/Dictation recording.*unavailable/);
+		expect(start).not.toHaveBeenCalled();
+		expect(bridge.active).toBe(false);
+		expect(frames).toEqual([]);
+	});
+
 	test("publishes replacing previews across committed segments and ends only after the flush", async () => {
 		const { bridge, frames, controller } = harness();
 		const flush = Promise.withResolvers<void>();

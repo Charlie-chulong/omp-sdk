@@ -1,5 +1,6 @@
 import { pdfToMarkdown } from "@oh-my-pi/pi-natives";
 import { prompt } from "@oh-my-pi/pi-utils";
+import { assertNativeCapability } from "../../../native-capabilities";
 import pdfTextIncompleteTemplate from "../../../prompts/tools/pdf-text-incomplete.md" with { type: "text" };
 import type { ConversionResult, Converter, StreamInfo } from "../../types";
 
@@ -21,6 +22,7 @@ export class PdfConverter implements Converter {
 	}
 
 	async convert(input: Buffer, _streamInfo: StreamInfo): Promise<ConversionResult> {
+		assertNativeCapability("pdf", "PDF document conversion");
 		const result = await pdfToMarkdown(input);
 		const notice =
 			result.pagesNeedingOcr.length > 0

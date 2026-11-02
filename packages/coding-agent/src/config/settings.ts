@@ -58,6 +58,7 @@ import {
 import "./all-settings";
 import { cfgModelRoles, cfgModelRoleStorage } from "./model-settings";
 import { cfgShellPath } from "../exec/settings";
+import { assertNativeCapability, readNativeCapabilities } from "../native-capabilities";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -702,6 +703,7 @@ export class Settings {
 			if (value === undefined || value === null) continue;
 			const normalized = setting.definition.normalize ? setting.definition.normalize(value) : value;
 			setting.assertWritable(normalized);
+			this.#assertNativeSetting(setting, normalized);
 			setByPath(layer, setting.segments, normalized);
 		}
 		return layer;
@@ -864,6 +866,16 @@ export class Settings {
 	 * says is impossible (#13183).
 	 */
 	rawValue(setting: AnySetting): unknown {
+		if (setting.id.startsWith("snapcompact.") && !readNativeCapabilities().snapcompact) {
+			if (setting.id === "snapcompact.systemPrompt") return "none";
+			if (setting.id === "snapcompact.toolResults") return false;
+		}
+		if ((setting.id === "stt.enabled" || setting.id === "speech.enabled") && !readNativeCapabilities().audio)
+			return false;
+		if (setting.id.startsWith("spelling.") && !readNativeCapabilities().localAssistance) {
+			if (setting.id === "spelling.autocomplete") return "off";
+			if (setting.id === "spelling.typoDetection" || setting.id === "spelling.autocorrect") return false;
+		}
 		return configuredValue(this.#mergedView(), setting, this.#cwd);
 	}
 
@@ -892,6 +904,19 @@ export class Settings {
 		return this.#parent?.getProvenance(setting) ?? "default";
 	}
 
+	#assertNativeSetting(setting: AnySetting, value: unknown): void {
+		if (
+			(setting.id === "snapcompact.systemPrompt" && value !== "none" && value != null) ||
+			(setting.id === "snapcompact.toolResults" && value === true) ||
+			(setting.id === "compaction.methodOrder" && Array.isArray(value) && value.includes("snapcompact"))
+		)
+			assertNativeCapability("snapcompact", `Setting ${setting.id}`);
+		if ((setting.id === "stt.enabled" || setting.id === "speech.enabled") && value === true)
+			assertNativeCapability("audio", `Setting ${setting.id}`);
+		if (setting.id.startsWith("spelling.") && value !== false && value !== "off" && value != null)
+			assertNativeCapability("localAssistance", `Setting ${setting.id}`);
+	}
+
 	/**
 	 * Registry plumbing behind `Setting.set` / `Setting.override`: writes `value` for `setting` to the
 	 * global layer (persisted in the background; releases a soft pin, see {@link pinDefaultValue}) or
@@ -902,6 +927,7 @@ export class Settings {
 	 */
 	writeValue(setting: AnySetting, value: unknown, layer: "global" | "override"): void {
 		setting.assertWritable(value);
+		this.#assertNativeSetting(setting, value);
 		if (layer === "override" && setting === cfgModelRoles) {
 			this.#savedRuntimeModelRoleOverrides.clear();
 		}

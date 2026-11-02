@@ -6,6 +6,7 @@ import type * as JsProcessEntry from "../eval/js/process-entry";
 import type { WorkerInbound as JsWorkerInbound, WorkerOutbound as JsWorkerOutbound } from "../eval/js/worker-protocol";
 import { startParentWatchdog } from "../subprocess/parent-watchdog";
 import { assertLocalRuntimeAvailable } from "../sdk-profile";
+import { assertNativeCapability } from "../native-capabilities";
 import {
 	BLOB_BROKER_WORKER_ARG,
 	COMPUTER_WORKER_ARG,
@@ -170,6 +171,7 @@ export async function runWorkerEntrypoint(arg: string | undefined): Promise<bool
 		return true;
 	}
 	if (arg === TEXT_PREDICT_WORKER_ARG) {
+		assertNativeCapability("localAssistance", "Word prediction daemon");
 		const { startTextPredictDaemonFromEnvironment } = require("../predict/daemon");
 		await startTextPredictDaemonFromEnvironment();
 		return true;

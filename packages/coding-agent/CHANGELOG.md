@@ -15,7 +15,7 @@
 ### Changed
 
 - Reduced standalone binary size by disabling bundled bytecode, trading faster startup for smaller executables.
-- Reduced the packaged Node SDK footprint without removing browser or parser capabilities.
+- Reduced the packaged Node SDK footprint while retaining browser, code-parsing, and ordinary image capabilities.
 - Desktop packaging now validates an isolated native addon and excludes full-native platform leaf packages, while generic SDK and Bun CLI defaults retain full native features.
 
 ### Fixed
@@ -27,6 +27,10 @@
 - Fixed Node SDK sessions losing image generation and failing Desktop conversation creation when unrelated built-in tools are disabled.
 - Fixed Node SDK image reads, image questions, attachments, and binary exports failing when TypedArray Base64 methods are unavailable.
 - Startup prewalk now arms a later fallback candidate of the role named by prewalk.into when its first candidate is unavailable, matching /prewalk and /new ([#17373](https://github.com/can1357/oh-my-pi/pull/17373)).
+
+### Removed
+
+- Removed native PDF extraction, Jujutsu, Snapcompact frame generation, recording/playback, word prediction, spelling, and Apple Foundation Models from Desktop SDK builds; Git, text coding, saved archives, and generic/Bun capabilities remain available.
 
 ## [18.14.0] - 2026-10-29
 

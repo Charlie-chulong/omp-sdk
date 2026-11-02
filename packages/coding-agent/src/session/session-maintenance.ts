@@ -72,6 +72,7 @@ import { modelsAreEqual } from "@oh-my-pi/pi-catalog/models";
 import type { CatalogPolicyInputs } from "@oh-my-pi/pi-catalog/types";
 import { isRecord, logger, prompt, Snowflake } from "@oh-my-pi/pi-utils";
 import * as snapcompact from "@oh-my-pi/snapcompact";
+import { assertNativeCapability, readNativeCapabilities } from "../native-capabilities";
 import { writeArtifact } from "./artifacts";
 import type { ModelRegistry } from "../config/model-registry";
 import { CHAT_MODEL_ROLE_IDS } from "../config/model-roles";
@@ -200,7 +201,7 @@ function isCompactionMethodUsable(
 	return candidate === "remote"
 		? canUseRemoteCompaction(model, resolveMethodSettings(settings, candidate))
 		: candidate === "snapcompact"
-			? !excludeMedia && model !== undefined && sendsImageInputOnWire(model)
+			? readNativeCapabilities().snapcompact && !excludeMedia && model !== undefined && sendsImageInputOnWire(model)
 			: candidate === "handoff"
 				? reason !== "overflow"
 				: true;
@@ -1145,6 +1146,7 @@ export class SessionMaintenance {
 		// Resolve the `/compact <mode>` subcommand up front so input validation
 		// runs before we disconnect/abort the active agent operation below.
 		const compactMode = options?.mode ? findCompactMode(options.mode) : undefined;
+		if (compactMode?.name === "snapcompact") assertNativeCapability("snapcompact", "Snapcompact compaction");
 		// Modes that produce no LLM summary (snapcompact) have nothing to focus.
 		// Reject focus text loudly so programmatic callers don't silently lose
 
@@ -1260,6 +1262,7 @@ export class SessionMaintenance {
 					continue;
 				}
 				if (method === "snapcompact") {
+					if (!readNativeCapabilities().snapcompact) continue;
 					if (
 						explicitSnapcompact ||
 						(!customInstructions && !options?.internalGuidance && sendsImageInputOnWire(activeModel))
@@ -4543,7 +4546,7 @@ export class SessionMaintenance {
 		settings: EngineCompactionSettings,
 		signal: AbortSignal,
 	): Promise<snapcompact.CompactionResult | undefined> {
-		if (signal.aborted) return undefined;
+		if (signal.aborted || !readNativeCapabilities().snapcompact) return undefined;
 		// Re-rendering frames needs a vision-capable model, same gate as the
 		// snapcompact method.
 		const model = this.#model;
@@ -4657,6 +4660,7 @@ export class SessionMaintenance {
 		model: Model,
 		maxFrames: number,
 	): Promise<snapcompact.CompactionResult> {
+		assertNativeCapability("snapcompact", "Snapcompact archive rendering");
 		const details = entry.details as snapcompact.CompactionDetails | undefined;
 		const fileOps = snapcompact.createFileOps();
 		for (const file of details?.readFiles ?? []) fileOps.read.add(file);
@@ -4832,7 +4836,12 @@ export class SessionMaintenance {
 					: undefined,
 			);
 		const archiveText = snapcompact.archiveSourceText(archive);
-		if (archive.withoutThinking || !snapcompact.summaryIncludesThinking(entry.summary) || !archiveText) {
+		if (
+			!readNativeCapabilities().snapcompact ||
+			archive.withoutThinking ||
+			!snapcompact.summaryIncludesThinking(entry.summary) ||
+			!archiveText
+		) {
 			return readableView();
 		}
 		let view: snapcompact.ArchiveView;

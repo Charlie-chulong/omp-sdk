@@ -29,6 +29,7 @@ import type { ReadToolDetails } from "@oh-my-pi/pi-tui/tools/read";
 import { prompt } from "@oh-my-pi/pi-utils";
 import * as snapcompact from "@oh-my-pi/snapcompact";
 import type { SnapcompactFrameSink } from "../blob-broker/service";
+import { assertNativeCapability } from "../native-capabilities";
 import contextFramesNote from "../prompts/system/snapcompact-context-frames-note.md" with { type: "text" };
 import contextStub from "../prompts/system/snapcompact-context-stub.md" with { type: "text" };
 import readNoteTemplate from "../prompts/system/snapcompact-read-note.md" with { type: "text" };
@@ -621,6 +622,7 @@ export function estimateInlineSavings(input: {
 	systemPrompt: readonly string[];
 	messages: readonly InlineMessageView[];
 }): SnapcompactSavingsEstimate {
+	assertNativeCapability("snapcompact", "Snapcompact savings estimation");
 	const { options, model } = input;
 	if (!model || !sendsImageInputOnWire(model)) {
 		return { visionCapable: false, savedTokens: 0 };
@@ -756,6 +758,7 @@ export class SnapcompactInlineTransformer {
 		if (!options.renderToolResults) this.#toolCache.clear();
 		if (options.renderSystemPrompt === "none") this.#systemCache = undefined;
 		if (!options.renderToolResults && options.renderSystemPrompt === "none") return context;
+		assertNativeCapability("snapcompact", "Snapcompact inline imaging");
 		// Vision gate: images on a text-only model, or on a wire that strips
 		// them, never reach the model — rendering would lose the content.
 		if (!sendsImageInputOnWire(model)) return context;

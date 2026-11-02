@@ -16,6 +16,7 @@ import { resolveSpeculationLeadTokens } from "./speculation-lead";
 
 import { cfgSkillful } from "./settings";
 import { cfgSnapcompactShape, cfgSnapcompactSystemPrompt, cfgSnapcompactToolResults } from "./context-settings";
+import { readNativeCapabilities } from "../native-capabilities";
 
 /** Resolve session policy before handing pure boundary arithmetic to the UI. */
 export function getSessionCompactionBoundaries(
@@ -43,7 +44,7 @@ export function computeSessionContextBreakdown(
 	options?: { snapcompactSavings?: boolean },
 ): ContextBreakdown {
 	let snapcompact: ContextSavingsEstimate | undefined;
-	if (options?.snapcompactSavings) {
+	if (options?.snapcompactSavings && readNativeCapabilities().snapcompact) {
 		const renderSystemPrompt = cfgSnapcompactSystemPrompt.get(session.settings);
 		const renderToolResults = cfgSnapcompactToolResults.get(session.settings);
 		if (renderSystemPrompt !== "none" || renderToolResults) {

@@ -149,6 +149,7 @@ import type { CompactMode } from "../session/compact-modes";
 import type { ForeignSessionSource } from "../session/foreign-session-store";
 import { HistoryStorage } from "../session/history-storage";
 import { syncTextPrediction, textPredictionBackend } from "../predict/client";
+import { readNativeCapabilities } from "../native-capabilities";
 import { setWordPredictionHost } from "@oh-my-pi/pi-tui/prompt/word-completion";
 import { USER_INTERRUPT_LABEL } from "../session/messages";
 import { resolveMarkdownLinkHrefs } from "../internal-urls/hyperlink-targets";
@@ -2165,7 +2166,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			this.#syncEditorMaxHeight();
 		};
 		process.stdout.on("resize", this.#resizeHandler);
-		setWordPredictionHost(textPredictionBackend);
+		if (readNativeCapabilities().localAssistance) setWordPredictionHost(textPredictionBackend);
 		try {
 			this.historyStorage = HistoryStorage.open();
 			this.editor.setHistoryStorage(this.historyStorage);

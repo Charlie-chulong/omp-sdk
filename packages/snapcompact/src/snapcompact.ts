@@ -67,6 +67,7 @@ import {
 } from "@oh-my-pi/pi-catalog/compat/image-tokenization";
 import { resolveImageCountBudget, resolveInlineImageByteBudget } from "@oh-my-pi/pi-catalog/compat/request-size";
 import { classifyModel, compareRevision, parseRevision } from "@oh-my-pi/pi-catalog/identity";
+import * as native from "@oh-my-pi/pi-natives";
 import { renderSnapcompactPng, snapcompactSupportedChars } from "@oh-my-pi/pi-natives";
 import { formatGroupedPaths, isRecord, prompt } from "@oh-my-pi/pi-utils";
 import { INTENT_FIELD } from "@oh-my-pi/pi-wire";
@@ -1316,8 +1317,19 @@ function foldToAscii(ch: string): string | undefined {
 	return out;
 }
 
+/** Rasterization is optional; persisted archives and pure history mapping do not need it. */
+function assertNativeRendering(): void {
+	const query = native.nativeCapabilities;
+	if (typeof query !== "function" || query()?.snapcompact !== true) {
+		throw new Error(
+			"Snapcompact rendering is unsupported in this native build. Use a generic native build with snapcompact enabled.",
+		);
+	}
+}
+
 function renderableUnicodeChars(chars: readonly string[], font: Shape["font"] | undefined): ReadonlySet<string> {
 	if (chars.length === 0) return new Set();
+	assertNativeRendering();
 	const text = chars.join("");
 	const primaryFont = font ?? "5x8";
 	const supported = new Set(snapcompactSupportedChars(primaryFont, text));
@@ -1434,6 +1446,7 @@ export function scanRenderability(
 	text: string,
 	options?: NormalizeOptions,
 ): { isSafe: boolean; unrenderableRatio: number } {
+	assertNativeRendering();
 	const normalized = normalizeWithStats(text, options);
 	const unrenderableRatio = normalized.totalGraphics > 0 ? normalized.fallbackCount / normalized.totalGraphics : 0;
 	return { isSafe: unrenderableRatio <= 0.05, unrenderableRatio };
@@ -1696,6 +1709,7 @@ function renderedChars(text: string, shape: Shape, geo: Geometry): number {
 /** Render one snapcompact frame from already-normalized text. Doc shapes
  *  (`columns === 2`) expect one page of `\n`-joined pre-wrapped lines. */
 export async function render(text: string, shape: Shape, size: number = shape.frameSize): Promise<RenderedFrame> {
+	assertNativeRendering();
 	const geo = geometry(shape, size);
 	const { cols, rows } = geo;
 	const chars = renderedChars(text, shape, geo);
@@ -1732,6 +1746,7 @@ export interface RenderManyOptions {
  * (first page first). Empty/whitespace-only input yields no frames.
  */
 export async function renderMany(text: string, options?: RenderManyOptions): Promise<ImageContent[]> {
+	assertNativeRendering();
 	const shape = options?.shape ?? resolveShapeForText(text, options?.model);
 	const frameSize = options?.frameSize ?? shape.frameSize;
 	const geo = geometry(shape, frameSize);
@@ -2350,6 +2365,7 @@ export async function compact<TMessage = Message>(
 	preparation: CompactionPreparation<TMessage>,
 	options?: Options<TMessage>,
 ): Promise<CompactionResult> {
+	assertNativeRendering();
 	const { firstKeptEntryId, tokensBefore, previousSummary, previousPreserveData, fileOps } = preparation;
 	if (!firstKeptEntryId) {
 		throw new Error("First kept entry has no ID - session may need migration");

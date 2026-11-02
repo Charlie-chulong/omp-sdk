@@ -22,6 +22,7 @@ import type { CompactionEntry } from "@oh-my-pi/pi-coding-agent/session/session-
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import { getAgentDir, setAgentDir } from "@oh-my-pi/pi-utils";
 import * as snapcompact from "@oh-my-pi/snapcompact";
+import * as nativeCapabilities from "../src/native-capabilities";
 
 const REASONING = "PRIVATE-REASONING";
 const PLAIN_LEGEND = "`¶user:`, `¶ai:`, `¶call:`: user, assistant reply, tool call.";
@@ -268,11 +269,13 @@ describe("snapcompact archive read by a Claude model", () => {
 		expectOriginalIntact(latestCompaction(sessionManager), original);
 	});
 
-	it("sends text without reasoning and no frames when the variant cannot be rendered", async () => {
+	it("reads preserved archive history without new frames when native rendering is unavailable", async () => {
 		const sessionManager = SessionManager.inMemory();
 		const original = await seedArchive(sessionManager);
 		const { session, mock } = startSession(sessionManager, gpt);
-		vi.spyOn(snapcompact, "compact").mockRejectedValue(new Error("renderer unavailable"));
+		const compiled = nativeCapabilities.readNativeCapabilities();
+		vi.spyOn(nativeCapabilities, "readNativeCapabilities").mockReturnValue({ ...compiled, snapcompact: false });
+		const renderer = vi.spyOn(snapcompact, "compact");
 
 		await session.setModel(claude);
 		await session.prompt("Continue.");
@@ -284,6 +287,7 @@ describe("snapcompact archive read by a Claude model", () => {
 		expect(text).not.toContain(REASONING);
 		expect(text).toContain("reply 39");
 		expect(images).toEqual([]);
+		expect(renderer).not.toHaveBeenCalled();
 		const entry = latestCompaction(sessionManager);
 		expect(snapcompact.getPreservedArchive(entry.preserveData)?.withoutThinking).toBeUndefined();
 		expectOriginalIntact(entry, original);

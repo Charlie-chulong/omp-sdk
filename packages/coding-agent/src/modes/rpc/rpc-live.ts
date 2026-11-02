@@ -7,6 +7,7 @@ import type { AssistantMessage } from "@oh-my-pi/pi-ai";
 import { LiveSessionController, type LiveSessionControllerOptions } from "../../live/controller";
 import { resolveLiveVoice } from "../../live/settings";
 import type { AgentSession } from "../../session/agent-session";
+import { assertNativeCapability } from "../../native-capabilities";
 import type { RpcLiveFrame } from "./rpc-types";
 
 /** Minimum spacing between `live_levels` frames. */
@@ -74,6 +75,10 @@ export class RpcLiveBridge {
 
 	/** Connects a live session and resolves once it is recording (or, with `sdpOffer`, once the call is signaled). */
 	async start(options: RpcLiveStartOptions = {}): Promise<RpcLiveStartResult> {
+		if (options.sdpOffer === undefined) {
+			assertNativeCapability("liveVoice", "Live voice");
+			assertNativeCapability("audio", "Live voice recording");
+		}
 		if (this.#controller) throw new Error("A live session is already active");
 		const voice = resolveLiveVoice(this.#session.settings, options.voice);
 		let terminated = false;

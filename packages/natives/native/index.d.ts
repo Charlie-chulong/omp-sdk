@@ -844,8 +844,6 @@ export declare class VcsRepo {
   supports(feature: string): boolean
   /** Git-specific handle when this repository is backed by Git. */
   asGit(): VcsGitRepo | null
-  /** Jujutsu-specific handle when this repository is backed by Jujutsu. */
-  asJj(): VcsJjWorkspace | null
   /** Human label for the working copy. */
   label(signal?: unknown | undefined | null): Promise<string | undefined | null>
   /** Working-copy commit id. */
@@ -870,6 +868,8 @@ export declare class VcsRepo {
   commitDetails(rev: string, signal?: unknown | undefined | null): Promise<VcsCommitDetails>
   /** List tracked or untracked paths. */
   lsFiles(others: boolean, excludeStandard: boolean, signal?: unknown | undefined | null): Promise<Array<string>>
+  /** Jujutsu-specific handle when this repository is backed by Jujutsu. */
+  asJj(): VcsJjWorkspace | null
 }
 
 /**
@@ -2906,6 +2906,11 @@ export interface NativeCapabilities {
   smollm: boolean
   liveVoice: boolean
   wasmGrammars: boolean
+  pdf: boolean
+  jujutsu: boolean
+  snapcompact: boolean
+  audio: boolean
+  localAssistance: boolean
 }
 
 /** Construction options for [`NativeOAuthCallback`]. */

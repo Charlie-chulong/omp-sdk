@@ -2,6 +2,7 @@ import * as os from "node:os";
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import type { AssistantMessage } from "@oh-my-pi/pi-ai";
 import { AudioCapture } from "@oh-my-pi/pi-natives";
+import { assertNativeCapability } from "../native-capabilities";
 import { prompt } from "@oh-my-pi/pi-utils";
 import type { AgentSession } from "../session/agent-session";
 import type { AgentSessionEvent } from "../session/agent-session-events";
@@ -175,6 +176,10 @@ export class LiveSessionController {
 			);
 		}
 		if (this.#started) return;
+		if (this.#sdpOffer === undefined) {
+			assertNativeCapability("liveVoice", "Live voice");
+			assertNativeCapability("audio", "Live voice recording");
+		}
 		this.#started = true;
 		this.#emitPhase("connecting", true);
 		this.#emitTranscript(undefined);

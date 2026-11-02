@@ -1,9 +1,6 @@
-use std::{
-	env,
-	ffi::OsString,
-	path::{Path, PathBuf},
-	process::Command,
-};
+#[cfg(feature = "local-assistance")]
+use std::path::Path;
+use std::{env, ffi::OsString, path::PathBuf, process::Command};
 
 // Unify features with runtime dependencies shared by build scripts and macros.
 use bitflags as _;
@@ -50,6 +47,7 @@ fn main() {
 			"omp-input-release",
 			"OMP_INPUT_RELEASE_HELPER",
 		);
+		#[cfg(feature = "local-assistance")]
 		build_applefm_bridge();
 	}
 }
@@ -78,6 +76,7 @@ fn build_syntax_set() {
 /// Cargo reruns this only when the sources, the toolchain selection inputs, or
 /// the selected compiler/SDK change; Swift module caches persist across builds
 /// (see the script).
+#[cfg(feature = "local-assistance")]
 fn build_applefm_bridge() {
 	let manifest_dir =
 		PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR should be set"));
@@ -151,6 +150,7 @@ fn build_applefm_bridge() {
 
 /// Returns `(swiftc, sdk)` for the first toolchain `build-bridge.sh detect`
 /// accepts.
+#[cfg(feature = "local-assistance")]
 fn detect_swift_toolchain(script: &Path) -> Option<(PathBuf, PathBuf)> {
 	let output = Command::new("/bin/sh")
 		.arg(script)

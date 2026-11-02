@@ -9,6 +9,7 @@ rust_library(
     name = "pi-vcs",
     srcs = glob(["src/**/*.rs"]),
     aliases = aliases(),
+    crate_features = ["jj"],
     crate_name = "pi_vcs",
     edition = "2024",
     proc_macro_deps = all_crate_deps(proc_macro = True),

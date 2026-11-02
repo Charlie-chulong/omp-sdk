@@ -7,6 +7,7 @@ import { getAgentDir, VERSION } from "@oh-my-pi/pi-utils";
 import * as launchClient from "../src/launch/client";
 import { closeTextPrediction, requestTextPrediction } from "../src/predict/client";
 import { type TextPredictRequest, type TextPredictResponse, textPredictDaemon } from "../src/predict/protocol";
+import * as nativeCapabilities from "../src/native-capabilities";
 import { rejectionOf } from "./helpers/rejection";
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -64,6 +65,14 @@ async function serveDaemon(version: string): Promise<string[]> {
 }
 
 describe("text-predict client against a daemon from another omp version", () => {
+	it("rejects unavailable word prediction before starting or connecting to its daemon", () => {
+		const compiled = nativeCapabilities.readNativeCapabilities();
+		vi.spyOn(nativeCapabilities, "readNativeCapabilities").mockReturnValue({ ...compiled, localAssistance: false });
+		const broker = vi.spyOn(launchClient, "daemonClientForGlobal");
+		expect(() => requestTextPrediction("ngram", "please ", "re")).toThrow(/Word prediction.*unavailable/);
+		expect(broker).not.toHaveBeenCalled();
+	});
+
 	it("uses a daemon from a newer omp instead of shutting it down", async () => {
 		// After an in-place upgrade, a session still running the old build must not
 		// stop the daemon every session on the new build is using.

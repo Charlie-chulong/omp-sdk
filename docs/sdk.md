@@ -92,11 +92,15 @@ bun run --cwd packages/natives build:desktop
 This forces the release profile with `--no-default-features`, uses
 `target/desktop`, and writes the canonical addon and JSON sidecar to
 `packages/natives/native/desktop/`. Rebuild it after native source or package
-version changes before staging Desktop. It disables only the default-on
-`pi-natives` features `smollm` (SmolLM/Candle), `live-voice` (native WebRTC/Opus),
-and `wasm-grammars` (downloadable WASM grammars). Ngram and macOS Apple prediction,
-macOS spelling, audio capture/playback, and built-in-language parsing and AST
-operations remain available.
+version changes before staging Desktop. It disables the default-on `pi-natives`
+features `smollm`, `live-voice`, `wasm-grammars`, `pdf`, `vcs-jj`, `snapcompact`,
+`audio`, and `local-assistance`. Native PDF extraction, Jujutsu, image-based
+Snapcompact compression, recording/playback, prediction, spelling, and Apple
+Foundation Models are unavailable in Desktop, including its `full` profile.
+Git, file editing/search, Shell, ordinary images, and built-in code parsing and
+AST operations remain available. Browser PDF screenshots/printing are independent
+of native PDF extraction; remote TTS/transcription data APIs remain independent
+of local capture/playback.
 
 With `OMP_DESKTOP_SDK_TARGET=desktop`, staging requires this isolated artifact,
 checks its sidecar and raw binary capabilities, package version, and SHA-256,
@@ -107,13 +111,14 @@ with `bun run --cwd packages/natives build:bindings`; only a full build
 regenerates the full native declarations and exports.
 
 Import `readNativeCapabilities()` from the SDK to inspect the loaded binary's
-`smollm`, `liveVoice`, and `wasmGrammars` flags rather than inferring support from
-the JS profile or declarations. Disabled-feature requests fail with guidance
-before downloads or optional native construction. Live sessions with a
-caller-supplied `sdpOffer` still support signaling and return `sdpAnswer` without
-native WebRTC: the caller owns its peer, microphone, playback, and track muting.
-The Desktop cuts are build tradeoffs, not removal of prediction, audio, or AST
-support as a whole.
+`smollm`, `liveVoice`, `wasmGrammars`, `pdf`, `jujutsu`, `snapcompact`, `audio`, and
+`localAssistance` flags rather than inferring support from the JS profile or
+declarations. The validated report is immutable and cached. Explicit activation
+of an omitted engine fails before downloads or native construction; saved
+settings are effectively disabled. Existing Snapcompact archives remain readable
+without rendering new frames. Live sessions with a caller-supplied `sdpOffer`
+still support signaling and return `sdpAnswer` without native WebRTC or local
+audio: the caller owns its peer, microphone, playback, and track muting.
 
 For an isolated Node child that needs the existing full RPC protocol rather than
 an in-process session, import `startNodeRpcHost` from

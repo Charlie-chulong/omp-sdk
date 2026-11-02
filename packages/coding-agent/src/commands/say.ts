@@ -22,6 +22,7 @@ import { StreamingAudioPlayer } from "../tts/streaming-player";
 import { shutdownTtsClient, ttsClient } from "../tts/tts-client";
 import { resolveLocalSpeechModelId } from "../tts/vocalizer";
 import { encodeWav } from "../tts/wav";
+import { assertNativeCapability } from "../native-capabilities";
 
 import { cfgTtsLocalSpeed, cfgTtsLocalVoice } from "../tts/settings";
 
@@ -83,6 +84,7 @@ export default class Say extends Command {
 				return;
 			}
 
+			if (!flags.out) assertNativeCapability("audio", "Native audio playback");
 			const stream = ttsClient.synthesizeStream(model, { voice, speed });
 			for (const segment of segments) stream.push(segment);
 			stream.end();

@@ -16,10 +16,15 @@ workspace = true
 
 [features]
 # Keep the full addon as the default; Desktop builds explicitly disable defaults.
-default = ["smollm", "live-voice", "wasm-grammars"]
-smollm = ["pi-predict/smollm"]
-live-voice = ["pi-voice/live"]
+default = ["smollm", "live-voice", "wasm-grammars", "pdf", "snapcompact", "audio", "local-assistance", "vcs-jj"]
+smollm = ["local-assistance", "pi-predict/smollm"]
+live-voice = ["audio", "pi-voice/live"]
 wasm-grammars = ["pi-ast/wasm"]
+pdf = ["dep:pdf-inspector"]
+snapcompact = ["dep:base64", "dep:fontdue", "dep:png"]
+audio = ["dep:pi-voice"]
+local-assistance = ["dep:pi-predict"]
+vcs-jj = ["pi-vcs/jj"]
 # PipeWire hard-links a host library unavailable on shipping cross triples.
 wayland-pipewire = ["dep:pipewire"]
 
@@ -27,10 +32,10 @@ wayland-pipewire = ["dep:pipewire"]
 anyhow.workspace = true
 async-trait.workspace = true
 arboard.workspace = true
-base64.workspace = true
+base64 = { workspace = true, optional = true }
 clap.workspace = true
 heapless.workspace = true
-fontdue.workspace = true
+fontdue = { workspace = true, optional = true }
 grep-matcher.workspace = true
 futures.workspace = true
 html-escape.workspace = true
@@ -52,7 +57,7 @@ log = "0.4"
 memchr = "2.7.4"
 pi-vcs.workspace = true
 parking_lot.workspace = true
-pdf-inspector.workspace = true
+pdf-inspector = { workspace = true, optional = true }
 phf.workspace = true
 flume.workspace = true
 pi-ast.workspace = true
@@ -61,12 +66,12 @@ pi-diff.workspace = true
 pi-edit.workspace = true
 pi-walker.workspace = true
 pi-iso.workspace = true
-pi-predict = { workspace = true, default-features = false }
+pi-predict = { workspace = true, default-features = false, optional = true }
 pi-shell.workspace = true
 pi-vfs.workspace = true
-pi-voice = { workspace = true, default-features = false }
+pi-voice = { workspace = true, default-features = false, optional = true }
 portable-pty.workspace = true
-png.workspace = true
+png = { workspace = true, optional = true }
 rayon.workspace = true
 regex.workspace = true
 serde.workspace = true

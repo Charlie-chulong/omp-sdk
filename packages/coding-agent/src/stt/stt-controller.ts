@@ -2,6 +2,7 @@ import type { ApiKeyResolver } from "@oh-my-pi/pi-ai";
 import { transcribeAudio } from "@oh-my-pi/pi-ai/transcription";
 import type { Api, Model } from "@oh-my-pi/pi-catalog/types";
 import { AudioCapture } from "@oh-my-pi/pi-natives";
+import { assertNativeCapability } from "../native-capabilities";
 import type { ModelBrowserRegistry } from "@oh-my-pi/pi-tui/overlays/model-browser";
 import { logger } from "@oh-my-pi/pi-utils";
 import { type RoleChainCandidate, resolveConfiguredModelPatterns, resolveRoleChain } from "../config/model-resolver";
@@ -114,6 +115,7 @@ export class STTController {
 	/** Start dictating into `editor`, reporting to `options` until the capture ends. A no-op while a
 	 *  capture is starting, recording, or transcribing. */
 	async start(editor: SttTarget, options: SttCallbacks): Promise<void> {
+		assertNativeCapability("audio", "Speech-to-text recording");
 		if (this.#state === "transcribing") options.showStatus("Transcription in progress...");
 		if (this.#disposed || this.#toggling || this.#state !== "idle") return;
 		await this.#transition(options, () => this.#start(editor, options));

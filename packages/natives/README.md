@@ -85,17 +85,25 @@ bun run check
 
 ### Full and Desktop native builds
 
-The `pi-natives` Cargo features `smollm`, `live-voice`, and `wasm-grammars`
-are optional and **enabled by default**. Normal native builds, the generic SDK,
-and the Bun CLI retain all three:
+The optional `pi-natives` Cargo features below are **enabled by default**.
+Normal native builds, the generic SDK, and the Bun CLI retain them all:
 
-- `smollm` includes SmolLM/Candle word prediction. Disabling it preserves ngram
-  prediction, macOS Apple prediction, and macOS spelling services.
-- `live-voice` includes native WebRTC/Opus live media. Disabling it preserves
-  microphone capture and speaker playback.
+- `smollm` includes SmolLM/Candle word prediction and enables `local-assistance`.
+- `live-voice` includes native WebRTC/Opus live media and enables `audio`.
 - `wasm-grammars` includes on-demand WebAssembly tree-sitter grammar support.
   Disabling it preserves built-in languages and their parsing, AST search/edit,
   and summaries; languages requiring a WASM grammar are unavailable.
+- `pdf` includes native PDF-to-Markdown extraction.
+- `vcs-jj` includes Jujutsu; Git and the pure-JJ Git safety guard remain without it.
+- `snapcompact` includes image-based context compression and its embedded fonts.
+- `audio` includes microphone capture and speaker playback.
+- `local-assistance` includes ngram/macOS prediction, macOS spelling, and Apple
+  Foundation Models.
+
+The Desktop target disables all of these features, independently of the
+JavaScript `core`/`full` profile. File editing, search, Git, Shell, ordinary
+images, and built-in code parsing remain available. Browser PDF screenshots
+and printing do not depend on the native PDF extractor.
 
 From the workspace root:
 
@@ -115,13 +123,14 @@ use `build:bindings` when changing the full exported API. Desktop staging
 validates the isolated addon's version, SHA-256, and raw capability report
 against its sidecar before packaging it.
 
-`nativeCapabilities()` reports the loaded binary's `smollm`, `liveVoice`, and
-`wasmGrammars` facts; declarations do not imply that every optional feature is
-enabled. The SDK exposes these facts through `readNativeCapabilities()` and
-rejects disabled-feature operations with actionable guidance before model or
-grammar downloads or optional native resource construction. A caller-owned
-WebRTC peer can still supply an SDP offer and use signaling without native
-WebRTC/Opus.
+`nativeCapabilities()` reports the loaded binary's `smollm`, `liveVoice`,
+`wasmGrammars`, `pdf`, `jujutsu`, `snapcompact`, `audio`, and `localAssistance`
+facts; declarations do not imply that an optional feature is enabled. The SDK
+exposes a validated, immutable report through `readNativeCapabilities()`.
+Disabled-feature operations fail before downloads or native construction.
+Saved settings cannot activate omitted engines. Existing Snapcompact archives
+remain readable without generating new frames. A caller-owned WebRTC peer can
+still supply an SDP offer and use signaling without native WebRTC or local audio.
 
 These native features are separate from the SDK's JavaScript `core` profile.
 No measured Desktop size savings are claimed here.

@@ -15,6 +15,11 @@ import { cfgTaskAgentModelOverrides } from "@oh-my-pi/pi-coding-agent/task/setti
 import { logger, TempDir } from "@oh-my-pi/pi-utils";
 import { YAML } from "bun";
 import { beginSettingsTest, restoreSettingsTestState, type SettingsTestState } from "./helpers/settings-test-state";
+import * as nativeCapabilities from "../src/native-capabilities";
+import { cfgSnapcompactSystemPrompt, cfgSnapcompactToolResults } from "../src/session/context-settings";
+import { cfgSttEnabled } from "../src/stt/settings";
+import { cfgSpeechEnabled } from "../src/tts/settings";
+import { cfgSpellingAutocomplete, cfgSpellingTypoDetection } from "../src/modes/settings";
 
 const routing = (model: string, reservePct = 10, priority = 1) => ({
 	modelRoles: { smol: `anthropic/${model}`, slow: "anthropic/strong" },
@@ -77,6 +82,39 @@ describe("live routing config files", () => {
 		settings.startWatching();
 		return settings;
 	}
+	it("keeps saved native feature preferences inert and rejects explicit reactivation in a cut build", async () => {
+		const compiled = nativeCapabilities.readNativeCapabilities();
+		const capabilities = vi.spyOn(nativeCapabilities, "readNativeCapabilities").mockReturnValue({
+			...compiled,
+			snapcompact: false,
+			audio: false,
+			localAssistance: false,
+		});
+		cleanups.push(() => capabilities.mockRestore());
+		const file = tempDir.join("saved.yml");
+		const saved = YAML.stringify({
+			snapcompact: { systemPrompt: "all", toolResults: true },
+			stt: { enabled: true },
+			speech: { enabled: true },
+			spelling: { autocomplete: "ngram", typoDetection: true },
+		});
+		await Bun.write(file, saved);
+		settings = await Settings.loadReadOnly({
+			cwd: tempDir.path(),
+			agentDir: tempDir.join("agent"),
+			configFiles: [file],
+		});
+		expect(cfgSnapcompactSystemPrompt.get(settings)).toBe("none");
+		expect(cfgSnapcompactToolResults.get(settings)).toBe(false);
+		expect(cfgSttEnabled.get(settings)).toBe(false);
+		expect(cfgSpeechEnabled.get(settings)).toBe(false);
+		expect(cfgSpellingAutocomplete.get(settings)).toBe("off");
+		expect(cfgSpellingTypoDetection.get(settings)).toBe(false);
+		expect(() => cfgSnapcompactToolResults.set(settings, true)).toThrow(/unavailable/);
+		expect(() => cfgSttEnabled.set(settings, true)).toThrow(/unavailable/);
+		expect(() => cfgSpellingAutocomplete.set(settings, "ngram")).toThrow(/unavailable/);
+		expect(await Bun.file(file).text()).toBe(saved);
+	});
 
 	it("applies atomic overlay edits to subsequent model selection, fallbacks and account health", async () => {
 		const file = tempDir.join("routing.yml");

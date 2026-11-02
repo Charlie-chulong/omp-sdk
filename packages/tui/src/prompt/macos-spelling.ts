@@ -35,6 +35,8 @@ export interface SpellingBackend {
 
 const NATIVE_BACKEND: SpellingBackend = {
 	isAvailable: () =>
+		typeof native.nativeCapabilities === "function" &&
+		native.nativeCapabilities().localAssistance === true &&
 		typeof native.macOSSpellCheckerAvailable === "function" &&
 		typeof native.macOSCheckSpelling === "function" &&
 		typeof native.macOSAutocorrectWord === "function" &&

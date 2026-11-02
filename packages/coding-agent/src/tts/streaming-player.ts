@@ -1,4 +1,5 @@
 import { AudioPlayback } from "@oh-my-pi/pi-natives";
+import { assertNativeCapability } from "../native-capabilities";
 
 /** Kokoro emits 24 kHz mono PCM when a chunk does not declare a rate. */
 const DEFAULT_SAMPLE_RATE = 24_000;
@@ -34,6 +35,7 @@ export class StreamingAudioPlayer {
 
 	/** Opens the default speaker at the stream's logical sample rate. */
 	start(sampleRate = DEFAULT_SAMPLE_RATE): void {
+		assertNativeCapability("audio", "Native audio playback");
 		if (this.#native || this.#error || this.#inputClosed || this.#stopped) return;
 		this.#sampleRate = sampleRate > 0 ? sampleRate : DEFAULT_SAMPLE_RATE;
 		let native: AudioPlayback | undefined;

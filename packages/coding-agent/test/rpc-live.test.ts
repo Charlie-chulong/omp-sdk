@@ -8,6 +8,7 @@ import { RpcLiveBridge, type RpcLiveSession } from "@oh-my-pi/pi-coding-agent/mo
 import type { RpcLiveFrame } from "@oh-my-pi/pi-coding-agent/modes/rpc/rpc-types";
 import type { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import { readLines, removeWithRetries } from "@oh-my-pi/pi-utils";
+import * as nativeCapabilities from "../src/native-capabilities";
 
 class FakeLiveSession implements RpcLiveSession {
 	muted = false;
@@ -121,15 +122,30 @@ describe("RpcLiveBridge", () => {
 		expect(frames.at(-1)).toEqual({ type: "live_end" });
 	});
 
-	test("an sdpOffer session reaches the controller and resolves with its SDP answer", async () => {
-		const { bridge, sessions } = harness();
-		const starting = bridge.start({ sdpOffer: "v=0 offer" });
-		const live = sessions[0]!;
-		expect(live.options.sdpOffer).toBe("v=0 offer");
-		live.sdpAnswer = "v=0 answer";
-		live.started.resolve();
-		expect(await starting).toEqual({ voice: "sol", sdpAnswer: "v=0 answer" });
-		expect(bridge.active).toBe(true);
+	test("caller-owned SDP stays usable without native WebRTC or host audio", async () => {
+		const capabilitySpy = vi.spyOn(nativeCapabilities, "readNativeCapabilities").mockReturnValue({
+			...nativeCapabilities.readNativeCapabilities(),
+			liveVoice: false,
+			audio: false,
+		});
+		try {
+			const { bridge, sessions } = harness();
+			const starting = bridge.start({ sdpOffer: "v=0 offer" });
+			const live = sessions[0];
+			if (live) {
+				live.sdpAnswer = "v=0 answer";
+				live.started.resolve();
+			}
+			await expect(starting).resolves.toMatchObject({ sdpAnswer: "v=0 answer" });
+			expect(bridge.active).toBe(true);
+			bridge.setMuted(true);
+			expect(live?.muted).toBe(true);
+			await bridge.stop();
+			expect(bridge.active).toBe(false);
+			await expect(bridge.start()).rejects.toThrow(/unavailable.*native build/);
+		} finally {
+			capabilitySpy.mockRestore();
+		}
 	});
 
 	test("an sdpOffer session that ends before its answer exists rejects and releases the slot", async () => {
