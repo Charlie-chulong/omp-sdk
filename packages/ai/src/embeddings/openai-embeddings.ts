@@ -1,3 +1,4 @@
+import { transportFetch } from "../utils/transport-fetch";
 import { calculateCost } from "@oh-my-pi/pi-catalog/models";
 import type { Api, FetchImpl, Model, Usage } from "@oh-my-pi/pi-catalog/types";
 import { type } from "@oh-my-pi/omptype";
@@ -102,7 +103,7 @@ export async function embedOpenAI(
 	request: EmbeddingRequest,
 	options: EmbeddingOptions,
 ): Promise<EmbeddingResult> {
-	const fetchImpl = options.fetch ?? fetch;
+	const fetchImpl = transportFetch(model, options.fetch);
 	const body = {
 		model: model.id,
 		input: request.input,

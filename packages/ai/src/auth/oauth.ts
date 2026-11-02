@@ -3,6 +3,7 @@ import * as AIError from "../error";
 import { getProviderDefinition, PASTE_CODE_LOGIN_PROVIDERS } from "../registry";
 import { getOAuthProvider } from "../registry/oauth";
 import type { OAuthProviderId } from "../registry/oauth/types";
+import { installProxyFetch, proxyFetch, withProxyProvider, wrapFetchForProxy } from "../utils/proxy";
 import { providerTypeKey } from "./blocks";
 import type { SessionAffinity } from "./affinity";
 import type { KeyOverrides } from "./cascade";
@@ -78,15 +79,16 @@ export class OAuthAccounts implements OAuthApi {
 		if (!def?.login) {
 			throw new AIError.ConfigurationError(`Unknown OAuth provider: ${provider}`);
 		}
-		const result = await def.login({
+		installProxyFetch();
+		const result = await withProxyProvider(provider, () => def.login!({
 			onAuth: ctrl.onAuth,
 			onProgress: ctrl.onProgress,
 			onPrompt: ctrl.onPrompt,
 			onManualCodeInput: ctrl.onManualCodeInput ?? manualCodeInput,
 			onBrowserSession: ctrl.onBrowserSession,
 			signal: ctrl.signal,
-			fetch: ctrl.fetch,
-		});
+			fetch: ctrl.fetch ? wrapFetchForProxy(ctrl.fetch, provider) : proxyFetch(provider),
+		}));
 		if (typeof result === "string") {
 			// Some flows (e.g. ollama) return "" to signal that no key was entered.
 			if (!result) {

@@ -9,6 +9,8 @@
 import { type } from "@oh-my-pi/omptype";
 import { readSseEvents } from "@oh-my-pi/pi-utils";
 import type { AuthCredential, DisabledCredentialSummary, OAuthRefreshReason } from "../auth-storage";
+import type { FetchImpl } from "../types";
+import { getProxyPolicyController, proxyFetch, wrapFetchForProxy } from "../utils/proxy";
 import type {
 	ClientUsageReportRequest,
 	ClientUsageReportResponse,
@@ -19,6 +21,7 @@ import type {
 	CredentialBlocksDeleteResponse,
 	CredentialDisableRequest,
 	CredentialDisableResponse,
+	CredentialRefreshRequest,
 	CredentialRefreshResponse,
 	CredentialUploadRequest,
 	CredentialUploadResponse,
@@ -76,8 +79,8 @@ export interface AuthBrokerClientOptions {
 	timeoutMs?: number;
 	/** Retry connection errors this many times. Default 1. */
 	maxRetries?: number;
-	/** Override fetch (used in tests). Default global `fetch`. */
-	fetchImpl?: typeof fetch;
+	/** Optional transport override; SDK proxy policy still applies per request. */
+	fetchImpl?: FetchImpl;
 }
 
 export class AuthBrokerError extends Error {
@@ -121,14 +124,14 @@ export class AuthBrokerClient {
 	readonly #token: string;
 	readonly #timeoutMs: number;
 	readonly #maxRetries: number;
-	readonly #fetch: typeof fetch;
+	readonly #fetch: FetchImpl;
 
 	constructor(opts: AuthBrokerClientOptions) {
 		this.#baseUrl = opts.url.replace(/\/+$/, "");
 		this.#token = opts.token;
 		this.#timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 		this.#maxRetries = opts.maxRetries ?? DEFAULT_MAX_RETRIES;
-		this.#fetch = opts.fetchImpl ?? fetch;
+		this.#fetch = wrapFetchForProxy(opts.fetchImpl ?? proxyFetch());
 	}
 
 	healthz(signal?: AbortSignal): Promise<HealthzResponse> {
@@ -328,9 +331,11 @@ export class AuthBrokerClient {
 		reason?: OAuthRefreshReason,
 	): Promise<CredentialRefreshResponse> {
 		const suffix = reason === "auth-recovery" ? "?reason=auth-recovery" : "";
-		return this.#request<CredentialRefreshResponse>("POST", `/v1/credential/${id}/refresh${suffix}`, {
+		const body: CredentialRefreshRequest = { proxyPolicy: getProxyPolicyController().getPolicy() };
+		return this.#request<CredentialRefreshResponse>("POST", `/v1/credential/${id}/refresh-with-proxy-policy${suffix}`, {
 			schema: "credentialRefreshResponseSchema",
 			signal,
+			body,
 		});
 	}
 

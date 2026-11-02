@@ -6,6 +6,7 @@
 import type { CompiledAuthProvider } from "@oh-my-pi/pi-catalog/compat/types";
 import { $pickenv } from "@oh-my-pi/pi-utils";
 import * as AIError from "../error";
+import { installProxyFetch, proxyFetch, withProxyProvider, wrapFetchForProxy } from "../utils/proxy";
 import { createApiKeyLogin } from "./engine/api-key";
 import { loadLoginHook } from "./engine/common";
 import { createDeviceCodeLogin } from "./engine/device-code";
@@ -68,7 +69,13 @@ export function buildProviderDefinition(
 		...(policy.storeAs !== undefined ? { storeCredentialsAs: policy.storeAs } : {}),
 		...(policy.callbackPort !== undefined ? { callbackPort: policy.callbackPort } : {}),
 		...(policy.pasteCode ? { pasteCodeFlow: true } : {}),
-		...(login ? { login } : {}),
-		...(refreshToken ? { refreshToken } : {}),
+		...(login ? { login: (ctrl: OAuthController) => {
+			installProxyFetch();
+			return withProxyProvider(policy.id, () => login({ ...ctrl, fetch: ctrl.fetch ? wrapFetchForProxy(ctrl.fetch, policy.id) : proxyFetch(policy.id) }));
+		} } : {}),
+		...(refreshToken ? { refreshToken: (...args: Parameters<typeof refreshToken>) => {
+			installProxyFetch();
+			return withProxyProvider(policy.id, () => refreshToken(...args));
+		} } : {}),
 	};
 }

@@ -1,6 +1,7 @@
 import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import * as AIError from "../../error";
 import type { OAuthController, OAuthCredentials } from "./types";
+import { proxyFetch, wrapFetchForProxy } from "../../utils/proxy";
 
 const KILO_DEVICE_AUTH_BASE_URL = "https://api.kilo.ai/api/device-auth";
 const POLL_INTERVAL_MS = 5000;
@@ -18,7 +19,7 @@ interface KiloDeviceAuthPollResponse {
 }
 
 export async function loginKilo(callbacks: OAuthController): Promise<OAuthCredentials> {
-	const fetchImpl = callbacks.fetch ?? fetch;
+	const fetchImpl = wrapFetchForProxy(callbacks.fetch ?? proxyFetch(), "kilo");
 	const initiateResponse = await fetchImpl(`${KILO_DEVICE_AUTH_BASE_URL}/codes`, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },

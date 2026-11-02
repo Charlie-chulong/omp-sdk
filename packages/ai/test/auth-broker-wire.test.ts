@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import * as net from "node:net";
 import { AuthStorage, REMOTE_REFRESH_SENTINEL, SqliteAuthCredentialStore } from "@oh-my-pi/pi-ai";
 import {
 	AUTH_BROKER_CAPABILITIES_HEADER,
@@ -16,6 +17,7 @@ import {
 	startAuthBroker,
 } from "@oh-my-pi/pi-ai/auth-broker";
 import * as oauthUtils from "@oh-my-pi/pi-ai/registry/oauth";
+import { ProxyPolicyController, proxyFetch, withProxyPolicy } from "@oh-my-pi/pi-ai/utils/proxy";
 import { logger } from "@oh-my-pi/pi-utils";
 import { removeWithRetries } from "../../utils/src/temp";
 
@@ -490,7 +492,7 @@ describe("auth-broker wire surface", () => {
 		).toBe(true);
 	});
 
-	test("POST /v1/credential/:id/refresh forces a refresh and persists the new credential", async () => {
+	test("POST /v1/credential/:id/refresh-with-proxy-policy refreshes and persists the credential", async () => {
 		const refreshed = {
 			access: "access-rotated",
 			refresh: "refresh-rotated",
@@ -516,6 +518,56 @@ describe("auth-broker wire surface", () => {
 		const persisted = store!.getOAuth("anthropic");
 		expect(persisted?.access).toBe("access-rotated");
 		expect(persisted?.refresh).toBe("refresh-rotated");
+	});
+
+	test("delegated refresh uses the client's policy on the broker's upstream connection", async () => {
+		const refreshed = { access: "proxied-access", refresh: "proxied-refresh", expires: Date.now() + 120_000 };
+		const payload = JSON.stringify(refreshed);
+		const sockets = new Set<net.Socket>();
+		let exchanges = 0;
+		const proxy = net.createServer(socket => {
+			sockets.add(socket);
+			socket.once("close", () => sockets.delete(socket));
+			let incoming = "";
+			socket.on("data", chunk => {
+				incoming += chunk.toString();
+				if (!incoming.includes("\r\n\r\n")) return;
+				if (incoming.startsWith("CONNECT ")) {
+					incoming = "";
+					socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+					return;
+				}
+				exchanges++;
+				socket.end(`HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: ${payload.length}\r\n\r\n${payload}`);
+			});
+		});
+		const listening = Promise.withResolvers<void>();
+		proxy.once("error", listening.reject);
+		proxy.listen(0, "127.0.0.1", listening.resolve);
+		await listening.promise;
+		const address = proxy.address();
+		if (!address || typeof address === "string") throw new Error("Expected proxy listener");
+		vi.spyOn(oauthUtils, "refreshOAuthToken").mockImplementation(async provider => {
+			const response = await proxyFetch(provider)("http://oauth-provider.invalid/token", { signal: AbortSignal.timeout(1_500) });
+			return response.json();
+		});
+		const client = new AuthBrokerClient({ url: handle!.url, token });
+		const snapshot = await client.fetchSnapshot();
+		if (snapshot.status !== 200) throw new Error("Expected snapshot");
+		const controller = new ProxyPolicyController({ enabled: true, providers: {
+			anthropic: { mode: "proxy", url: `http://127.0.0.1:${address.port}` },
+		} });
+		try {
+			const result = await withProxyPolicy(controller, () => client.refreshCredential(snapshot.snapshot.credentials[0].id));
+			expect(exchanges).toBe(1);
+			expect(result.entry.credential.type === "oauth" && result.entry.credential.access).toBe("proxied-access");
+			expect(store!.getOAuth("anthropic")?.refresh).toBe("proxied-refresh");
+		} finally {
+			for (const socket of sockets) socket.destroy();
+			const closed = Promise.withResolvers<void>();
+			proxy.close(error => error ? closed.reject(error) : closed.resolve());
+			await closed.promise;
+		}
 	});
 
 	test("POST /v1/credential/:id/disable soft-deletes the credential and surfaces 404 thereafter", async () => {

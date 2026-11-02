@@ -5,6 +5,7 @@ import { normalizeSnowflakeAccountUrl } from "../snowflake";
 import { OAuthCallbackFlow } from "./callback-server";
 import { generatePKCE } from "./pkce";
 import type { OAuthController, OAuthCredentials } from "./types";
+import { proxyFetch, wrapFetchForProxy } from "../../utils/proxy";
 
 const SNOWFLAKE_OAUTH_CLIENT_ID = "LOCAL_APPLICATION";
 
@@ -109,7 +110,7 @@ class SnowflakeOAuthFlow extends OAuthCallbackFlow {
 
 	async exchangeToken(code: string, _state: string, redirectUri: string): Promise<OAuthCredentials> {
 		const signal = this.ctrl.signal;
-		const fetchImpl = this.ctrl.fetch ?? fetch;
+		const fetchImpl = wrapFetchForProxy(this.ctrl.fetch ?? proxyFetch(), "snowflake");
 		let tokens: SnowflakeTokens;
 		try {
 			const response = await fetchImpl(`${this.#accountUrl}/oauth/token-request`, {
@@ -167,7 +168,7 @@ export async function refreshSnowflakeToken(
 			provider: "snowflake",
 		});
 	}
-	const response = await fetch(`${accountUrl}/oauth/token-request`, {
+	const response = await proxyFetch("snowflake")(`${accountUrl}/oauth/token-request`, {
 		method: "POST",
 		headers: { "Content-Type": "application/x-www-form-urlencoded" },
 		body: new URLSearchParams({

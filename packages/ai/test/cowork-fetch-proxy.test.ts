@@ -1,60 +1,47 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { describe, expect, it } from "bun:test";
+import * as net from "node:net";
 import { coworkFetch } from "@oh-my-pi/pi-ai/providers/cowork-fetch";
+import { ProxyPolicyController, withProxyPolicy } from "@oh-my-pi/pi-ai/utils/proxy";
 
-/**
- * `coworkFetch` runs on `node:https`, whose Bun shim ignores
- * `agent.createConnection` / `options.createConnection`. A CONNECT tunnel handed
- * to it is dropped and the request dials the provider directly, so a configured
- * proxy has to take the request off this transport entirely — otherwise every
- * `PI_PROXY` setting is a silent no-op for Anthropic inference.
- */
-describe("coworkFetch proxy handling", () => {
-	const nativeFetch = globalThis.fetch;
-	let calls: Array<{ url: string; proxy: unknown }>;
-
-	beforeEach(() => {
-		calls = [];
-		globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
-			calls.push({
-				url: input instanceof Request ? input.url : String(input),
-				proxy: (init as { proxy?: unknown } | undefined)?.proxy,
+/** A rejected real CONNECT proves the Cowork fallback uses the configured wire route. */
+describe("coworkFetch policy routing", () => {
+	it("routes HTTPS requests and Request inputs through the current Anthropic proxy", async () => {
+		const targets: string[] = [];
+		const sockets = new Set<net.Socket>();
+		const server = net.createServer(socket => {
+			sockets.add(socket);
+			socket.once("close", () => sockets.delete(socket));
+			socket.once("data", chunk => {
+				targets.push(chunk.toString().split("\r\n")[0]);
+				socket.end("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
 			});
-			return new Response("ok");
-		}) as typeof globalThis.fetch;
-	});
-
-	afterEach(() => {
-		globalThis.fetch = nativeFetch;
-	});
-
-	it("delegates a proxied request to the global fetch, proxy option intact", async () => {
-		const response = await coworkFetch("https://api.anthropic.com/v1/messages", {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: "{}",
-			proxy: "http://127.0.0.1:24560",
-		} as RequestInit);
-
-		expect(await response.text()).toBe("ok");
-		expect(calls).toHaveLength(1);
-		expect(calls[0].url).toBe("https://api.anthropic.com/v1/messages");
-		expect(calls[0].proxy).toBe("http://127.0.0.1:24560");
-	});
-
-	it("delegates Request-object input to the global fetch", async () => {
-		await coworkFetch(new Request("https://api.anthropic.com/v1/messages"));
-		expect(calls).toHaveLength(1);
-	});
-
-	it("delegates non-https targets to the global fetch", async () => {
-		await coworkFetch("http://api.anthropic.com/v1/messages", { headers: { accept: "*/*" } });
-		expect(calls).toHaveLength(1);
-	});
-
-	it("keeps unproxied https requests on the cowork transport", async () => {
-		// Unreachable loopback port: reaching the node:https path fails to connect
-		// instead of delegating, which is what proves the request stayed here.
-		await expect(coworkFetch("https://127.0.0.1:1/v1/messages", { headers: { accept: "*/*" } })).rejects.toThrow();
-		expect(calls).toHaveLength(0);
+		});
+		const listening = Promise.withResolvers<void>();
+		server.once("error", listening.reject);
+		server.listen(0, "127.0.0.1", listening.resolve);
+		await listening.promise;
+		const address = server.address();
+		if (!address || typeof address === "string") throw new Error("Expected TCP listener");
+		const controller = new ProxyPolicyController({ enabled: true, providers: {
+			anthropic: { mode: "proxy", url: `http://127.0.0.1:${address.port}` },
+		} });
+		try {
+			await withProxyPolicy(controller, async () => {
+				await coworkFetch("https://provider.invalid/v1/messages", {
+					method: "POST", headers: { "content-type": "application/json" }, body: "{}", signal: AbortSignal.timeout(1_500),
+				}).catch(() => undefined);
+				await coworkFetch(new Request("https://provider.invalid/v1/messages", { signal: AbortSignal.timeout(1_500) })).catch(() => undefined);
+				controller.setPolicy({ ...controller.getPolicy(), enabled: false });
+				await expect(coworkFetch("https://provider.invalid/v1/messages", {
+					headers: { accept: "*/*" }, signal: AbortSignal.timeout(1_500),
+				})).rejects.toThrow();
+			});
+			expect(targets).toEqual(["CONNECT provider.invalid:443 HTTP/1.1", "CONNECT provider.invalid:443 HTTP/1.1"]);
+		} finally {
+			for (const socket of sockets) socket.destroy();
+			const closed = Promise.withResolvers<void>();
+			server.close(error => error ? closed.reject(error) : closed.resolve());
+			await closed.promise;
+		}
 	});
 });

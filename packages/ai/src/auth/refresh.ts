@@ -5,6 +5,7 @@ import * as AIError from "../error";
 import { getOAuthProvider, normalizeOAuthCredentialExpiry, refreshOAuthToken } from "../registry/oauth";
 import type { OAuthCredentials, OAuthProvider } from "../registry/oauth/types";
 import type { Provider } from "../types";
+import { installProxyFetch, withProxyProvider } from "../utils/proxy";
 import { raceSignal } from "./abort";
 import { authCredentialEquals, type CredentialPool, credentialDisabledEvent } from "./pool";
 import { resolveCredentialIdentityKey, serializeCredential } from "./sqlite-credential-store";
@@ -1039,7 +1040,8 @@ export class OAuthRefresher {
 						provider,
 					});
 				}
-				refreshPromise = customProvider.refreshToken(credential, signal);
+				installProxyFetch();
+				refreshPromise = withProxyProvider(provider, () => customProvider.refreshToken!(credential, signal));
 			} else {
 				refreshPromise = refreshOAuthToken(provider as OAuthProvider, credential, signal);
 			}

@@ -1,3 +1,4 @@
+import { transportFetch } from "../utils/transport-fetch";
 import { type Api, type Model, modelKind } from "@oh-my-pi/pi-catalog/types";
 import {
 	applyCodexResidencyHeader,
@@ -200,7 +201,7 @@ export async function generateHostedImage(
 		store: false,
 		...(stream ? { instructions: IMAGE_SYSTEM_INSTRUCTION, stream: true } : {}),
 	};
-	const fetchImpl = options.fetch ?? fetch;
+	const fetchImpl = transportFetch(model, options.fetch);
 	return withAuth(
 		options.apiKey,
 		async key => {

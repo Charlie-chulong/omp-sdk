@@ -3,13 +3,13 @@ import { resolveExtraCa, withExtraCaInit } from "@oh-my-pi/pi-utils";
 import { coworkFetch } from "../providers/cowork-fetch";
 import { withInferenceUserAgent } from "../providers/inference-headers";
 import type { Api, FetchImpl, Model } from "../types";
-import { getProxyForProvider, withProxyInit } from "./proxy";
+import { wrapFetchForProxy } from "./proxy";
 import { createFetchRequestDebugSession, isRequestDebugEnabled } from "./request-debug";
 
 /** Stamped on a fetch already built by {@link transportFetch}. */
 const TRANSPORT_FETCH = Symbol("omp.transportFetch");
 
-type TransportFetch = FetchImpl & { [TRANSPORT_FETCH]?: true };
+type TransportFetch = FetchImpl & { [TRANSPORT_FETCH]?: { model: Model<Api>; source?: FetchImpl } };
 
 /**
  * The one fetch every inference request goes through. Per call it applies, in
@@ -25,11 +25,12 @@ type TransportFetch = FetchImpl & { [TRANSPORT_FETCH]?: true };
  */
 export function transportFetch(model: Model<Api>, fetchImpl: FetchImpl | undefined): FetchImpl {
 	const given = fetchImpl as TransportFetch | undefined;
-	if (given?.[TRANSPORT_FETCH]) return given;
-	const base = portableFetch(
-		given ?? (model.provider === "anthropic" && model.api === "anthropic-messages" ? coworkFetch : globalThis.fetch),
-	);
-	const proxyUrl = getProxyForProvider(model.provider);
+	const previous = given?.[TRANSPORT_FETCH];
+	if (previous?.model === model) return given!;
+	const source = previous ? previous.source : given;
+	const base = wrapFetchForProxy(portableFetch(
+		source ?? (model.provider === "anthropic" && model.api === "anthropic-messages" ? coworkFetch : globalThis.fetch),
+	), model.provider);
 
 	const fetch: TransportFetch = async (input, init) => {
 		if ((init?.method ?? (input instanceof Request ? input.method : "GET")) === "POST") {
@@ -38,13 +39,12 @@ export function transportFetch(model: Model<Api>, fetchImpl: FetchImpl | undefin
 		init = withInferenceUserAgent(input, init);
 		const extraCa = resolveExtraCa();
 		if (extraCa) init = withExtraCaInit(init, extraCa);
-		if (proxyUrl) init = withProxyInit(input, init, proxyUrl);
 		if (!isRequestDebugEnabled()) return base(input, init);
 		const session = await createFetchRequestDebugSession(input, init);
 		return session.wrapResponse(await base(input, init));
 	};
 	if (base.preconnect) fetch.preconnect = base.preconnect;
-	fetch[TRANSPORT_FETCH] = true;
+	fetch[TRANSPORT_FETCH] = { model, source };
 	return fetch;
 }
 

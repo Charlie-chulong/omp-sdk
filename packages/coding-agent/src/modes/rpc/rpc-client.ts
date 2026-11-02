@@ -8,6 +8,7 @@ import { isPromise } from "node:util/types";
 import type { AgentEvent, AgentMessage, AgentToolResult, ThinkingLevel } from "@oh-my-pi/pi-agent-core";
 import type { CompactionResult } from "@oh-my-pi/pi-agent-core/compaction";
 import type { ImageContent, Model } from "@oh-my-pi/pi-ai";
+import type { ProxyPolicy } from "@oh-my-pi/pi-ai/utils/proxy";
 import { isRecord, ptree, readJsonl } from "@oh-my-pi/pi-utils";
 import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { LogoutAccount } from "@oh-my-pi/pi-tui/overlays/logout-account-selector";
@@ -1011,6 +1012,11 @@ export class RpcClient {
 	async setModel(provider: string, modelId: string): Promise<{ provider: string; id: string }> {
 		const response = await this.#send({ type: "set_model", provider, modelId });
 		return this.#getData(response);
+	}
+
+	async setProxyPolicy(policy: ProxyPolicy): Promise<ProxyPolicy> {
+		const response = await this.#send({ type: "set_proxy_policy", policy });
+		return this.#getData<{ policy: ProxyPolicy }>(response).policy;
 	}
 
 	/**

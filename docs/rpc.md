@@ -168,6 +168,7 @@ Important edge behavior from runtime:
 - `{ id?, type: "set_model", provider: string, modelId: string }`
 - `{ id?, type: "cycle_model" }`
 - `{ id?, type: "get_available_models" }`
+- `{ id?, type: "set_proxy_policy", policy: ProxyPolicy }`
 
 `get_available_models` waits for background model discovery before returning. `set_model` also waits when the requested model is not already in the available catalog; it returns the selected `Model` or a `Model not found: <provider>/<modelId>` failure.
 
@@ -659,6 +660,24 @@ another provider's persisted setting. A non-boolean `enabled` is rejected with
 `"set_slow_mode requires boolean enabled"`. A change made mid-run applies from
 the next request (stopping an active Claude low-priority window takes effect
 immediately); no event announces it, so re-read `get_state`.
+
+### `set_proxy_policy` payload
+
+```json
+{
+	"id": "proxy",
+	"type": "set_proxy_policy",
+	"policy": {
+		"enabled": true,
+		"default": { "mode": "proxy", "url": "http://127.0.0.1:7890" },
+		"providers": { "openai-codex": { "mode": "direct" } }
+	}
+}
+```
+
+The response returns `data: { policy: ProxyPolicy }`. The complete policy is validated before replacing the session's live routing; invalid policies leave it unchanged. `enabled: false` forces direct routing without deleting configured addresses. Missing provider routes inherit the policy's default, and a missing default is direct.
+
+Changes affect subsequent requests without restarting or interrupting active responses. A pooled Codex WebSocket reconnects on its next response when its route changes. Proxy environment variables are ignored. Hosts persist and restore this session option themselves; see [SDK proxy routing](./sdk.md#proxy-routing) for network coverage and broker-upgrade requirements.
 
 ### `set_approval_mode` payload
 

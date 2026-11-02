@@ -89,6 +89,13 @@ import { resetOpenAICodexHistoryAfterCompaction } from "@oh-my-pi/pi-ai/provider
 import { withCredentialRedaction } from "@oh-my-pi/pi-ai/providers/transform-messages";
 import { markPerCallContextMessage } from "@oh-my-pi/pi-ai/utils/block-symbols";
 import { toolWireSchema } from "@oh-my-pi/pi-ai/utils/schema";
+import {
+	getScopedProxyPolicyController,
+	ProxyPolicyController,
+	type ProxyPolicy,
+	withProxyPolicy,
+	withProxyProvider,
+} from "@oh-my-pi/pi-ai/utils/proxy";
 import { resolveCatalogPolicy } from "@oh-my-pi/pi-catalog/compat/catalog-policy";
 import { supportsOutputTokenLimit } from "@oh-my-pi/pi-catalog/compat/output-limits";
 import { requiresNativeTools, requiresToolFreeHistoryForToolOptOut } from "@oh-my-pi/pi-catalog/compat/tools";
@@ -894,6 +901,7 @@ export class AgentSession implements SettingsScope {
 	readonly agent: Agent;
 	readonly sessionManager: SessionManager;
 	readonly settings: Settings;
+	readonly proxyController: ProxyPolicyController;
 	/** Session-start policy, independent of the selected project memory backend. */
 	readonly memoryEnabled: boolean;
 	#costGate: CostGate;
@@ -1947,6 +1955,7 @@ export class AgentSession implements SettingsScope {
 	readonly tokenRate: TokenRateMeter;
 
 	constructor(config: AgentSessionConfig) {
+		this.proxyController = config.proxyController ?? getScopedProxyPolicyController() ?? new ProxyPolicyController();
 		this.agent = config.agent;
 		this.tokenRate = new TokenRateMeter(text => this.agent.tokenizer.countTokens(text));
 		this.#reseedTokenRate();
@@ -3552,7 +3561,9 @@ export class AgentSession implements SettingsScope {
 
 	/** Run session work outside an agent run (prompt setup, manual maintenance) under the agent's log context. */
 	#inLogContext<T>(work: () => T): T {
-		return this.agent.logContext ? logger.withContext(this.agent.logContext, work) : work();
+		return withProxyPolicy(this.proxyController, () =>
+			this.agent.logContext ? logger.withContext(this.agent.logContext, work) : work(),
+		);
 	}
 
 	async #admitSubmission<T>(work: () => Promise<T>): Promise<T> {
@@ -6854,7 +6865,7 @@ export class AgentSession implements SettingsScope {
 	prewarmModelConnection(): void {
 		const model = this.model;
 		if (!model || this.#isDisposed || this.isStreaming) return;
-		void prewarmModelConnection(model);
+		void withProxyPolicy(this.proxyController, () => withProxyProvider(model.provider, () => prewarmModelConnection(model)));
 	}
 
 	get isAborting(): boolean {
@@ -11041,7 +11052,7 @@ export class AgentSession implements SettingsScope {
 		const combinedSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
 		return this.#trackOwnedSideRequest(
 			controller,
-			this.#generateTitle(firstMessage, customSystemPrompt, combinedSignal),
+			this.#inLogContext(() => this.#generateTitle(firstMessage, customSystemPrompt, combinedSignal)),
 		);
 	}
 
@@ -11715,7 +11726,7 @@ export class AgentSession implements SettingsScope {
 			persist?: boolean;
 		},
 	): Promise<{ switched: boolean }> {
-		return this.#models.setModel(model, role, options);
+		return this.#inLogContext(() => this.#models.setModel(model, role, options));
 	}
 
 	/** Selects a model for this session without updating persisted model settings. */
@@ -11724,12 +11735,12 @@ export class AgentSession implements SettingsScope {
 		thinkingLevel?: ConfiguredThinkingLevel,
 		options?: { ephemeral?: boolean },
 	): Promise<void> {
-		return this.#models.setModelTemporary(model, thinkingLevel, options);
+		return this.#inLogContext(() => this.#models.setModelTemporary(model, thinkingLevel, options));
 	}
 
 	/** Cycles the scoped model set, or all available models when no scope exists. */
 	cycleModel(direction: "forward" | "backward" = "forward"): Promise<ModelCycleResult | undefined> {
-		return this.#models.cycleModel(direction);
+		return this.#inLogContext(() => this.#models.cycleModel(direction));
 	}
 
 	/** Resolves configured role models and the currently active role index. */
@@ -11763,6 +11774,15 @@ export class AgentSession implements SettingsScope {
 	/** Changes tool approval immediately without restarting work or persisting a default. */
 	setApprovalMode(mode: ApprovalMode): void {
 		cfgToolsApprovalMode.override(this.settings, mode);
+	}
+
+	/** Change provider routing for subsequent requests without interrupting active work. */
+	setProxyPolicy(policy: ProxyPolicy): void {
+		this.proxyController.setPolicy(policy);
+	}
+
+	getProxyPolicy(): ProxyPolicy {
+		return this.proxyController.getPolicy();
 	}
 
 	/** Selects the session thinking level and optionally persists it as the default. */
@@ -14330,7 +14350,7 @@ export class AgentSession implements SettingsScope {
 	async fetchUsageReports(signal?: AbortSignal): Promise<UsageReport[] | null> {
 		const authStorage = this.#modelRegistry.authStorage;
 		if (!authStorage.usage.reports) return null;
-		const reports = await authStorage.usage.reports({
+		const reports = await this.#inLogContext(() => authStorage.usage.reports!({
 			baseUrlResolver: provider => {
 				if (provider === "google-antigravity") {
 					const mode = cfgProvidersAntigravityEndpoint.get(this.settings);
@@ -14343,7 +14363,7 @@ export class AgentSession implements SettingsScope {
 				return this.#modelRegistry.getProviderBaseUrl?.(provider);
 			},
 			signal,
-		});
+		}));
 		// Every fresh usage snapshot doubles as the salvage-sweep heartbeat: the
 		// status line calls this every 5 minutes while the TUI is open.
 		if (reports) {
@@ -14405,11 +14425,11 @@ export class AgentSession implements SettingsScope {
 	 * credential. Never throws for business outcomes — inspect `code`.
 	 */
 	async redeemResetCredit(target: ResetCreditTarget, signal?: AbortSignal): Promise<ResetCreditRedeemOutcome> {
-		return this.#modelRegistry.authStorage.resets.redeem({
+		return this.#inLogContext(() => this.#modelRegistry.authStorage.resets.redeem({
 			target,
 			baseUrlResolver: provider => this.#modelRegistry.getProviderBaseUrl?.(provider),
 			signal,
-		});
+		}));
 	}
 
 	/**
@@ -14423,12 +14443,12 @@ export class AgentSession implements SettingsScope {
 			signal,
 		};
 		if (provider) {
-			return this.#modelRegistry.authStorage.resets.list({ ...options, provider });
+			return this.#inLogContext(() => this.#modelRegistry.authStorage.resets.list({ ...options, provider }));
 		}
-		const [codex, claude] = await Promise.all([
+		const [codex, claude] = await this.#inLogContext(() => Promise.all([
 			this.#modelRegistry.authStorage.resets.list({ ...options, provider: "openai-codex" }),
 			this.#modelRegistry.authStorage.resets.list({ ...options, provider: "anthropic" }),
-		]);
+		]));
 		return [...codex, ...claude];
 	}
 	/**

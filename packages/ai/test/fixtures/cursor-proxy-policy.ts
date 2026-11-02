@@ -1,6 +1,7 @@
 import * as net from "node:net";
 import { streamCursor } from "@oh-my-pi/pi-ai/providers/cursor";
 import type { Context, Model } from "@oh-my-pi/pi-ai/types";
+import { ProxyPolicyController, setDefaultProxyPolicyController } from "@oh-my-pi/pi-ai/utils/proxy";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
 
 // Fake HTTP CONNECT proxy: record the CONNECT target of the first request, then
@@ -24,18 +25,10 @@ await proxyListening.promise;
 const proxyAddress = proxy.address();
 if (!proxyAddress || typeof proxyAddress === "string") throw new Error("proxy did not bind");
 
-// Only the standard HTTPS_PROXY var is set; the provider-specific override and
-// PI_PROXY are unset, so a fix that only reads PI_PROXY would connect direct and
-// never reach this proxy.
-delete Bun.env.PI_PROXY;
-delete Bun.env.PI_PROXY_CURSOR;
-delete Bun.env.HTTP_PROXY;
-delete Bun.env.http_proxy;
-delete Bun.env.ALL_PROXY;
-delete Bun.env.all_proxy;
-delete Bun.env.NO_PROXY;
-delete Bun.env.no_proxy;
-Bun.env.HTTPS_PROXY = `http://127.0.0.1:${proxyAddress.port}`;
+setDefaultProxyPolicyController(new ProxyPolicyController({
+	enabled: true,
+	providers: { cursor: { mode: "proxy", url: `http://127.0.0.1:${proxyAddress.port}` } },
+}));
 
 // TEST-NET-2 (RFC 5737) target: not local/metadata, so the proxy is not bypassed,
 // and unroutable so nothing actually connects past the proxy.

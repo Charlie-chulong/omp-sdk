@@ -14,6 +14,7 @@ import { isXiaomiTokenPlanKey } from "@oh-my-pi/pi-catalog/wire/xiaomi-token-pla
 import * as AIError from "../../error";
 import type { FetchImpl } from "../../types";
 import type { OAuthController } from "./types";
+import { proxyFetch, wrapFetchForProxy } from "../../utils/proxy";
 
 const PROVIDER_ID = "xiaomi";
 const PROVIDER_NAME = "Xiaomi MiMo";
@@ -22,7 +23,7 @@ const STANDARD_API_BASE_URL = "https://api.xiaomimimo.com/v1";
 const VALIDATION_TIMEOUT_MS = 15_000;
 
 async function validateXiaomiApiKey(apiKey: string, signal?: AbortSignal, fetchOverride?: FetchImpl): Promise<void> {
-	const fetchImpl = fetchOverride ?? fetch;
+	const fetchImpl = wrapFetchForProxy(fetchOverride ?? proxyFetch(), PROVIDER_ID);
 	// Generic Xiaomi login keeps the historical SGP → AMS → CN fallback.
 	const endpoints = isXiaomiTokenPlanKey(apiKey)
 		? ["xiaomi-token-plan-sgp", "xiaomi-token-plan-ams", "xiaomi-token-plan-cn"].map(provider => {
@@ -108,7 +109,7 @@ async function validateXiaomiApiKey(apiKey: string, signal?: AbortSignal, fetchO
  * Returns the API key directly (not OAuthCredentials - this isn't OAuth).
  */
 export async function loginXiaomi(options: OAuthController): Promise<string> {
-	const fetchImpl = options.fetch ?? fetch;
+	const fetchImpl = wrapFetchForProxy(options.fetch ?? proxyFetch(), PROVIDER_ID);
 	if (!options.onPrompt) {
 		throw new AIError.OnPromptRequiredError(PROVIDER_NAME);
 	}

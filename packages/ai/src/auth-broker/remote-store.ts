@@ -27,6 +27,7 @@ import type { OAuthCredentials } from "../registry/oauth/types";
 import type { Provider } from "../types";
 import type { ClientUsageIdentity, ObservedUsageEntry, UsageReport } from "../usage";
 import { raceSignal } from "../auth/abort";
+import { withProxyProvider } from "../utils/proxy";
 import { type AuthBrokerClient, AuthBrokerError, AuthBrokerStreamUnsupportedError } from "./client";
 import { compareCredentialBlockSnapshots } from "./protocol";
 import type {
@@ -1298,14 +1299,14 @@ export class RemoteAuthCredentialStore implements AuthCredentialStore {
 	 * the `refresh` slot.
 	 */
 	async refreshOAuthCredential(
-		_provider: Provider,
+		provider: Provider,
 		credentialId: number,
 		_credential: OAuthCredential,
 		signal?: AbortSignal,
 		reason?: OAuthRefreshReason,
 	): Promise<OAuthCredentials> {
 		this.#noteActivity();
-		const refreshed = await this.#refreshThroughBroker(credentialId, signal, reason);
+		const refreshed = await withProxyProvider(provider, () => this.#refreshThroughBroker(credentialId, signal, reason));
 		if (!this.#streamingActive) {
 			await this.refreshSnapshot().catch(error => {
 				logger.debug("auth-broker snapshot refresh after credential refresh failed", { error: String(error) });

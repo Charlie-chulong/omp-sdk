@@ -1,3 +1,4 @@
+import { transportFetch } from "../utils/transport-fetch";
 import type { Model } from "@oh-my-pi/pi-catalog/types";
 import { withAuth } from "../auth-retry";
 import * as AIError from "../error";
@@ -62,7 +63,7 @@ export async function generateGoogleImage(
 		request.aspectRatio || request.imageSize
 			? { aspectRatio: request.aspectRatio, imageSize: request.imageSize }
 			: undefined;
-	const fetchImpl = options.fetch ?? fetch;
+	const fetchImpl = transportFetch(model, options.fetch);
 	const body = {
 		contents: geminiImageContents(request),
 		generationConfig: {

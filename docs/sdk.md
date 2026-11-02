@@ -228,6 +228,34 @@ For multiple concurrent top-level sessions in one process, pass a private
 `AgentRegistry` to each session. The default process-global registry admits
 only one `"Main"` identity per generation.
 
+## Proxy routing
+
+Pass an explicit policy when constructing a session, then replace it through the live session API:
+
+```ts
+const { session } = await createAgentSession({
+	proxyPolicy: {
+		enabled: true,
+		default: { mode: "proxy", url: "http://127.0.0.1:7890" },
+		providers: {
+			anthropic: { mode: "proxy", url: "http://127.0.0.1:7891" },
+			"openai-codex": { mode: "direct" },
+		},
+		noProxy: [".internal.example"],
+	},
+});
+
+session.setProxyPolicy({ ...session.getProxyPolicy(), enabled: false });
+```
+
+`setProxyPolicy` validates and replaces the whole policy. Provider IDs are exact, not normalized environment-key names. Missing provider routes use `default`; a missing default or `enabled: false` means direct. HTTP(S) URLs must have no path, query, or fragment. Unsupported proxies fail before changing the active policy.
+
+Independent sessions have independent controllers. Nested task/eval sessions inherit their conversation's live controller. Changes take effect on subsequent HTTP requests and WebSocket responses without interrupting active work or restarting a process. The SDK does not persist this embedding option in JSONL: restore the policy from the embedding application's conversation configuration. Desktop persists that configuration and supports host inheritance.
+
+Provider-scoped OAuth, usage, discovery, model/media/judgment calls, and remote compaction follow the same routing. Ordinary tool/MCP fetches, private/metadata destinations, and `noProxy` matches stay direct. Proxy environment variables no longer choose OMP routes. RPC hosts expose the same operation as `{ "type": "set_proxy_policy", "policy": { "enabled": false } }`; `RpcClient.setProxyPolicy(policy)` returns the accepted policy.
+
+Broker refresh uses `POST /v1/credential/:id/refresh-with-proxy-policy` with the effective policy. Upgrade broker and clients together; the old refresh endpoint is removed. A proxy used by delegated refresh must be reachable from the broker host, not only from the desktop.
+
 ## Session manager behavior (persistent vs in-memory)
 
 `AgentSession` always uses a `SessionManager`; behavior depends on which factory you use.

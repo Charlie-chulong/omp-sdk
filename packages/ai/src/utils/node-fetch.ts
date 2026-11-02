@@ -1,5 +1,5 @@
 import { resolveExtraCa, withExtraCaInit } from "@oh-my-pi/pi-utils/tls-fetch";
-import { Agent, ProxyAgent, fetch as undiciFetch, type Dispatcher } from "undici";
+import { Agent, ProxyAgent, fetch as undiciFetch, type Dispatcher } from "undici/index.js";
 import type { ConnectionOptions } from "node:tls";
 import type { FetchImpl } from "../types";
 import { getProxyForUrl } from "./proxy";
@@ -17,15 +17,17 @@ type ExtendedInit = RequestInit & {
 
 /** Translate Bun's wire-affecting fetch extensions into real undici dispatchers. */
 export function portableFetch(base: FetchImpl = nativeFetch): FetchImpl {
-	if (host.Bun || (base !== nativeFetch && base !== globalThis.fetch)) return base;
+	if (base !== nativeFetch) return base;
 	return async (input, init) => {
 		const extraCa = resolveExtraCa();
 		const options = (extraCa ? withExtraCaInit(init, extraCa) : init) as ExtendedInit | undefined;
 		const url = new URL(input instanceof Request ? input.url : input.toString());
-		const proxy = options?.proxy ?? getProxyForUrl("", url);
+		const proxy = options?.unix ? "" : options?.proxy ?? getProxyForUrl(undefined, url) ?? "";
+		// Bun treats an empty proxy as ambient routing; direct requests need an explicit dispatcher.
+		if (host.Bun && (proxy || options?.unix)) return base(input, { ...options, proxy } as RequestInit);
 		const tls = options?.tls;
 		const key = JSON.stringify([proxy, tls, options?.unix, options?.timeout]);
-		let dispatcher = options?.dispatcher ?? dispatchers.get(key);
+		let dispatcher = dispatchers.get(key);
 		if (!dispatcher) {
 			const connect = {
 				...tls,

@@ -19,6 +19,7 @@ import type {
 	SimpleStreamOptions,
 	ToolChoice,
 } from "@oh-my-pi/pi-ai";
+import type { ProxyPolicyController } from "@oh-my-pi/pi-ai/utils/proxy";
 import type { postmortem } from "@oh-my-pi/pi-utils";
 import type { AdvisorConfig } from "@oh-my-pi/pi-tui/overlays/advisor-config";
 import type { AsyncJob, AsyncJobDeliveryState, AsyncJobManager } from "../async";
@@ -170,6 +171,7 @@ export interface AgentSessionConfig {
 	agent: Agent;
 	sessionManager: SessionManager;
 	settings: Settings;
+	proxyController?: ProxyPolicyController;
 	/**
 	 * Live extension-root policy inherited from the owning session. Subagents use
 	 * this provider so explicit roots, discovery mode, configured roots, and

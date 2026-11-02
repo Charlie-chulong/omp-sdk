@@ -2550,6 +2550,11 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 			// Model
 			// =================================================================
 
+			case "set_proxy_policy": {
+				session.setProxyPolicy(command.policy);
+				return success(id, "set_proxy_policy", { policy: session.getProxyPolicy() });
+			}
+
 			case "set_model": {
 				const model = await findRpcModel(session, command.provider, command.modelId);
 				if (!model) {

@@ -50,6 +50,8 @@ import {
 	truncateResponseItemId,
 } from "@oh-my-pi/pi-ai/utils";
 import { captureOpenAIHttpError } from "@oh-my-pi/pi-ai/utils/openai-http";
+import { proxyFetch, wrapFetchForProxy } from "@oh-my-pi/pi-ai/utils/proxy";
+import { transportFetch } from "@oh-my-pi/pi-ai/utils/transport-fetch";
 import { isBedrockOpenAIUrl } from "@oh-my-pi/pi-catalog/hosts";
 import {
 	applyCodexResidencyHeader,
@@ -876,7 +878,7 @@ export async function requestOpenAiRemoteCompaction(
 		rewriteOutputs?: boolean;
 	},
 ): Promise<OpenAiRemoteCompactionResponse> {
-	let fetchImpl: FetchImpl = opts?.fetch ?? fetch;
+	let fetchImpl: FetchImpl = transportFetch(model, opts?.fetch);
 	if (isBedrockOpenAIUrl(model.baseUrl)) {
 		({ model, apiKey, fetch: fetchImpl } = await prepareBedrockCompactionRequest(model, apiKey, opts?.fetch, signal));
 	}
@@ -1092,7 +1094,8 @@ export async function requestRemoteCompaction(
 			}
 		: { systemPrompt: request.systemPrompt, prompt: request.prompt, maxTokens: request.maxTokens };
 
-	const response = await (opts?.fetch ?? fetch)(endpoint, {
+	const fetchImpl = opts?.model ? transportFetch(opts.model, opts.fetch) : wrapFetchForProxy(opts?.fetch ?? proxyFetch());
+	const response = await fetchImpl(endpoint, {
 		method: "POST",
 		headers,
 		body: stringifyJson(body),

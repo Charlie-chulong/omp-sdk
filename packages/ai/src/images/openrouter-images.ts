@@ -1,3 +1,4 @@
+import { transportFetch } from "../utils/transport-fetch";
 import type { Model } from "@oh-my-pi/pi-catalog/types";
 import { decodeImageResponse, imageBaseUrl, postJson, toDataUrl } from "./shared";
 import type { ImageGenerationOptions, ImageGenerationRequest, ImageGenerationResult } from "./types";
@@ -7,7 +8,7 @@ export async function generateOpenRouterImage(
 	request: ImageGenerationRequest,
 	options: ImageGenerationOptions,
 ): Promise<ImageGenerationResult> {
-	const fetchImpl = options.fetch ?? fetch;
+	const fetchImpl = transportFetch(model, options.fetch);
 	const inputReferences = (request.inputImages ?? []).map(image => ({
 		type: "image_url",
 		image_url: { url: toDataUrl(image) },

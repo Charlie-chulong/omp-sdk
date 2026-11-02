@@ -23,16 +23,17 @@ export interface ModelWebSocketOptions {
 	headers?: Record<string, string>;
 	proxy?: string;
 	tls?: ConnectionOptions;
+	provider?: string;
 }
 
 const host = globalThis as unknown as { Bun?: unknown };
 export function createModelWebSocket(url: string, options: ModelWebSocketOptions = {}): ModelWebSocket {
+	const proxy = options.proxy ?? getProxyForUrl(options.provider, new URL(url)) ?? "";
 	if (host.Bun) {
 		// Native Bun and ws share this transport surface, despite different declarations.
 		const NativeSocket = WebSocket as unknown as new (url: string, options: ModelWebSocketOptions) => ModelWebSocket;
-		return new NativeSocket(url, options);
+		return new NativeSocket(url, { ...options, proxy });
 	}
-	const proxy = options.proxy ?? getProxyForUrl("", new URL(url));
 	const extraCa = resolveExtraCa();
 	const tlsOptions = { ...options.tls, ...(extraCa ? { ca: [...rootCertificates, extraCa] } : {}) };
 	const socket = new Ws(url, {

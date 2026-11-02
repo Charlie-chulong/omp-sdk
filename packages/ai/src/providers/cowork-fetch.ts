@@ -5,6 +5,8 @@ import * as tls from "node:tls";
 import * as zlib from "node:zlib";
 import * as logger from "@oh-my-pi/pi-utils/logger";
 import type { FetchImpl } from "../types";
+import { portableFetch } from "../utils/node-fetch";
+import { getProxyForProvider, withProxyInit } from "../utils/proxy";
 
 /** `host/path` for logging; query strings can carry keys. */
 function logTarget(input: string | URL | Request): string {
@@ -44,8 +46,7 @@ type RequestBody = string | Uint8Array;
 
 const directAgent = new https.Agent({ keepAlive: true });
 
-/** Resolved at call time, so a proxy wrapper installed after this module loads is honored. */
-const fallbackFetch: FetchImpl = (input, init) => globalThis.fetch(input, init as RequestInit);
+const fallbackFetch = portableFetch();
 
 function isHeaderRecord(headers: RequestInit["headers"]): headers is Record<string, string> {
 	return headers !== undefined && !(headers instanceof Headers) && !Array.isArray(headers);
@@ -252,32 +253,21 @@ async function sendCoworkRequest(
 /**
  * Sends Cowork-profiled HTTPS requests with stable header order, HTTP/1.1, and streaming decompression.
  *
- * Proxied requests deliberately leave this transport. It runs on `node:https`,
- * and Bun's shim ignores both `agent.createConnection` and
- * `options.createConnection`: a CONNECT tunnel handed to it is silently
- * discarded and the request dials the provider directly. That turned every
- * `PI_PROXY` / `HTTPS_PROXY` setting into a no-op for Anthropic inference —
- * the proxy looked configured, the traffic left on the default route, and a
- * region-blocked egress answered `403 Request not allowed`. Bun's own `fetch`
- * honors `init.proxy`, so a configured proxy wins over the Cowork profile.
+ * Proxied requests leave node:https because Bun discards custom CONNECT sockets.
+ * The portable fallback translates proxy options into an undici dispatcher on Node.
  */
 export const coworkFetch: FetchImpl = async (input, init) => {
+	init = withProxyInit(input, init, getProxyForProvider("anthropic"));
 	if (
-		init === undefined ||
 		input instanceof Request ||
 		!isHeaderRecord(init.headers) ||
 		("proxy" in init && Boolean(init.proxy))
 	) {
 		// Reason is logged because the switch changes both the TLS fingerprint and
 		// who applies the proxy.
-		const reason =
-			init === undefined
-				? "no-init"
-				: input instanceof Request
-					? "request-object-input"
-					: !isHeaderRecord(init.headers)
-						? "headers-not-record"
-						: "proxy-configured";
+		const reason = input instanceof Request
+			? "request-object-input"
+			: !isHeaderRecord(init.headers) ? "headers-not-record" : "proxy-configured";
 		logger.debug("cowork transport bypassed", { url: logTarget(input), reason, proxy: initProxy(init) });
 		return fallbackFetch(input, init);
 	}

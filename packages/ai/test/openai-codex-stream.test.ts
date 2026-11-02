@@ -25,7 +25,7 @@ import type {
 	ModelSpec,
 	ProviderSessionState,
 } from "@oh-my-pi/pi-ai/types";
-import { __resetProxyCache } from "@oh-my-pi/pi-ai/utils/proxy";
+import { getProxyPolicyController, ProxyPolicyController, setDefaultProxyPolicyController, withProxyPolicy } from "@oh-my-pi/pi-ai/utils/proxy";
 import { extractProviderRetryHint } from "@oh-my-pi/pi-ai/utils/retry-after";
 import { validateToolArguments } from "@oh-my-pi/pi-ai/utils/validation";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
@@ -38,8 +38,6 @@ const { getAgentDir, setAgentDir, TempDir } = piUtils;
 const originalAgentDir = getAgentDir();
 const originalWebSocket = global.WebSocket;
 const originalProxyEnv: Record<string, string | undefined> = {
-	PI_PROXY: Bun.env.PI_PROXY,
-	PI_PROXY_CODEX_PROXY_TEST: Bun.env.PI_PROXY_CODEX_PROXY_TEST,
 	HTTPS_PROXY: Bun.env.HTTPS_PROXY,
 	https_proxy: Bun.env.https_proxy,
 	ALL_PROXY: Bun.env.ALL_PROXY,
@@ -48,6 +46,7 @@ const originalProxyEnv: Record<string, string | undefined> = {
 	no_proxy: Bun.env.no_proxy,
 };
 const TEST_INSTALLATION_ID = "00000000-0000-4000-8000-000000000001";
+let previousProxyController: ProxyPolicyController;
 
 function restoreEnv(name: string, value: string | undefined): void {
 	if (value === undefined) {
@@ -59,7 +58,8 @@ function restoreEnv(name: string, value: string | undefined): void {
 
 beforeEach(() => {
 	for (const key in originalProxyEnv) delete Bun.env[key];
-	__resetProxyCache();
+	previousProxyController = getProxyPolicyController();
+	setDefaultProxyPolicyController(new ProxyPolicyController());
 	vi.spyOn(piUtils, "getInstallId").mockReturnValue(TEST_INSTALLATION_ID);
 });
 
@@ -68,7 +68,7 @@ afterEach(() => {
 	setAgentDir(originalAgentDir);
 	vi.useRealTimers();
 	for (const key in originalProxyEnv) restoreEnv(key, originalProxyEnv[key]);
-	__resetProxyCache();
+	setDefaultProxyPolicyController(previousProxyController);
 	vi.restoreAllMocks();
 });
 
@@ -1977,102 +1977,68 @@ describe("openai-codex streaming", () => {
 		expect(Object.keys(capturedHeaders ?? {}).filter(key => key.toLowerCase() === "openai-beta")).toHaveLength(1);
 	});
 
-	it("passes the provider proxy to websocket handshakes", async () => {
-		const proxy = "socks5://127.0.0.1:7890";
-		Bun.env.PI_PROXY_CODEX_PROXY_TEST = proxy;
-		__resetProxyCache();
-		let capturedProxy: string | undefined;
-		class ProxyCaptureWebSocket extends MockWebSocket {
+	it("reconnects on A → B → direct while policy changes leave an active response intact", async () => {
+		const sockets: PolicySocket[] = [];
+		const started = Promise.withResolvers<void>();
+		class PolicySocket extends MockWebSocket {
 			constructor(url: string, options?: WsOptions) {
 				super(url, options);
-				capturedProxy = options?.proxy;
+				sockets.push(this);
 				this.scheduleOpen();
 			}
+			override send(_data: string): void {
+				if (sockets.length === 1) {
+					started.resolve();
+					return;
+				}
+				this.emitCodexResponse({ messageId: `msg_${sockets.length}`, responseId: `resp_${sockets.length}`, text: "next" });
+			}
 		}
-		global.WebSocket = ProxyCaptureWebSocket as unknown as typeof WebSocket;
-		const model = {
-			...createCodexTestModel("https://chatgpt.com/backend-api"),
-			provider: "codex-proxy-test",
-		};
+		global.WebSocket = PolicySocket as unknown as typeof WebSocket;
+		const model = { ...createCodexTestModel("https://chatgpt.com/backend-api"), provider: "codex-proxy-test" };
+		const controller = new ProxyPolicyController({ enabled: true, providers: {
+			"codex-proxy-test": { mode: "proxy", url: "http://127.0.0.1:7890/" },
+		} });
 		const providerSessionState = new Map<string, ProviderSessionState>();
-
+		const options = { apiKey: createCodexTestToken(), sessionId: "ws-policy-session", providerSessionState, preferWebsockets: true };
 		try {
-			await prewarmOpenAICodexResponses(model, {
-				apiKey: createCodexTestToken(),
-				sessionId: "ws-proxy-session",
-				providerSessionState,
-			});
-			expect(capturedProxy).toBe(proxy);
+			const first = withProxyPolicy(controller, () => streamOpenAICodexResponses(model, createCodexTestContext(), options).result());
+			await started.promise;
+			controller.setPolicy({ enabled: true, providers: { "codex-proxy-test": { mode: "proxy", url: "http://127.0.0.1:7891/" } } });
+			await withProxyPolicy(controller, () => prewarmOpenAICodexResponses(model, options));
+			expect(sockets).toHaveLength(1);
+			expect(sockets[0].readyState).toBe(MockWebSocket.OPEN);
+			sockets[0].emitCodexResponse({ messageId: "msg_1", responseId: "resp_1", text: "active response" });
+			expect((await first).stopReason).not.toBe("error");
+			expect((await withProxyPolicy(controller, () => streamOpenAICodexResponses(model, createCodexTestContext(), options).result())).stopReason).not.toBe("error");
+			expect(sockets[0].readyState).toBe(MockWebSocket.CLOSED);
+			controller.setPolicy({ ...controller.getPolicy(), enabled: false });
+			expect((await withProxyPolicy(controller, () => streamOpenAICodexResponses(model, createCodexTestContext(), options).result())).stopReason).not.toBe("error");
+			expect(sockets.map(socket => socket.options?.proxy)).toEqual(["http://127.0.0.1:7890/", "http://127.0.0.1:7891/", ""]);
 		} finally {
 			for (const state of providerSessionState.values()) state.close();
-			delete Bun.env.PI_PROXY_CODEX_PROXY_TEST;
 		}
 	});
 
-	it("falls back to standard proxy variables for websocket handshakes", async () => {
-		const cases: Array<{ env: string; proxy: string }> = [
-			{ env: "HTTPS_PROXY", proxy: "http://127.0.0.1:7890" },
-			{ env: "ALL_PROXY", proxy: "socks5://127.0.0.1:7891" },
-		];
-
-		for (const { env, proxy } of cases) {
-			delete Bun.env.HTTPS_PROXY;
-			delete Bun.env.ALL_PROXY;
-			Bun.env[env] = proxy;
-			let capturedProxy: string | undefined;
-			class StandardProxyWebSocket extends MockWebSocket {
-				constructor(url: string, options?: WsOptions) {
-					super(url, options);
-					capturedProxy = options?.proxy;
-					this.scheduleOpen();
-				}
-			}
-			global.WebSocket = StandardProxyWebSocket as unknown as typeof WebSocket;
-			const model = {
-				...createCodexTestModel("https://chatgpt.com/backend-api"),
-				provider: `codex-${env.toLowerCase()}-test`,
-			};
-			const providerSessionState = new Map<string, ProviderSessionState>();
-
-			try {
-				await prewarmOpenAICodexResponses(model, {
-					apiKey: createCodexTestToken(),
-					sessionId: `ws-${env.toLowerCase()}-proxy-session`,
-					providerSessionState,
-				});
-				expect(capturedProxy).toBe(proxy);
-			} finally {
-				for (const state of providerSessionState.values()) state.close();
-			}
-		}
-	});
-
-	it("bypasses configured proxies for NO_PROXY websocket targets", async () => {
-		Bun.env.PI_PROXY_CODEX_PROXY_TEST = "http://127.0.0.1:7890";
-		Bun.env.NO_PROXY = "chatgpt.com:443";
-		__resetProxyCache();
-		let capturedProxy: string | undefined;
-		class NoProxyWebSocket extends MockWebSocket {
+	it("keeps websocket handshakes direct for explicit policy bypass rules and ambient proxies", async () => {
+		const proxies: Array<string | undefined> = [];
+		class DirectPolicySocket extends MockWebSocket {
 			constructor(url: string, options?: WsOptions) {
 				super(url, options);
-				capturedProxy = options?.proxy;
+				proxies.push(options?.proxy);
 				this.scheduleOpen();
 			}
 		}
-		global.WebSocket = NoProxyWebSocket as unknown as typeof WebSocket;
-		const model = {
-			...createCodexTestModel("https://chatgpt.com/backend-api"),
-			provider: "codex-proxy-test",
-		};
+		global.WebSocket = DirectPolicySocket as unknown as typeof WebSocket;
+		Bun.env.HTTPS_PROXY = "http://127.0.0.1:7899/";
+		Bun.env.ALL_PROXY = "http://127.0.0.1:7899/";
+		const controller = new ProxyPolicyController({ enabled: true, default: { mode: "proxy", url: "http://127.0.0.1:7890/" }, noProxy: ["chatgpt.com:443"] });
 		const providerSessionState = new Map<string, ProviderSessionState>();
-
 		try {
-			await prewarmOpenAICodexResponses(model, {
-				apiKey: createCodexTestToken(),
-				sessionId: "ws-no-proxy-session",
-				providerSessionState,
-			});
-			expect(capturedProxy).toBeUndefined();
+			await withProxyPolicy(controller, () => prewarmOpenAICodexResponses(createCodexTestModel("https://chatgpt.com/backend-api"), {
+				apiKey: createCodexTestToken(), sessionId: "ws-bypass-policy", providerSessionState,
+			}));
+			expect(proxies).toEqual([""]);
 		} finally {
 			for (const state of providerSessionState.values()) state.close();
 		}

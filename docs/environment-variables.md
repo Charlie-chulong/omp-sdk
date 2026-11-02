@@ -148,28 +148,13 @@ The gateway has no dedicated env vars — it inherits `OMP_AUTH_BROKER_*`. Its o
 
 ### Outbound proxy routing
 
-Provider HTTP fetches resolve proxies in this order after applying `NO_PROXY` / `no_proxy`:
+Outbound provider routing uses an explicit `ProxyPolicy`, not environment variables. Pass `proxyPolicy` to `createAgentSession()`, then call `session.setProxyPolicy(policy)` or RPC `set_proxy_policy` to update subsequent requests without restarting. See [SDK proxy routing](./sdk.md#proxy-routing).
 
-1. `PI_PROXY_<PROVIDER>` (provider ID uppercased, non-alphanumerics replaced with `_`, for example `PI_PROXY_GITHUB_COPILOT`)
-2. `PI_PROXY`
-3. `HTTPS_PROXY` / `https_proxy` for HTTPS and WebSocket targets, or `HTTP_PROXY` / `http_proxy` for HTTP
-4. `ALL_PROXY` / `all_proxy`
+`PI_PROXY`, `PI_PROXY_<PROVIDER>`, `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`, and their lowercase forms do not select OMP provider routes. Configure exact provider IDs in `policy.providers`; missing provider routes use `policy.default`, and missing defaults connect directly. `enabled: false` forces direct routing while retaining addresses for re-enabling.
 
-Provider proxy lookups are cached for the process lifetime. Localhost targets bypass the provider fetch wrapper.
+Policies accept HTTP(S) proxy URLs and optional `noProxy` hostname/suffix/port rules (`*` bypasses all). Loopback, link-local, private-range, and metadata targets always bypass. Ordinary tool/MCP fetches stay direct; provider-scoped login, refresh, usage, discovery, model/media/judgment calls, remote compaction, and WebSockets use their provider route.
 
-Scope differs between the two `PI_PROXY` forms:
-
-- `PI_PROXY` is installed on the process-wide `fetch` at CLI startup, so it also
-  covers requests made outside the provider fetch wrapper — OAuth token refresh
-  and login, usage probes, model discovery. Without that, a region-blocked token
-  endpoint returns `403 Request not allowed` on refresh even though the stream
-  itself is proxied.
-- `PI_PROXY_<PROVIDER>` applies only to that provider's requests, and overrides
-  `PI_PROXY` for them. It does not cover the non-provider-scoped calls above; set
-  `PI_PROXY` too if the provider blocks your region.
-
-Loopback, link-local, private-range (`10/8`, `172.16/12`, `192.168/16`), and
-`NO_PROXY` targets always bypass, so local model servers and MCP hosts stay direct.
+Broker-delegated OAuth refresh forwards the policy to the updated broker refresh endpoint; that proxy must be reachable from the broker host. A remote broker cannot use a proxy bound only to the desktop's loopback interface.
 
 ### Request body compression
 

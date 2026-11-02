@@ -6,6 +6,7 @@
 import type { CompiledAuthProvider, CompiledCallback, CompiledOAuthCodeLogin } from "@oh-my-pi/pi-catalog/compat/types";
 import * as AIError from "../../error";
 import type { FetchImpl } from "../../types";
+import { proxyFetch, wrapFetchForProxy } from "../../utils/proxy";
 import { validateApiKeyAgainstModelsEndpoint } from "../api-key-validation";
 import { OAuthCallbackFlow, type OAuthCallbackFlowOptions } from "../oauth/callback-server";
 import { generatePKCE } from "../oauth/pkce";
@@ -106,7 +107,7 @@ export class DeclarativeOAuthCodeFlow extends OAuthCallbackFlow {
 		this.#rule = rule;
 		this.#provider = policy.id;
 		this.#label = policy.name;
-		this.#fetch = ctrl.fetch ?? fetch;
+		this.#fetch = wrapFetchForProxy(ctrl.fetch ?? proxyFetch(), policy.storeAs ?? policy.id);
 	}
 
 	override generateState(): string {

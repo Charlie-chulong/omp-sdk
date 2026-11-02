@@ -31,6 +31,15 @@ import { prewarmModelConnection } from "@oh-my-pi/pi-ai/providers/connection-pre
 import { isOpenAICodexWebSocketPreferred } from "@oh-my-pi/pi-ai/providers/openai-codex-transport";
 import { withCredentialRedaction } from "@oh-my-pi/pi-ai/providers/transform-messages";
 import { sendsImageInputOnWire } from "@oh-my-pi/pi-ai/providers/vision-guard";
+import {
+	getProxyPolicyController,
+	getScopedProxyPolicyController,
+	ProxyPolicyController,
+	type ProxyPolicy,
+	withProxyPolicy,
+	withProxyProvider,
+} from "@oh-my-pi/pi-ai/utils/proxy";
+export type { ProxyPolicy, ProxyRoute } from "@oh-my-pi/pi-ai/utils/proxy";
 import { FALLBACK_DIALECT, preferredDialect } from "@oh-my-pi/pi-catalog/identity";
 import type { Component } from "@oh-my-pi/pi-tui";
 import { $env } from "@oh-my-pi/pi-utils/env";
@@ -547,6 +556,10 @@ function applyMCPEnvironment(result: { exaApiKeys: string[] }): void {
 
 // Types
 export interface CreateAgentSessionOptions {
+	/** Explicit provider network routing; omitted routes connect directly. */
+	proxyPolicy?: ProxyPolicy;
+	/** Shared live routing for sessions spawned by the same conversation. @internal */
+	proxyController?: ProxyPolicyController;
 	/** Working directory for project-local discovery. Default: getProjectDir() */
 	cwd?: string;
 	/** Additional workspace directories beyond cwd (multi-root), absolute or cwd-relative. */
@@ -1771,12 +1784,19 @@ export function createAutoLearnCaptureRunner(
  * ```
  */
 export async function createAgentSession(options: CreateAgentSessionOptions = {}): Promise<CreateAgentSessionResult> {
-	registerLocalInferenceApi();
-	await loadRuntimeIdentity();
-	const extensionRoots = options.extensionRoots?.();
-	const explicit = extensionRoots?.explicit ?? options.additionalExtensionPaths ?? [];
-	const mode = extensionRoots?.mode ?? (options.disableExtensionDiscovery ? "explicit-only" : "merge");
-	return await withOmpExtensionRootScope(explicit, mode, () => createAgentSessionScoped(options));
+	const proxyController =
+		options.proxyController ??
+		(options.proxyPolicy
+			? new ProxyPolicyController(options.proxyPolicy)
+			: (getScopedProxyPolicyController() ?? new ProxyPolicyController()));
+	return withProxyPolicy(proxyController, async () => {
+		registerLocalInferenceApi();
+		await loadRuntimeIdentity();
+		const extensionRoots = options.extensionRoots?.();
+		const explicit = extensionRoots?.explicit ?? options.additionalExtensionPaths ?? [];
+		const mode = extensionRoots?.mode ?? (options.disableExtensionDiscovery ? "explicit-only" : "merge");
+		return await withOmpExtensionRootScope(explicit, mode, () => createAgentSessionScoped(options));
+	});
 }
 
 async function createAgentSessionScoped(options: CreateAgentSessionOptions): Promise<CreateAgentSessionResult> {
@@ -1785,6 +1805,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 	}
 	const cwd = options.cwd ?? getProjectDir();
 	const agentDir = options.agentDir ?? getAgentDir();
+	const proxyController = getProxyPolicyController();
 	const eventBus = options.eventBus ?? new EventBus();
 	const subagentEventBus = options.subagentEventBus ?? new EventBus();
 
@@ -4589,8 +4610,12 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		// request, not the process-wide switch (the newest effect holder's): concurrent ACP/SDK
 		// sessions in one process each keep their own policy.
 		const settingsAwareStreamFn: StreamFn = (streamModel, context, streamOptions) =>
-			withCredentialRedaction(cfgSecretsEnabled.get(settings), () =>
-				settingsBoundStreamFn(streamModel, context, streamOptions),
+			withProxyPolicy(proxyController, () =>
+				withProxyProvider(streamModel.provider, () =>
+					withCredentialRedaction(cfgSecretsEnabled.get(settings), () =>
+						settingsBoundStreamFn(streamModel, context, streamOptions),
+					),
+				),
 			);
 		// Primary-agent (and its auto-learn capture twin) provider options read per
 		// request, so `/settings` changes to budgets, Kimi format, or the Codex
@@ -4883,6 +4908,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		// block createAgentSession for tens of seconds while the whole file is
 		// streamed and parsed on the main thread.
 		session = new AgentSession({
+			proxyController,
 			cacheWarmer,
 			costGate: options.costGate,
 			advisorWatchdogPrompt,

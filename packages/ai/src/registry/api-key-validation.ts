@@ -1,6 +1,7 @@
 import { resolveAnthropicApiVersion } from "@oh-my-pi/pi-catalog/compat/anthropic";
 import { OpenAIHttpError, ProviderHttpError } from "../error/classes";
 import type { FetchImpl } from "../types";
+import { proxyFetch, wrapFetchForProxy } from "../utils/proxy";
 
 type OpenAICompatibleValidationOptions = {
 	provider: string;
@@ -88,7 +89,7 @@ async function createApiKeyValidationError(
 export async function validateOpenAICompatibleApiKey(options: OpenAICompatibleValidationOptions): Promise<void> {
 	const timeoutSignal = AbortSignal.timeout(VALIDATION_TIMEOUT_MS);
 	const signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
-	const fetchImpl = options.fetch ?? fetch;
+	const fetchImpl = wrapFetchForProxy(options.fetch ?? proxyFetch(), options.provider);
 
 	const response = await fetchImpl(`${options.baseUrl}/chat/completions`, {
 		method: "POST",
@@ -124,7 +125,7 @@ export async function validateAnthropicCompatibleApiKey(options: AnthropicCompat
 	const timeoutSignal = AbortSignal.timeout(VALIDATION_TIMEOUT_MS);
 	const signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
 	const baseUrl = normalizeAnthropicCompatibleBaseUrl(options.baseUrl);
-	const fetchImpl = options.fetch ?? fetch;
+	const fetchImpl = wrapFetchForProxy(options.fetch ?? proxyFetch(), options.provider);
 
 	const response = await fetchImpl(`${baseUrl}/v1/messages`, {
 		method: "POST",
@@ -157,7 +158,7 @@ export async function validateAnthropicCompatibleApiKey(options: AnthropicCompat
 export async function validateApiKeyAgainstModelsEndpoint(options: ModelListValidationOptions): Promise<void> {
 	const timeoutSignal = AbortSignal.timeout(VALIDATION_TIMEOUT_MS);
 	const signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
-	const fetchImpl = options.fetch ?? fetch;
+	const fetchImpl = wrapFetchForProxy(options.fetch ?? proxyFetch(), options.provider);
 
 	const response = await fetchImpl(options.modelsUrl, {
 		method: "GET",

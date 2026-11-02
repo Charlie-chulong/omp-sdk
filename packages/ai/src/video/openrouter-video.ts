@@ -1,3 +1,4 @@
+import { transportFetch } from "../utils/transport-fetch";
 import type { Api, FetchImpl, Model, Usage } from "@oh-my-pi/pi-catalog/types";
 import { type } from "@oh-my-pi/omptype";
 import { type ApiKey, withAuth } from "../auth-retry";
@@ -147,7 +148,7 @@ async function authenticatedFetch(
 	options: VideoOptions,
 	init?: Omit<RequestInit, "signal">,
 ): Promise<Response> {
-	const fetchImpl = options.fetch ?? fetch;
+	const fetchImpl = transportFetch(model, options.fetch);
 	return withAuth(
 		options.apiKey,
 		async key => {

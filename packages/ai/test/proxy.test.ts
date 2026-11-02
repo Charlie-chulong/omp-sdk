@@ -3,20 +3,21 @@ import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as AIError from "@oh-my-pi/pi-ai/error";
-import type { FetchImpl } from "@oh-my-pi/pi-ai/types";
 import {
-	__resetGlobalProxyFetch,
-	__resetProxyCache,
 	connectProxiedSocket,
 	getProxyForProvider,
 	getProxyForUrl,
-	installGlobalProxyFetch,
+	getProxyPolicyController,
+	ProxyPolicyController,
+	proxyFetch,
+	setDefaultProxyPolicyController,
 	isLocalOrMetadataHost,
 	shouldBypassProxy,
-	wrapFetchForProxy,
+	withProxyPolicy,
+	withProxyProvider,
 } from "@oh-my-pi/pi-ai/utils/proxy";
 
-const PROXY = "http://127.0.0.1:24560";
+const PROXY = "http://127.0.0.1:24560/";
 
 interface SilentProxyServer {
 	url: string;
@@ -68,115 +69,60 @@ async function waitForSocketClose(socket: net.Socket): Promise<void> {
 	socket.once("close", () => closed.resolve());
 	await closed.promise;
 }
-const isProxyEnvKey = (k: string): boolean =>
-	k.startsWith("PI_PROXY") ||
-	k === "HTTP_PROXY" ||
-	k === "http_proxy" ||
-	k === "HTTPS_PROXY" ||
-	k === "https_proxy" ||
-	k === "ALL_PROXY" ||
-	k === "all_proxy" ||
-	k === "NO_PROXY" ||
-	k === "no_proxy";
-
-// Standard proxy variables set at runtime can be readable but hidden from Bun.env
-// enumeration, so the sweep must name them explicitly instead of relying on for..in.
-const HIDDEN_PROXY_KEYS = [
-	"HTTP_PROXY",
-	"http_proxy",
-	"HTTPS_PROXY",
-	"https_proxy",
-	"ALL_PROXY",
-	"all_proxy",
-	"NO_PROXY",
-	"no_proxy",
-];
-
-function proxyEnvKeys(): Set<string> {
-	const keys = new Set(HIDDEN_PROXY_KEYS);
-	for (const key in Bun.env) {
-		if (isProxyEnvKey(key)) keys.add(key);
-	}
-	return keys;
-}
-
-// Snapshot + clear every proxy-related env var so each test starts clean and
-// leaves nothing behind for later files.
-let saved: Record<string, string | undefined>;
-
+let previousController: ProxyPolicyController;
 beforeEach(() => {
-	// The resolver memoizes per provider for the lifetime of the process;
-	// earlier files (e.g. openai-responses-sampling-params) drain real
-	// providers with no proxy env set, which would otherwise cache
-	// `undefined` past the env writes below.
-	__resetProxyCache();
-	saved = {};
-	for (const key of proxyEnvKeys()) {
-		saved[key] = Bun.env[key];
-		delete Bun.env[key];
-	}
+	previousController = getProxyPolicyController();
+	setDefaultProxyPolicyController(new ProxyPolicyController());
 });
+afterEach(() => setDefaultProxyPolicyController(previousController));
 
-afterEach(() => {
-	__resetProxyCache();
-	for (const key of proxyEnvKeys()) delete Bun.env[key];
-	for (const key in saved) {
-		const value = saved[key];
-		if (value !== undefined) Bun.env[key] = value;
-	}
-});
-
-describe("getProxyForProvider", () => {
-	it("reads the provider-specific PI_PROXY_<PROVIDER> variable", () => {
-		Bun.env.PI_PROXY_SAKANA = PROXY;
-		expect(getProxyForProvider("sakana")).toBe(PROXY);
+describe("ProxyPolicyController", () => {
+	it("routes exact provider IDs independently and preserves addresses while disabled", () => {
+		const controller = new ProxyPolicyController({
+			enabled: true,
+			default: { mode: "proxy", url: PROXY },
+			providers: {
+				"github-copilot": { mode: "proxy", url: "https://other-proxy.example:8080/" },
+				"direct-provider": { mode: "direct" },
+			},
+		});
+		withProxyPolicy(controller, () => {
+			expect(getProxyForProvider("github-copilot")).toBe("https://other-proxy.example:8080/");
+			expect(getProxyForProvider("github_copilot")).toBe(PROXY);
+			expect(getProxyForProvider("direct-provider")).toBeUndefined();
+			controller.setPolicy({ ...controller.getPolicy(), enabled: false });
+			expect(getProxyForProvider("github-copilot")).toBeUndefined();
+			expect(controller.getPolicy().default).toEqual({ mode: "proxy", url: PROXY });
+			controller.setPolicy({ ...controller.getPolicy(), enabled: true });
+			expect(getProxyForProvider("github-copilot")).toBe("https://other-proxy.example:8080/");
+			expect(controller.revision).toBe(2);
+		});
 	});
 
-	it("normalizes hyphenated provider ids to underscores", () => {
-		Bun.env.PI_PROXY_GITHUB_COPILOT = PROXY;
-		expect(getProxyForProvider("github-copilot")).toBe(PROXY);
+	it("isolates concurrent async sessions and retains provider context", async () => {
+		const a = new ProxyPolicyController({ enabled: true, providers: { provider: { mode: "proxy", url: PROXY } } });
+		const b = new ProxyPolicyController({ enabled: true, default: { mode: "proxy", url: "http://other.example:8080/" } });
+		const barrier = Promise.withResolvers<void>();
+		const first = withProxyPolicy(a, () => withProxyProvider("provider", async () => {
+			await barrier.promise;
+			return getProxyForProvider();
+		}));
+		const second = withProxyPolicy(b, async () => {
+			barrier.resolve();
+			await Promise.resolve();
+			return getProxyForProvider("provider");
+		});
+		expect(await Promise.all([first, second])).toEqual([PROXY, "http://other.example:8080/"]);
+		expect(getProxyForProvider("provider")).toBeUndefined();
 	});
 
-	it("falls back to the generic PI_PROXY when no provider-specific var is set", () => {
-		Bun.env.PI_PROXY = PROXY;
-		expect(getProxyForProvider("prov-fallback")).toBe(PROXY);
-	});
-
-	it("prefers the provider-specific var over the generic fallback", () => {
-		Bun.env.PI_PROXY = "http://fallback:1";
-		Bun.env.PI_PROXY_PREC_PROV = PROXY;
-		expect(getProxyForProvider("prec-prov")).toBe(PROXY);
-	});
-
-	it("returns undefined when neither var is set", () => {
-		expect(getProxyForProvider("none-prov")).toBeUndefined();
-	});
-});
-
-describe("getProxyForUrl", () => {
-	it("uses protocol-specific standard proxy variables", () => {
-		Bun.env.HTTPS_PROXY = "http://secure-proxy:8080";
-		Bun.env.HTTP_PROXY = "http://plain-proxy:8080";
-
-		expect(getProxyForUrl("standard-secure-proxy", new URL("wss://api.openai.com/v1/live"))).toBe(
-			"http://secure-proxy:8080",
-		);
-		expect(getProxyForUrl("standard-plain-proxy", new URL("ws://api.openai.com/v1/live"))).toBe(
-			"http://plain-proxy:8080",
-		);
-	});
-
-	it("falls back to ALL_PROXY", () => {
-		Bun.env.ALL_PROXY = PROXY;
-
-		expect(getProxyForUrl("standard-all-proxy", new URL("wss://api.openai.com/v1/live"))).toBe(PROXY);
-	});
-
-	it("bypasses configured proxies for NO_PROXY targets", () => {
-		Bun.env.PI_PROXY_NO_PROXY_TEST = PROXY;
-		Bun.env.NO_PROXY = "api.openai.com";
-
-		expect(getProxyForUrl("no-proxy-test", new URL("wss://api.openai.com/v1/live"))).toBeUndefined();
+	it("rejects unsupported proxies and leaves the prior policy intact", () => {
+		const controller = new ProxyPolicyController({ enabled: true, default: { mode: "proxy", url: PROXY } });
+		for (const url of ["socks5://localhost:8080", "file:///tmp/proxy", "http://proxy.example/path", "not a url"]) {
+			expect(() => controller.setPolicy({ enabled: true, default: { mode: "proxy", url } })).toThrow();
+		}
+		expect(controller.revision).toBe(0);
+		expect(controller.getPolicy().default).toEqual({ mode: "proxy", url: PROXY });
 	});
 });
 
@@ -223,176 +169,127 @@ describe("isLocalOrMetadataHost / shouldBypassProxy hard-coded ranges", () => {
 	}
 });
 
-describe("shouldBypassProxy NO_PROXY rules", () => {
-	it("matches an exact host", () => {
-		Bun.env.NO_PROXY = "api.sakana.ai";
-		expect(shouldBypassProxy(new URL("https://api.sakana.ai/v1"))).toBe(true);
-		expect(shouldBypassProxy(new URL("https://api.openai.com/v1"))).toBe(false);
-	});
-
-	it("matches a leading-dot suffix and the bare domain", () => {
-		Bun.env.NO_PROXY = ".sakana.ai";
-		expect(shouldBypassProxy(new URL("https://api.sakana.ai/v1"))).toBe(true);
-		expect(shouldBypassProxy(new URL("https://sakana.ai/v1"))).toBe(true);
-	});
-
-	it("treats a bare domain as a suffix for subdomains", () => {
-		Bun.env.NO_PROXY = "sakana.ai";
-		expect(shouldBypassProxy(new URL("https://api.sakana.ai/v1"))).toBe(true);
-	});
-
-	it("bypasses everything for the wildcard rule", () => {
-		Bun.env.NO_PROXY = "*";
-		expect(shouldBypassProxy(new URL("https://api.openai.com/v1"))).toBe(true);
-	});
-
-	it("honors a port qualifier on the rule", () => {
-		Bun.env.NO_PROXY = "api.sakana.ai:8080";
-		// Target is https (port 443) → port mismatch → not bypassed.
-		expect(shouldBypassProxy(new URL("https://api.sakana.ai/v1"))).toBe(false);
-		expect(shouldBypassProxy(new URL("http://api.sakana.ai:8080/v1"))).toBe(true);
-	});
-
-	it("uses port 443 for secure websocket targets", () => {
-		Bun.env.NO_PROXY = "api.sakana.ai:443";
-		expect(shouldBypassProxy(new URL("wss://api.sakana.ai/v1"))).toBe(true);
+describe("policy bypass rules", () => {
+	it("matches suffixes, ports, wildcard, and secure websocket ports", () => {
+		const controller = new ProxyPolicyController({ enabled: true, default: { mode: "proxy", url: PROXY }, noProxy: [".sakana.ai", "api.openai.com:443"] });
+		withProxyPolicy(controller, () => {
+			expect(shouldBypassProxy(new URL("https://api.sakana.ai/v1"))).toBe(true);
+			expect(shouldBypassProxy(new URL("https://sakana.ai/v1"))).toBe(true);
+			expect(getProxyForUrl("provider", new URL("wss://api.openai.com/live"))).toBeUndefined();
+			expect(getProxyForUrl("provider", new URL("http://api.openai.com:8080/v1"))).toBe(PROXY);
+			controller.setPolicy({ ...controller.getPolicy(), noProxy: ["*"] });
+			expect(getProxyForUrl("provider", new URL("https://other.example"))).toBeUndefined();
+		});
 	});
 });
 
-describe("wrapFetchForProxy", () => {
-	function makeCapture(): { fetch: FetchImpl; calls: Array<{ url: string; proxy: unknown }> } {
-		const calls: Array<{ url: string; proxy: unknown }> = [];
-		const fetch: FetchImpl = async (input, init) => {
-			const url = input instanceof Request ? input.url : input.toString();
-			calls.push({ url, proxy: (init as { proxy?: unknown } | undefined)?.proxy });
-			return new Response("ok");
-		};
-		return { fetch, calls };
-	}
-
-	it("injects init.proxy for a proxied host when configured", async () => {
-		Bun.env.PI_PROXY_WRAP_INJECT = PROXY;
-		const { fetch, calls } = makeCapture();
-		await wrapFetchForProxy(fetch, "wrap-inject")("https://api.sakana.ai/v1/responses");
-		expect(calls).toHaveLength(1);
-		expect(calls[0].proxy).toBe(PROXY);
-	});
-
-	it("does not inject a proxy for a bypassed (loopback) host", async () => {
-		Bun.env.PI_PROXY_WRAP_BYPASS = PROXY;
-		const { fetch, calls } = makeCapture();
-		await wrapFetchForProxy(fetch, "wrap-bypass")("http://127.0.0.1:11434/api/chat");
-		expect(calls[0].proxy).toBeUndefined();
-	});
-
-	it("does not route one provider's request through another provider's proxy", async () => {
-		Bun.env.PI_PROXY_SAKANA = PROXY;
-		const { fetch, calls } = makeCapture();
-		await wrapFetchForProxy(fetch, "wrap-other")("https://api.openai.com/v1");
-		expect(calls[0].proxy).toBeUndefined();
-	});
-
-	it("passes through an unparseable URL without throwing", async () => {
-		Bun.env.PI_PROXY_WRAP_BADURL = PROXY;
-		const { fetch, calls } = makeCapture();
-		await wrapFetchForProxy(fetch, "wrap-badurl")("not a url");
-		expect(calls).toHaveLength(1);
-		expect(calls[0].proxy).toBeUndefined();
-	});
-});
-
-describe("installGlobalProxyFetch", () => {
-	const nativeFetch = globalThis.fetch;
-	let calls: Array<{ url: string; proxy: unknown }>;
-
-	beforeEach(() => {
-		calls = [];
-		globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
-			calls.push({
-				url: input instanceof Request ? input.url : String(input),
-				proxy: (init as { proxy?: unknown } | undefined)?.proxy,
-			});
-			return new Response("ok");
-		}) as typeof globalThis.fetch;
-	});
-
-	afterEach(() => {
-		globalThis.fetch = nativeFetch;
-		__resetGlobalProxyFetch();
-	});
-
-	it("routes bare global fetch through PI_PROXY", async () => {
-		Bun.env.PI_PROXY = PROXY;
-		installGlobalProxyFetch();
-		await fetch("https://api.anthropic.com/v1/oauth/token", { method: "POST" });
-		expect(calls[0].proxy).toBe(PROXY);
-	});
-
-	it("leaves global fetch untouched when PI_PROXY is unset", async () => {
-		const before = globalThis.fetch;
-		installGlobalProxyFetch();
-		expect(globalThis.fetch).toBe(before);
-		await fetch("https://api.anthropic.com/v1/oauth/token");
-		expect(calls[0].proxy).toBeUndefined();
-	});
-
-	it("keeps a caller-supplied proxy so PI_PROXY_<PROVIDER> still wins", async () => {
-		Bun.env.PI_PROXY = PROXY;
-		Bun.env.PI_PROXY_GLOBAL_PREC = "http://127.0.0.1:24561";
-		installGlobalProxyFetch();
-		await wrapFetchForProxy(globalThis.fetch, "global-prec")("https://api.anthropic.com/v1/messages");
-		expect(calls[0].proxy).toBe("http://127.0.0.1:24561");
-	});
-
-	it("bypasses loopback targets so local model servers stay direct", async () => {
-		Bun.env.PI_PROXY = PROXY;
-		installGlobalProxyFetch();
-		await fetch("http://127.0.0.1:11434/api/chat");
-		expect(calls[0].proxy).toBeUndefined();
-	});
-
-	it.skipIf(process.platform === "win32")(
-		"reaches a Unix-socket service instead of sending it to PI_PROXY",
-		async () => {
-			const socket = path.join(os.tmpdir(), `omp-proxy-${process.pid}.sock`);
-			const connections = new Set<net.Socket>();
-			const server = net.createServer(connection => {
-				connections.add(connection);
-				connection.once("close", () => connections.delete(connection));
-				connection.end("HTTP/1.1 200 OK\r\nContent-Length: 12\r\n\r\nlocal broker");
-			});
-			const listening = Promise.withResolvers<void>();
-			server.once("error", listening.reject);
-			server.listen(socket, listening.resolve);
-			await listening.promise;
-
-			try {
-				Bun.env.PI_PROXY = PROXY;
-				globalThis.fetch = nativeFetch;
-				installGlobalProxyFetch();
-				const response = await fetch("http://blob-broker.local/info", {
-					unix: socket,
-					signal: AbortSignal.timeout(1_500),
-				});
-				expect(await response.text()).toBe("local broker");
-			} finally {
-				for (const connection of connections) connection.destroy();
-				const closed = Promise.withResolvers<void>();
-				server.close(error => {
-					if (error) closed.reject(error);
-					else closed.resolve();
-				});
-				await closed.promise;
+/** Serve a real HTTP response, supporting both forward HTTP and CONNECT transports. */
+async function responseProxy(label: string) {
+	const sockets = new Set<net.Socket>();
+	let requests = 0;
+	const server = net.createServer(socket => {
+		sockets.add(socket);
+		socket.once("close", () => sockets.delete(socket));
+		let incoming = "";
+		let tunneled = false;
+		socket.on("data", chunk => {
+			incoming += chunk.toString();
+			if (!incoming.includes("\r\n\r\n")) return;
+			if (!tunneled && incoming.startsWith("CONNECT ")) {
+				tunneled = true;
+				incoming = "";
+				socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+				return;
 			}
+			requests++;
+			socket.end(`HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: ${label.length}\r\n\r\n${label}`);
+		});
+	});
+	const listening = Promise.withResolvers<void>();
+	server.once("error", listening.reject);
+	server.listen(0, "127.0.0.1", listening.resolve);
+	await listening.promise;
+	const address = server.address();
+	if (!address || typeof address === "string") throw new Error("Expected TCP proxy");
+	return {
+		url: `http://127.0.0.1:${address.port}/`,
+		get requests() { return requests; },
+		async close() {
+			for (const socket of sockets) socket.destroy();
+			const closed = Promise.withResolvers<void>();
+			server.close(error => error ? closed.reject(error) : closed.resolve());
+			await closed.promise;
 		},
-	);
+	};
+}
 
-	it("installs once", async () => {
-		Bun.env.PI_PROXY = PROXY;
-		installGlobalProxyFetch();
-		const wrapped = globalThis.fetch;
-		installGlobalProxyFetch();
-		expect(globalThis.fetch).toBe(wrapped);
+describe("SDK proxy fetch wire routing", () => {
+	it("switches the same fetch A → B → direct, with independent providers", async () => {
+		const a = await responseProxy("route-a");
+		const b = await responseProxy("route-b");
+		const controller = new ProxyPolicyController({ enabled: true, providers: {
+			alpha: { mode: "proxy", url: a.url }, beta: { mode: "proxy", url: b.url },
+		} });
+		const fetchAlpha = proxyFetch("alpha");
+		const fetchBeta = proxyFetch("beta");
+		try {
+			await withProxyPolicy(controller, async () => {
+				expect(await (await fetchAlpha("http://provider.invalid/request")).text()).toBe("route-a");
+				expect(await (await fetchBeta("http://provider.invalid/request")).text()).toBe("route-b");
+				controller.setPolicy({ enabled: true, providers: { alpha: { mode: "proxy", url: b.url } } });
+				expect(await (await fetchAlpha("http://provider.invalid/request")).text()).toBe("route-b");
+				controller.setPolicy({ ...controller.getPolicy(), enabled: false });
+				await expect(fetchAlpha("http://provider.invalid/request", { signal: AbortSignal.timeout(1_000) })).rejects.toThrow();
+			});
+			expect(a.requests).toBe(1);
+			expect(b.requests).toBe(2);
+		} finally {
+			await a.close();
+			await b.close();
+		}
+	});
+
+	it("does not fall back to ambient standard proxies when disabled", async () => {
+		const ambient = await responseProxy("ambient-proxy");
+		const saved = Object.fromEntries(["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"].map(key => [key, process.env[key]]));
+		try {
+			process.env.HTTP_PROXY = ambient.url;
+			process.env.HTTPS_PROXY = ambient.url;
+			process.env.ALL_PROXY = ambient.url;
+			process.env.NO_PROXY = "";
+			await expect(proxyFetch()("http://provider.invalid/request", { signal: AbortSignal.timeout(1_000) })).rejects.toThrow();
+			expect(ambient.requests).toBe(0);
+		} finally {
+			for (const [key, value] of Object.entries(saved)) {
+				if (value === undefined) delete process.env[key];
+				else process.env[key] = value;
+			}
+			await ambient.close();
+		}
+	});
+
+	it.skipIf(process.platform === "win32")("keeps Unix sockets direct under an enabled policy", async () => {
+		const socket = path.join(os.tmpdir(), `omp-proxy-${process.pid}.sock`);
+		const connections = new Set<net.Socket>();
+		const server = net.createServer(connection => {
+			connections.add(connection);
+			connection.once("close", () => connections.delete(connection));
+			connection.once("data", () => connection.end("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 12\r\n\r\nlocal broker"));
+		});
+		const listening = Promise.withResolvers<void>();
+		server.once("error", listening.reject);
+		server.listen(socket, listening.resolve);
+		await listening.promise;
+		try {
+			const controller = new ProxyPolicyController({ enabled: true, default: { mode: "proxy", url: PROXY } });
+			const response = await withProxyPolicy(controller, () => proxyFetch()("http://broker.invalid/info", { unix: socket, signal: AbortSignal.timeout(1_500) }));
+			expect(await response.text()).toBe("local broker");
+		} finally {
+			for (const connection of connections) connection.destroy();
+			const closed = Promise.withResolvers<void>();
+			server.close(error => error ? closed.reject(error) : closed.resolve());
+			await closed.promise;
+		}
 	});
 });
 

@@ -16,6 +16,7 @@ import type {
 	ThinkingContent,
 	ToolExample,
 } from "@oh-my-pi/pi-ai";
+import type { ProxyPolicy } from "@oh-my-pi/pi-ai/utils/proxy";
 import type { BashResult } from "../../exec/bash-executor";
 import type { ContextUsage } from "../../extensibility/extensions/types";
 import type { AgentSessionEvent, SessionStats } from "../../session/agent-session";
@@ -98,6 +99,7 @@ export type RpcCommand =
 
 	// Model
 	| { id?: string; type: "set_model"; provider: string; modelId: string }
+	| { id?: string; type: "set_proxy_policy"; policy: ProxyPolicy }
 	| { id?: string; type: "cycle_model" }
 	| { id?: string; type: "get_available_models" }
 
@@ -542,6 +544,7 @@ export type RpcResponse =
 			success: true;
 			data: Model;
 	  }
+	| { id?: string; type: "response"; command: "set_proxy_policy"; success: true; data: { policy: ProxyPolicy } }
 	| {
 			id?: string;
 			type: "response";

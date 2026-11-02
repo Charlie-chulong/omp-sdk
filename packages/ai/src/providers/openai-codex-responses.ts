@@ -72,7 +72,7 @@ import {
 	getOpenAIStreamIdleTimeoutMs,
 	iterateWithIdleTimeout,
 } from "../utils/idle-iterator";
-import { getProxyForUrl } from "../utils/proxy";
+import { getProxyForUrl, getProxyPolicyController, type ProxyPolicyController } from "../utils/proxy";
 import { wrapFetchForRequestCompression } from "../utils/request-compression";
 import { createRequestDebugSession, isRequestDebugEnabled, type RequestDebugResponseLog } from "../utils/request-debug";
 import { getHeadersFromError, getRetryAfterMsFromHeaders, type HeadersLike } from "../utils/retry-after";
@@ -3826,12 +3826,16 @@ interface CodexSteerWaiter {
 interface CodexWebSocketConnectionOptions {
 	onHandshakeHeaders?: (headers: Headers) => void;
 	proxy?: string;
+	controller: ProxyPolicyController;
+	revision: number;
 }
 
 class CodexWebSocketConnection {
 	#url: string;
 	#headers: Record<string, string>;
 	#proxy?: string;
+	#controller: ProxyPolicyController;
+	#policyRevision: number;
 	#onHandshakeHeaders?: (headers: Headers) => void;
 	#socket: ModelWebSocket | null = null;
 	#queue: Array<Record<string, unknown> | Error | null> = [];
@@ -3871,6 +3875,8 @@ class CodexWebSocketConnection {
 		this.#url = url;
 		this.#headers = headers;
 		this.#proxy = options.proxy;
+		this.#controller = options.controller;
+		this.#policyRevision = options.revision;
 		this.#onHandshakeHeaders = options.onHandshakeHeaders;
 	}
 
@@ -3918,6 +3924,10 @@ class CodexWebSocketConnection {
 
 	matchesAuth(headers: Record<string, string>): boolean {
 		return this.#headers.authorization === headers.authorization;
+	}
+
+	matchesTransport(controller: ProxyPolicyController, revision: number, proxy: string): boolean {
+		return this.#controller === controller && this.#policyRevision === revision && (this.#proxy ?? "") === proxy;
 	}
 
 	close(reason = "done"): void {
@@ -4565,7 +4575,9 @@ async function getOrCreateCodexWebSocketConnection(
 	provider: string,
 	signal?: AbortSignal,
 ): Promise<CodexWebSocketConnection> {
-	const proxy = getProxyForUrl(provider, new URL(url));
+	const controller = getProxyPolicyController();
+	const revision = controller.revision;
+	const proxy = getProxyForUrl(provider, new URL(url)) ?? "";
 	const headerRecord = headersToRecord(headers);
 	// Join an in-flight handshake instead of tearing it down: closing a
 	// CONNECTING socket rejects the concurrent caller (prewarm racing the first
@@ -4583,8 +4595,13 @@ async function getOrCreateCodexWebSocketConnection(
 			// (state.connection may have been replaced or cleared).
 		}
 	}
+	// Prewarming or a concurrent acquisition must not interrupt the active response.
+	if (state.connection?.hasActiveRequest()) return state.connection;
 	if (state.connection?.isOpen()) {
-		if (!state.connection.matchesAuth(headerRecord)) {
+		if (!state.connection.matchesTransport(controller, revision, proxy)) {
+			state.connection.close("proxy-policy-change");
+			resetCodexWebSocketAppendState(state);
+		} else if (!state.connection.matchesAuth(headerRecord)) {
 			state.connection.close("token-refresh");
 			resetCodexWebSocketAppendState(state);
 		} else if (state.connection.isHealthyForReuse()) {
@@ -4609,6 +4626,8 @@ async function getOrCreateCodexWebSocketConnection(
 			updateCodexSessionMetadataFromHeaders(turnState, state, handshakeHeaders);
 		},
 		proxy,
+		controller,
+		revision,
 	});
 	await state.connection.connect(signal);
 	return state.connection;

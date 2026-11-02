@@ -186,6 +186,9 @@ export const snapshotStreamEventSchema: FluentType<SnapshotStreamEvent> = snapsh
 	.or(snapshotStreamEntryEventSchema)
 	.or(snapshotStreamRemovedEventSchema);
 
+/** Policy fields and proxy URLs are validated by ProxyPolicyController before upstream work. */
+export const credentialRefreshRequestSchema = type({ "+": "reject", proxyPolicy: "object" });
+
 // ─── Healthz ─────────────────────────────────────────────────────────────────
 
 export const healthzResponseSchema: FluentType<HealthzResponse> = type({

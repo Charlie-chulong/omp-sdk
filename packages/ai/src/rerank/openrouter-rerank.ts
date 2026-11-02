@@ -1,3 +1,4 @@
+import { transportFetch } from "../utils/transport-fetch";
 import { type } from "@oh-my-pi/omptype";
 import { calculateCost } from "@oh-my-pi/pi-catalog/models";
 import type { Api, FetchImpl, Model, Usage } from "@oh-my-pi/pi-catalog/types";
@@ -93,7 +94,7 @@ export async function rerankOpenRouter(
 		...(request.topN !== undefined && { top_n: request.topN }),
 		...(request.returnDocuments !== undefined && { return_documents: request.returnDocuments }),
 	});
-	const fetchImpl = options.fetch ?? fetch;
+	const fetchImpl = transportFetch(model, options.fetch);
 	const response = await withAuth(
 		options.apiKey,
 		async key => {

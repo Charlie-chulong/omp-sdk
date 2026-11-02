@@ -8,6 +8,7 @@ import { $ } from "@oh-my-pi/pi-utils/runtime";
 import { Cookie, CookieMap } from "../../utils/cookies";
 import * as AIError from "../../error";
 import type { OAuthController, OAuthCredentials } from "./types";
+import { proxyFetch, wrapFetchForProxy } from "../../utils/proxy";
 
 const API_VERSION = "2.18";
 const NATIVE_APP_BUNDLE = "ai.perplexity.mac";
@@ -109,7 +110,7 @@ async function httpEmailLogin(ctrl: OAuthController): Promise<OAuthCredentials> 
 			provider: "perplexity",
 		});
 	if (ctrl.signal?.aborted) throw new AIError.LoginCancelledError();
-	const fetchImpl = ctrl.fetch ?? fetch;
+	const fetchImpl = wrapFetchForProxy(ctrl.fetch ?? proxyFetch(), "perplexity");
 	const cookies = new CookieMap();
 	const request = async (url: string, init: RequestInit = {}): Promise<Response> => {
 		const headers = new Headers(init.headers);
@@ -296,7 +297,7 @@ async function browserSsoLogin(ctrl: OAuthController): Promise<OAuthCredentials>
 	}
 
 	ctrl.onProgress?.("Validating Perplexity session...");
-	const response = await (ctrl.fetch ?? fetch)(`${PERPLEXITY_BASE_URL}/api/auth/session`, {
+	const response = await wrapFetchForProxy(ctrl.fetch ?? proxyFetch(), "perplexity")(`${PERPLEXITY_BASE_URL}/api/auth/session`, {
 		headers: {
 			Cookie: `${SESSION_COOKIE_NAME}=${token}`,
 			"User-Agent": APP_USER_AGENT,

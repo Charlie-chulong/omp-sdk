@@ -14,6 +14,7 @@ import type {
 	StoredCredentialBlock,
 } from "../auth-storage";
 import type { ClientUsageClientSummary, ClientUsageReport, UsageHistoryEntry, UsageReport } from "../usage";
+import type { ProxyPolicy } from "../utils/proxy";
 
 /** GET /v1/healthz response body. */
 export interface HealthzResponse {
@@ -72,7 +73,12 @@ export interface ClientUsageSummaryResponse {
 	clients: ClientUsageClientSummary[];
 }
 
-/** POST /v1/credential/:id/refresh response body. */
+/** POST /v1/credential/:id/refresh-with-proxy-policy request body. */
+export interface CredentialRefreshRequest {
+	proxyPolicy: ProxyPolicy;
+}
+
+/** POST /v1/credential/:id/refresh-with-proxy-policy response body. */
 export interface CredentialRefreshResponse {
 	entry: AuthCredentialSnapshotEntry;
 }

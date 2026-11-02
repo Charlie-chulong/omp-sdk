@@ -3,6 +3,7 @@ import { USAGE_REPORT_TTL_MS } from "./sqlite-credential-store";
 import type { UsageReport } from "../usage";
 import { claudeResetClearedBlockScopes, consumeClaudeResetCredit, listClaudeResetCredits } from "../usage/claude-reset";
 import { consumeCodexResetCredit, listCodexResetCredits, pickSoonestExpiringCredit } from "../usage/openai-codex-reset";
+import { wrapFetchForProxy } from "../utils/proxy";
 import type { CredentialBlocks } from "./blocks";
 import { providerTypeKey } from "./blocks";
 import { raceSignal } from "./abort";
@@ -93,7 +94,7 @@ export class ResetCredits implements ResetsApi {
 			const auth = {
 				...access,
 				baseUrl,
-				fetch: this.#deps.usage.fetch,
+				fetch: wrapFetchForProxy(this.#deps.usage.fetch, provider),
 				signal: options?.signal,
 				onRateLimited: (delay: number | undefined) => {
 					retryAfterMs = delay ?? 0;
@@ -163,7 +164,7 @@ export class ResetCredits implements ResetsApi {
 		options: { creditId?: string; baseUrl?: string; signal?: AbortSignal },
 	): Promise<ResetCreditRedeemOutcome> {
 		const identity = { provider, accountId: access.accountId, email: access.email, orgId: access.orgId };
-		const auth = { ...access, baseUrl: options.baseUrl, fetch: this.#deps.usage.fetch, signal: options.signal };
+		const auth = { ...access, baseUrl: options.baseUrl, fetch: wrapFetchForProxy(this.#deps.usage.fetch, provider), signal: options.signal };
 		let creditId = options.creditId;
 		let result: ResetCreditRedeemOutcome;
 		let report: UsageReport | null = null;

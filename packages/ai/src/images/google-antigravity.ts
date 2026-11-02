@@ -1,3 +1,4 @@
+import { transportFetch } from "../utils/transport-fetch";
 import {
 	ANTIGRAVITY_PRIMARY_ENDPOINT,
 	ANTIGRAVITY_SANDBOX_ENDPOINT,
@@ -139,7 +140,7 @@ export async function generateAntigravityImage(
 	options: ImageGenerationOptions,
 ): Promise<ImageGenerationResult> {
 	for (const image of request.inputImages ?? []) validateImageInput(image);
-	const fetchImpl = options.fetch ?? fetch;
+	const fetchImpl = transportFetch(model, options.fetch);
 	const response = await withAuth(
 		options.apiKey,
 		async rawKey => {

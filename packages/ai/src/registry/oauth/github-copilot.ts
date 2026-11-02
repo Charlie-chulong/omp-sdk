@@ -13,6 +13,7 @@
  */
 import { scheduler } from "node:timers/promises";
 import { getBundledModels } from "@oh-my-pi/pi-catalog/models";
+import { proxyFetch, wrapFetchForProxy } from "../../utils/proxy";
 import {
 	COPILOT_API_HEADERS,
 	COPILOT_CHAT_INTEGRATION_ID,
@@ -334,7 +335,7 @@ async function enableAllGitHubCopilotModels(
  * @param options.signal - Optional AbortSignal for cancellation
  */
 export async function loginGitHubCopilot(options: GitHubCopilotLoginOptions): Promise<OAuthCredentials> {
-	const fetchImpl = options.fetch ?? fetch;
+	const fetchImpl = wrapFetchForProxy(options.fetch ?? proxyFetch(), "github-copilot");
 	const input = await options.onPrompt({
 		message: "GitHub Enterprise URL/domain (blank for github.com)",
 		placeholder: "company.ghe.com",

@@ -7,6 +7,7 @@ import type { CompiledAuthProvider, CompiledRefresh } from "@oh-my-pi/pi-catalog
 import * as AIError from "../../error";
 import { claudeCodeSdkVersion } from "../../providers/claude-code-fingerprint";
 import type { OAuthCredentials } from "../oauth/types";
+import { proxyFetch } from "../../utils/proxy";
 import {
 	applyAfterExchange,
 	applyUserinfo,
@@ -50,6 +51,7 @@ async function loginClient(policy: CompiledAuthProvider, signal?: AbortSignal) {
 function createRequestRefresh(rule: RequestRefresh, policy: CompiledAuthProvider): Refresher {
 	const provider = policy.id;
 	return async (credentials, signal) => {
+		const fetch = proxyFetch(policy.storeAs ?? provider);
 		for (const field of rule.require) {
 			if (!credentials[field as keyof OAuthCredentials]) {
 				throw new AIError.OAuthError(`${provider} credentials are missing ${field}; sign in again`, {

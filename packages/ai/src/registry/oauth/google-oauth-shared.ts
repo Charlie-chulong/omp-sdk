@@ -5,6 +5,7 @@
  * credentials, scopes, endpoint constants, and project-discovery logic differ.
  */
 import * as AIError from "../../error";
+import { proxyFetch } from "../../utils/proxy";
 
 /**
  * Per-request timeout for the post-callback provisioning phase (token exchange,
@@ -52,7 +53,7 @@ export async function oauthFetch(
 	const timeoutSignal = AbortSignal.timeout(timeoutMs);
 	const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 	try {
-		return await fetch(url, { ...init, signal: requestSignal });
+		return await proxyFetch(provider)(url, { ...init, signal: requestSignal });
 	} catch (err) {
 		if (signal?.aborted) {
 			throw new AIError.LoginCancelledError(`OAuth login cancelled: ${String(signal.reason)}`);

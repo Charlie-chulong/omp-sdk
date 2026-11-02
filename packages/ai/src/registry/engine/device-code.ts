@@ -7,6 +7,7 @@ import type { CompiledDeviceCodeLogin } from "@oh-my-pi/pi-catalog/compat/types"
 import * as AIError from "../../error";
 import { type OAuthDeviceCodePollResult, pollOAuthDeviceCodeFlow } from "../oauth/device-code";
 import type { OAuthController, OAuthCredentials } from "../oauth/types";
+import { proxyFetch, wrapFetchForProxy } from "../../utils/proxy";
 import {
 	applyAfterExchange,
 	applyUserinfo,
@@ -39,7 +40,7 @@ export function createDeviceCodeLogin(
 ): (ctrl: OAuthController) => Promise<OAuthCredentials> {
 	return async ctrl => {
 		const signal = ctrl.signal;
-		const fetchImpl = ctrl.fetch ?? fetch;
+		const fetchImpl = wrapFetchForProxy(ctrl.fetch ?? proxyFetch(), provider);
 		throwIfCancelled(signal);
 		const clientId = await resolveValue(rule.clientId, signal);
 		const base = rule.baseUrl ? await resolveValue(rule.baseUrl, signal) : undefined;

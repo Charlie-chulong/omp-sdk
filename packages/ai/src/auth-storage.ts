@@ -51,6 +51,7 @@ import { UsageService } from "./auth/usage";
 import { DEFAULT_USAGE_REQUEST_TIMEOUT_MS, UsageCache } from "./auth/usage-cache";
 import type { UsageLogger } from "./usage";
 import { defaultRankingStrategy, defaultUsageProvider } from "./usage/registry";
+import { proxyFetch } from "./utils/proxy";
 
 export {
 	isSameOAuthAccount,
@@ -210,7 +211,7 @@ export class AuthStorage {
 			affinity,
 			strategies,
 			usageProviders,
-			fetch: options.usageFetch ?? fetch,
+			fetch: options.usageFetch ?? proxyFetch(),
 			requestTimeoutMs: options.usageRequestTimeoutMs ?? DEFAULT_USAGE_REQUEST_TIMEOUT_MS,
 			logger:
 				options.usageLogger ??

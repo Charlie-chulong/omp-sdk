@@ -15,6 +15,11 @@ import { resolveResumableSession } from "./session/session-listing";
 import { closeDaemonClients, daemonClientForProject } from "./launch/client";
 import { BUILTIN_TOOL_NAMES } from "./tools/builtin-names";
 import { cfgToolsApprovalMode } from "./tools/settings";
+import {
+	ProxyPolicyController,
+	type ProxyPolicy,
+	setDefaultProxyPolicyController,
+} from "@oh-my-pi/pi-ai/utils/proxy";
 
 export * from "./modes/rpc/rpc-mode";
 
@@ -23,6 +28,7 @@ initializeNodeSdk(import.meta.url);
 export interface NodeRpcHostOptions {
 	cwd: string;
 	agentDir?: string;
+	proxyPolicy?: ProxyPolicy;
 	protocolMode?: "rpc" | "rpc-ui";
 	model?: string;
 	thinkingOptionId?: string;
@@ -69,6 +75,8 @@ const supportedParsedOptions: Readonly<Record<string, true>> = {
 export async function startNodeRpcHost(options: NodeRpcHostOptions): Promise<never> {
 	const input = claimRpcInput();
 	if (!path.isAbsolute(options.cwd)) throw new Error("Node SDK cwd must be absolute");
+	const proxyController = new ProxyPolicyController(options.proxyPolicy);
+	setDefaultProxyPolicyController(proxyController);
 	const parsed = parseArgs([
 		...(options.model ? ["--model", options.model] : []),
 		...(options.thinkingOptionId ? ["--thinking", options.thinkingOptionId] : []),
@@ -131,6 +139,7 @@ export async function startNodeRpcHost(options: NodeRpcHostOptions): Promise<nev
 		toolNames = (toolNames ?? [...BUILTIN_TOOL_NAMES, "generate_image"]).filter(name => !denied.has(name));
 	}
 	const result = await createAgentSession({
+		proxyController,
 		cwd: options.cwd,
 		agentDir,
 		settings,

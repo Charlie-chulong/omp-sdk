@@ -2,7 +2,6 @@ import { encodeBase64 } from "@oh-my-pi/pi-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import { streamOpenAICodexResponses } from "@oh-my-pi/pi-ai/providers/openai-codex-responses";
 import type { Context, FetchImpl, Model } from "@oh-my-pi/pi-ai/types";
-import { __resetProxyCache } from "@oh-my-pi/pi-ai/utils/proxy";
 import { resetRequestCompressionForTesting } from "@oh-my-pi/pi-ai/utils/request-compression";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
 import * as piUtils from "@oh-my-pi/pi-utils";
@@ -11,12 +10,10 @@ import { withEnv } from "./helpers";
 const TEST_INSTALLATION_ID = "00000000-0000-4000-8000-000000000001";
 
 beforeEach(() => {
-	__resetProxyCache();
 	vi.spyOn(piUtils, "getInstallId").mockReturnValue(TEST_INSTALLATION_ID);
 });
 
 afterEach(() => {
-	__resetProxyCache();
 	resetRequestCompressionForTesting();
 	vi.restoreAllMocks();
 });

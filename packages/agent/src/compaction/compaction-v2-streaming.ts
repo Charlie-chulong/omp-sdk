@@ -23,6 +23,7 @@ import {
 	resolveOpenAIRequestSetup,
 } from "@oh-my-pi/pi-ai/providers/openai-shared";
 import { captureOpenAIHttpError } from "@oh-my-pi/pi-ai/utils/openai-http";
+import { transportFetch } from "@oh-my-pi/pi-ai/utils/transport-fetch";
 import type { CatalogPolicyInputs } from "@oh-my-pi/pi-catalog/types";
 import { isBedrockOpenAIUrl } from "@oh-my-pi/pi-catalog/hosts";
 import {
@@ -277,7 +278,7 @@ export async function requestCompactionV2Streaming(
 		preferWebsockets?: boolean;
 	},
 ): Promise<CompactionV2Response> {
-	let fetchImpl: FetchImpl = options?.fetch ?? globalThis.fetch;
+	let fetchImpl: FetchImpl = transportFetch(model, options?.fetch);
 	if (isBedrockOpenAIUrl(model.baseUrl)) {
 		({
 			model,

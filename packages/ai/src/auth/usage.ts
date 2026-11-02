@@ -3,7 +3,7 @@ import { $pickenv, logger } from "@oh-my-pi/pi-utils";
 import { getEnvApiKey } from "../env-api-key";
 import * as AIError from "../error";
 import type { OAuthCredentials } from "../registry/oauth/types";
-import type { Provider } from "../types";
+import type { FetchImpl, Provider } from "../types";
 import { resolveUsedFraction } from "../usage";
 import type {
 	ClientUsageReport,
@@ -19,6 +19,7 @@ import type {
 	UsageReport,
 } from "../usage";
 import { DEFAULT_USAGE_PROVIDERS } from "../usage/registry";
+import { withProxyProvider, wrapFetchForProxy } from "../utils/proxy";
 import { raceSignal } from "./abort";
 import type { SessionAffinity } from "./affinity";
 import type { CredentialBlocks } from "./blocks";
@@ -100,7 +101,7 @@ export interface UsageServiceDeps {
 	affinity: SessionAffinity;
 	strategies: RankingStrategyResolver;
 	usageProviders: (provider: Provider) => UsageProvider | undefined;
-	fetch: typeof fetch;
+	fetch: FetchImpl;
 	requestTimeoutMs: number;
 	logger: UsageLogger;
 }
@@ -120,7 +121,7 @@ export class UsageService implements UsageApi {
 	#usageRequestInFlight: Map<string, { refreshEpoch: number; promise: Promise<UsageReport | null> }> = new Map();
 	#usageHeaderIngestAt: Map<string, number> = new Map();
 	#usageReportsInFlight: Map<string, Promise<UsageReport[] | null>> = new Map();
-	readonly fetch: typeof fetch;
+	readonly fetch: FetchImpl;
 	readonly logger: UsageLogger;
 	readonly requestTimeoutMs: number;
 
@@ -275,11 +276,11 @@ export class UsageService implements UsageApi {
 			const previousReport = this.#deps.cache.getStale<UsageReport | null>(
 				this.#deps.cache.reportKey(request),
 			)?.value;
-			const report = await providerImpl.fetchUsage(params, {
-				fetch: this.fetch,
+			const report = await withProxyProvider(request.provider, () => providerImpl.fetchUsage(params, {
+				fetch: wrapFetchForProxy(this.fetch, request.provider),
 				logger: this.logger,
 				...(previousReport ? { previousReport } : {}),
-			});
+			}));
 			// Attribute the report to the credential's organization. The orgId and
 			// orgName fallbacks apply independently: Claude's usage endpoint stamps
 			// orgId from the `anthropic-organization-id` response header but never

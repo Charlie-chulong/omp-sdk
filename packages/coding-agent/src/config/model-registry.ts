@@ -8,6 +8,7 @@ import type { OAuthCredentials, OAuthLoginCallbacks } from "@oh-my-pi/pi-ai/oaut
 import { setCodexAttestationProvider } from "@oh-my-pi/pi-ai/providers/openai-codex-attestation";
 import { getProviderDefinition } from "@oh-my-pi/pi-ai/registry";
 import { getEnvApiKey } from "@oh-my-pi/pi-ai/env-api-key";
+import { proxyFetch, wrapFetchForProxy } from "@oh-my-pi/pi-ai/utils/proxy";
 import { OAuthRefreshUnavailableError } from "@oh-my-pi/pi-ai/error";
 import type {
 	Api,
@@ -561,7 +562,7 @@ export class ModelRegistry {
 			options?.fetch ??
 			(isBunTestRuntime()
 				? () => Promise.reject(new Error("network disabled in model-registry runtime test"))
-				: wrapFetchForExtraCa(fetch));
+				: wrapFetchForExtraCa(proxyFetch()));
 		this.#modelsConfigFile = ModelsConfigFile.relocate(modelsPath ?? path.join(getAgentDir(), "models.yml"));
 		this.#cacheDbPath =
 			options?.cacheDbPath ?? (modelsPath ? path.join(path.dirname(modelsPath), "models.db") : undefined);
@@ -822,12 +823,12 @@ export class ModelRegistry {
 			discoveryConfig.discovery.type === "lm-studio"
 				? await discoverLmStudioModelRuntimeMetadata(
 						requestModel,
-						this.#nonResolvingDiscoveryContext(),
+						this.#nonResolvingDiscoveryContext(requestModel.provider),
 						discoveryConfig.discovery.timeoutMs,
 					)
 				: await discoverLlamaCppModelRuntimeMetadata(
 						requestModel,
-						this.#nonResolvingDiscoveryContext(),
+						this.#nonResolvingDiscoveryContext(requestModel.provider),
 						discoveryConfig.discovery.timeoutMs,
 					);
 		if (runtimeMetadata === undefined) {
@@ -2138,7 +2139,7 @@ export class ModelRegistry {
 				const requestConfig = { ...providerConfig, headers: resolvedHeaders };
 				const models = this.#applyProviderModelOverrides(
 					providerId,
-					await discoverModelsByProviderType(requestConfig, this.#discoveryContext()),
+					await discoverModelsByProviderType(requestConfig, this.#discoveryContext(providerId)),
 				);
 				this.#lastDiscoveryWarnings.delete(providerId);
 				return models.map(toModelSpec);
@@ -2207,9 +2208,9 @@ export class ModelRegistry {
 		};
 	}
 
-	#discoveryContext(): DiscoveryContext {
+	#discoveryContext(provider: string): DiscoveryContext {
 		return {
-			fetch: this.#fetch,
+			fetch: wrapFetchForProxy(this.#fetch, provider),
 			getBearerApiKeyResolver: async provider => {
 				const apiKey = await this.getApiKeyForProvider(provider);
 				if (!isDiscoveryBearerApiKey(apiKey)) {
@@ -2220,9 +2221,9 @@ export class ModelRegistry {
 		};
 	}
 
-	#nonResolvingDiscoveryContext(): DiscoveryContext {
+	#nonResolvingDiscoveryContext(provider: string): DiscoveryContext {
 		return {
-			fetch: this.#fetch,
+			fetch: wrapFetchForProxy(this.#fetch, provider),
 			getBearerApiKeyResolver: async () => undefined,
 		};
 	}
@@ -2403,7 +2404,7 @@ export class ModelRegistry {
 							);
 						},
 						endpoint: this.#descriptorBaseUrl("google-antigravity"),
-						fetch: this.#fetch,
+						fetch: wrapFetchForProxy(this.#fetch, "google-antigravity"),
 					}),
 			},
 			{
@@ -2414,7 +2415,7 @@ export class ModelRegistry {
 						oauthToken,
 						projectId: extractGoogleOAuthProjectId(raw) ?? this.#resolveGeminiCliDiscoveryProjectId(oauthToken),
 						endpoint: this.#descriptorBaseUrl("google-gemini-cli"),
-						fetch: this.#fetch,
+						fetch: wrapFetchForProxy(this.#fetch, "google-gemini-cli"),
 					}),
 			},
 			{
@@ -2438,13 +2439,13 @@ export class ModelRegistry {
 							baseUrl: officialCredential ? undefined : configuredBaseUrl,
 							resolveAccounts: () =>
 								resolveOAuthDiscoveryAccounts(this.authStorage, "openai-codex", accessToken),
-							fetch: this.#fetch,
+							fetch: wrapFetchForProxy(this.#fetch, "openai-codex"),
 						});
 					}
 					return openaiCodexModelManagerOptions({
 						baseUrl: configuredBaseUrl,
 						resolveAccounts: async () => [{ accessToken }],
-						fetch: this.#fetch,
+						fetch: wrapFetchForProxy(this.#fetch, "openai-codex"),
 					});
 				},
 			},
@@ -2509,7 +2510,7 @@ export class ModelRegistry {
 				const discoveryConfig = {
 					apiKey: isDiscoveryBearerApiKey(apiKey) ? apiKey : undefined,
 					baseUrl: this.#descriptorBaseUrl(descriptor.providerId),
-					fetch: this.#fetch,
+					fetch: wrapFetchForProxy(this.#fetch, descriptor.providerId),
 					region: identity?.region,
 					inferenceRegion: identity?.inferenceRegion,
 					orgId: identity?.orgId,
@@ -2520,7 +2521,7 @@ export class ModelRegistry {
 				const managerOptions = descriptor.createModelManagerOptions(preparedConfig);
 				const modelsDev = managerOptions.modelsDev
 					? { ...managerOptions.modelsDev, additiveOnly: true }
-					: modelsDevCatalogFallback(descriptor.providerId, this.#fetch);
+					: modelsDevCatalogFallback(descriptor.providerId, wrapFetchForProxy(this.#fetch, descriptor.providerId));
 				options.push(modelsDev ? { ...managerOptions, modelsDev } : managerOptions);
 			}
 		}

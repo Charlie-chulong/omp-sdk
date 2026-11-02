@@ -3,6 +3,7 @@ import * as AIError from "../../error";
 import type { AfterExchangeHook, ExchangeContext } from "../hooks/types";
 import type { FetchImpl } from "../../types";
 import type { OAuthCredentials } from "./types";
+import { proxyFetch, wrapFetchForProxy } from "../../utils/proxy";
 
 const PROVIDER = "muse-code";
 const MUSE_KEY_URL = "https://api.meta.ai/muse-code/key";
@@ -73,7 +74,7 @@ export async function requestMuseCodeKey(
 	accessToken: string,
 	options: MuseCodeKeyRequestOptions = {},
 ): Promise<MuseCodeKeyResponse> {
-	const response = await (options.fetch ?? fetch)(MUSE_KEY_URL, {
+	const response = await wrapFetchForProxy(options.fetch ?? proxyFetch(), PROVIDER)(MUSE_KEY_URL, {
 		method: "POST",
 		headers: {
 			Accept: "application/json",

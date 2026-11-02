@@ -4,6 +4,7 @@
 
 import * as AIError from "../../error";
 import type { FetchImpl } from "../../types";
+import { proxyFetch, wrapFetchForProxy } from "../../utils/proxy";
 
 const XAI_OAUTH_ISSUER = "https://auth.x.ai";
 const XAI_OAUTH_DISCOVERY_URL = `${XAI_OAUTH_ISSUER}/.well-known/openid-configuration`;
@@ -85,7 +86,7 @@ async function xaiOAuthDiscovery(
 	fetchOverride?: FetchImpl,
 	signal?: AbortSignal,
 ): Promise<XAIOAuthDiscovery> {
-	const fetchImpl = fetchOverride ?? fetch;
+	const fetchImpl = wrapFetchForProxy(fetchOverride ?? proxyFetch(), "xai");
 	let response: Response;
 	try {
 		response = await fetchImpl(XAI_OAUTH_DISCOVERY_URL, {
@@ -195,7 +196,7 @@ export async function fetchXAIOAuthIdentity(
 ): Promise<XAIOAuthIdentity | null> {
 	const token = accessToken.trim();
 	if (!token) return null;
-	const fetchImpl = fetchOverride ?? fetch;
+	const fetchImpl = wrapFetchForProxy(fetchOverride ?? proxyFetch(), "xai");
 	try {
 		const response = await fetchImpl(XAI_OAUTH_USERINFO_URL, {
 			method: "GET",

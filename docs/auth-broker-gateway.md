@@ -40,7 +40,7 @@ Source: `packages/ai/src/auth-broker/`, `packages/ai/src/auth-gateway/`, `packag
                   api.anthropic.com / api.openai.com / …
 ```
 
-The broker is the only writer of OAuth refresh tokens. Clients (including the gateway itself) load a redacted snapshot in which every `refresh` field has been replaced with `REMOTE_REFRESH_SENTINEL`; when an access token expires the client calls `POST /v1/credential/:id/refresh` and the broker performs the refresh server-side. Credential writes through `RemoteAuthCredentialStore` await broker persistence and update its local snapshot before returning; the broker remains the authoritative writer.
+The broker is the only writer of OAuth refresh tokens. Clients (including the gateway itself) load a redacted snapshot in which every `refresh` field has been replaced with `REMOTE_REFRESH_SENTINEL`; when an access token expires the client calls `POST /v1/credential/:id/refresh-with-proxy-policy` with its effective `proxyPolicy`, and the broker performs the refresh server-side under that request's policy. Credential writes through `RemoteAuthCredentialStore` await broker persistence and update its local snapshot before returning; the broker remains the authoritative writer.
 
 ## auth-broker
 
@@ -75,7 +75,7 @@ omp auth-broker status    [--json]
 | `GET`    | `/v1/snapshot`               | bearer | Redacted snapshot (refresh tokens replaced by sentinel)            |
 | `GET`    | `/v1/snapshot/stream`        | bearer | SSE snapshot stream with delta events and keepalives               |
 | `POST`   | `/v1/credential`             | bearer | Upsert one OAuth or API-key credential                             |
-| `POST`   | `/v1/credential/:id/refresh` | bearer | Force-refresh one OAuth credential                                 |
+| `POST`   | `/v1/credential/:id/refresh-with-proxy-policy` | bearer | Refresh one OAuth credential using the supplied proxy policy       |
 | `POST`   | `/v1/credential/:id/disable` | bearer | Disable one credential with a recorded cause                       |
 | `GET`    | `/v1/credentials/disabled`   | bearer | List disabled credentials; optional `provider` query filter        |
 | `POST`   | `/v1/credential/:id/block`   | bearer | Upsert a provider/scope rate-limit block                           |
@@ -99,10 +99,9 @@ and deleted/disabled `removed` events. The SSE event name also appears as JSON
 `kind`; deltas carry `generation`, `serverNowMs`, and `refresher`, plus `entry`
 or the removed `id`. Keepalives are SSE comments, not JSON events.
 
-Direct `POST /v1/credential/:id/refresh` forces a refresh. The
-`?reason=auth-recovery` form may reuse a still-usable token that the broker
-minted within the preceding five minutes, preventing repeated remints during
-an upstream outage.
+`POST /v1/credential/:id/refresh-with-proxy-policy` accepts a JSON body containing `proxyPolicy` and normally forces a refresh. The `?reason=auth-recovery` form may reuse a still-usable token that the broker minted within the preceding five minutes, preventing repeated remints during an upstream outage.
+
+Upgrade clients and broker together: the old `/refresh` endpoint is removed. Upstream refresh runs on the broker, so the selected proxy must be reachable there; a proxy bound only to a client's loopback interface is not usable by a remote broker. This policy is request-local and does not change the broker's background-refresh configuration.
 
 #### Conditional snapshot long polling
 

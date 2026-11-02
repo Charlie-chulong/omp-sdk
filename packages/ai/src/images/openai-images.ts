@@ -1,3 +1,4 @@
+import { transportFetch } from "../utils/transport-fetch";
 import type { Model } from "@oh-my-pi/pi-catalog/types";
 import * as AIError from "../error";
 import { resolveXaiBaseUrl } from "../providers/xai-base-url";
@@ -23,7 +24,7 @@ export async function generateOpenAIImage(
 	request: ImageGenerationRequest,
 	options: ImageGenerationOptions,
 ): Promise<ImageGenerationResult> {
-	const fetchImpl = options.fetch ?? fetch;
+	const fetchImpl = transportFetch(model, options.fetch);
 	const size = resolveOpenAIImageSize(request.aspectRatio, request.imageSize);
 	const count = request.count ?? 1;
 	const wireModelId = model.requestModelId ?? model.id;

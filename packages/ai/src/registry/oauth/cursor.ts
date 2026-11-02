@@ -4,6 +4,7 @@ import type { FetchImpl } from "../../types";
 import { isRecord } from "../../utils";
 import { generatePKCE } from "./pkce";
 import type { OAuthController, OAuthCredentials } from "./types";
+import { proxyFetch, wrapFetchForProxy } from "../../utils/proxy";
 
 const CURSOR_LOGIN_URL = "https://cursor.com/loginDeepControl";
 const CURSOR_POLL_URL = "https://api2.cursor.sh/auth/poll";
@@ -56,7 +57,7 @@ export async function pollCursorAuth(
 		await runtime.sleep(delay);
 
 		try {
-			const response = await fetch(`${CURSOR_POLL_URL}?uuid=${uuid}&verifier=${verifier}`);
+			const response = await proxyFetch("cursor")(`${CURSOR_POLL_URL}?uuid=${uuid}&verifier=${verifier}`);
 
 			if (response.status === 404) {
 				consecutiveErrors = 0;
@@ -122,11 +123,11 @@ export async function loginCursorHook(callbacks: OAuthController): Promise<OAuth
 		url => callbacks.onAuth?.({ url }),
 		callbacks.onProgress ? () => callbacks.onProgress?.("Waiting for browser authentication...") : undefined,
 	);
-	return withCursorAccountEmail(credentials, callbacks.fetch ?? fetch, callbacks.signal);
+	return withCursorAccountEmail(credentials, wrapFetchForProxy(callbacks.fetch ?? proxyFetch(), "cursor"), callbacks.signal);
 }
 
 export async function refreshCursorToken(refreshToken: string, signal?: AbortSignal): Promise<OAuthCredentials> {
-	const response = await fetch(CURSOR_REFRESH_URL, {
+	const response = await proxyFetch("cursor")(CURSOR_REFRESH_URL, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ grant_type: "refresh_token", client_id: CURSOR_CLIENT_ID, refresh_token: refreshToken }),
@@ -203,7 +204,7 @@ export function cursorConnectRequest(accessToken: string, signal?: AbortSignal):
  */
 export async function fetchCursorAccountEmail(
 	accessToken: string,
-	fetchImpl: FetchImpl = fetch,
+	fetchImpl: FetchImpl = proxyFetch("cursor"),
 	signal?: AbortSignal,
 ): Promise<string | undefined> {
 	const subject = cursorAccessTokenSubject(accessToken);

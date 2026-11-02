@@ -16,6 +16,7 @@ import * as logger from "@oh-my-pi/pi-utils/logger";
 import type { AuthCredentialSnapshotEntry, AuthStorage, StoredCredentialBlock } from "../auth-storage";
 import { parseBind } from "../utils/parse-bind";
 import { resolvePeer } from "../utils/resolve-peer";
+import { ProxyPolicyController, type ProxyPolicy, withProxyPolicy } from "../utils/proxy";
 import { AuthBrokerRefresher, type AuthBrokerRefresherSchedule } from "./refresher";
 import type {
 	ClientUsageReportRequest,
@@ -49,6 +50,7 @@ import {
 	credentialBlockDeleteRequestSchema,
 	credentialBlockRequestSchema,
 	credentialDisableRequestSchema,
+	credentialRefreshRequestSchema,
 	credentialUploadRequestSchema,
 } from "./wire-schemas";
 
@@ -156,7 +158,7 @@ async function parseBody<t>(
 	return { ok: true, data: result };
 }
 
-const REFRESH_ROUTE = /^\/v1\/credential\/(\d+)\/refresh$/;
+const REFRESH_ROUTE = /^\/v1\/credential\/(\d+)\/refresh-with-proxy-policy$/;
 const DISABLE_ROUTE = /^\/v1\/credential\/(\d+)\/disable$/;
 const BLOCK_ROUTE = /^\/v1\/credential\/(\d+)\/block$/;
 const BLOCKS_ROUTE = /^\/v1\/credential\/(\d+)\/blocks$/;
@@ -937,12 +939,20 @@ export async function startAuthBroker(opts: AuthBrokerServerOptions): Promise<Au
 				if (refreshMatch) {
 					const id = Number.parseInt(refreshMatch[1], 10);
 					const authRecovery = url.searchParams.get("reason") === "auth-recovery";
+					const parsed = await parseBody(req, credentialRefreshRequestSchema);
+					if (!parsed.ok) return parsed.response;
+					let controller: ProxyPolicyController;
 					try {
-						const entry = await opts.storage.oauth.refresh(
+						controller = new ProxyPolicyController(parsed.data.proxyPolicy as ProxyPolicy);
+					} catch (error) {
+						return json(400, { error: error instanceof Error ? error.message : "Invalid proxy policy" });
+					}
+					try {
+						const entry = await withProxyPolicy(controller, () => opts.storage.oauth.refresh(
 							id,
 							req.signal,
 							authRecovery ? AUTH_RECOVERY_REFRESH_OPTIONS : undefined,
-						);
+						));
 						const body: CredentialRefreshResponse = { entry };
 						logger.info("auth-broker credential refreshed", {
 							id,

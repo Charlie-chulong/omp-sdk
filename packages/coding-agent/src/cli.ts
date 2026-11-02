@@ -16,6 +16,7 @@ try {
  */
 import type * as Postmortem from "@oh-my-pi/pi-utils/postmortem";
 import type { CliConfig, CommandMetadata } from "@oh-my-pi/pi-utils/cli";
+import { installProxyFetch } from "@oh-my-pi/pi-ai/utils/proxy";
 import {
 	APP_NAME,
 	getActiveProfile,
@@ -76,12 +77,6 @@ async function setFullProcessName(): Promise<void> {
 	setProcessName(APP_NAME);
 }
 
-/** Install PI_PROXY handling before any command implementation can make a provider request. */
-async function installNetworkBootstrap(): Promise<void> {
-	// Latency boundary: proxy socket/error modules are unnecessary before the first frame.
-	const { installGlobalProxyFetch } = await import("@oh-my-pi/pi-ai/utils/proxy");
-	installGlobalProxyFetch();
-}
 
 // Worker-host entry declaration (Worker threads and worker subprocesses
 // re-enter `Bun.main` with a hidden argv selector instead of loading separate
@@ -265,7 +260,8 @@ export async function runCli(argv: string[]): Promise<void> {
 		resolvedArgv[0] === "--version" ||
 		resolvedArgv[0] === "-v" ||
 		resolvedArgv[0] === "help";
-	await Promise.all([setFullProcessName(), helpOrVersion ? Promise.resolve() : installNetworkBootstrap()]);
+	if (!helpOrVersion) installProxyFetch();
+	await setFullProcessName();
 
 	if (resolvedArgv[0] === "--smoke-test") {
 		await runSmokeTest();

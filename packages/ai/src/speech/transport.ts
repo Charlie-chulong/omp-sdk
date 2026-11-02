@@ -1,3 +1,4 @@
+import { transportFetch } from "../utils/transport-fetch";
 import { calculateCost } from "@oh-my-pi/pi-catalog/models";
 import type { Api, Model, Usage } from "@oh-my-pi/pi-catalog/types";
 import { USER_AGENT } from "@oh-my-pi/pi-utils";
@@ -20,7 +21,7 @@ export async function postSpeechRequest(
 ): Promise<SpeechResult> {
 	const timeoutSignal = AbortSignal.timeout(SPEECH_TIMEOUT_MS);
 	const signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
-	const fetchImpl = options.fetch ?? fetch;
+	const fetchImpl = transportFetch(model, options.fetch);
 	const label = `${model.provider}/${model.id}`;
 	const audio = await withAuth(
 		options.apiKey,

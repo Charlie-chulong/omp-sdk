@@ -9,6 +9,7 @@ import type { FetchImpl } from "../../types";
 import { isRecord } from "../../utils";
 import type { AfterExchangeHook } from "../hooks/types";
 import type { OAuthController, OAuthCredentials } from "./types";
+import { proxyFetch } from "../../utils/proxy";
 
 const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 const AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize";
@@ -156,7 +157,7 @@ async function exchangeCodeForToken(
 	code: string,
 	verifier: string,
 	redirectUri: string,
-	fetchImpl: FetchImpl = fetch,
+	fetchImpl: FetchImpl = proxyFetch("openai-codex"),
 ): Promise<OAuthCredentials> {
 	const tokenResponse = await fetchImpl(TOKEN_URL, {
 		method: "POST",
@@ -214,7 +215,7 @@ async function exchangeCodeForToken(
 export async function loginOpenAICodexDevice(ctrl: OAuthController): Promise<OAuthCredentials> {
 	ctrl.onProgress?.("Initiating device authorization…");
 
-	const initResponse = await fetch(DEVICE_USERCODE_URL, {
+	const initResponse = await proxyFetch("openai-codex")(DEVICE_USERCODE_URL, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ client_id: CLIENT_ID }),
@@ -260,7 +261,7 @@ export async function loginOpenAICodexDevice(ctrl: OAuthController): Promise<OAu
 			throw new AIError.LoginCancelledError("Device authorization cancelled");
 		}
 
-		const pollResponse = await fetch(DEVICE_TOKEN_URL, {
+		const pollResponse = await proxyFetch("openai-codex")(DEVICE_TOKEN_URL, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({

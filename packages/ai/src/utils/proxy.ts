@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { portableFetch } from "./node-fetch";
 import * as net from "node:net";
 import * as tls from "node:tls";
@@ -6,16 +7,93 @@ import { AbortError } from "../error/abort";
 import { StreamTimeoutError, ValidationError } from "../error/validation";
 import type { FetchImpl } from "../types";
 
-/**
- * Host:port of a proxy URL for logging. Proxy URLs can carry basic-auth
- * credentials, so never log the raw value.
- */
-function proxyLogTarget(proxyUrl: string): string {
-	try {
-		return new URL(proxyUrl).host;
-	} catch {
-		return "<unparseable>";
+export type ProxyRoute = { mode: "direct" } | { mode: "proxy"; url: string };
+
+export interface ProxyPolicy {
+	enabled: boolean;
+	default?: ProxyRoute;
+	providers?: Record<string, ProxyRoute>;
+	noProxy?: string[];
+}
+
+function validateRoute(route: ProxyRoute): ProxyRoute {
+	if (route?.mode === "direct") return Object.freeze({ mode: "direct" });
+	if (route?.mode !== "proxy" || typeof route.url !== "string") {
+		throw new ValidationError("Proxy route must be direct or an HTTP(S) proxy URL");
 	}
+	let url: URL;
+	try {
+		url = new URL(route.url);
+	} catch {
+		throw new ValidationError("Invalid proxy URL");
+	}
+	if (!["http:", "https:"].includes(url.protocol) || !url.hostname || url.pathname !== "/" || url.search || url.hash) {
+		throw new ValidationError("Proxy URL must use HTTP or HTTPS without a path, query, or fragment");
+	}
+	try {
+		decodeURIComponent(url.username);
+		decodeURIComponent(url.password);
+	} catch {
+		throw new ValidationError("Invalid proxy URL credentials");
+	}
+	return Object.freeze({ mode: "proxy", url: url.href });
+}
+
+function validatePolicy(policy: ProxyPolicy): ProxyPolicy {
+	if (!policy || typeof policy.enabled !== "boolean") throw new ValidationError("Proxy policy requires enabled");
+	const result: ProxyPolicy = { enabled: policy.enabled };
+	if (policy.default !== undefined) result.default = validateRoute(policy.default);
+	if (policy.providers !== undefined) {
+		if (!policy.providers || typeof policy.providers !== "object" || Array.isArray(policy.providers)) {
+			throw new ValidationError("Proxy providers must be a provider route map");
+		}
+		result.providers = Object.freeze(Object.fromEntries(Object.entries(policy.providers).map(([id, route]) => [id, validateRoute(route)])));
+	}
+	if (policy.noProxy !== undefined) {
+		if (!Array.isArray(policy.noProxy) || policy.noProxy.some(rule => typeof rule !== "string" || !rule.trim())) {
+			throw new ValidationError("Proxy bypass rules must be nonempty strings");
+		}
+		result.noProxy = Object.freeze(policy.noProxy.map(rule => rule.trim())) as unknown as string[];
+	}
+	return Object.freeze(result);
+}
+
+export class ProxyPolicyController {
+	#policy: ProxyPolicy;
+	#revision = 0;
+	constructor(policy: ProxyPolicy = { enabled: false }) {
+		this.#policy = validatePolicy(policy);
+	}
+	getPolicy(): ProxyPolicy { return this.#policy; }
+	setPolicy(policy: ProxyPolicy): void {
+		this.#policy = validatePolicy(policy);
+		this.#revision++;
+	}
+	get revision(): number { return this.#revision; }
+}
+
+const proxyContext = new AsyncLocalStorage<{ controller?: ProxyPolicyController; provider?: string }>();
+let defaultController = new ProxyPolicyController();
+
+export function getProxyPolicyController(): ProxyPolicyController {
+	return proxyContext.getStore()?.controller ?? defaultController;
+}
+
+/** Active session controller only, for nested SDK session construction. */
+export function getScopedProxyPolicyController(): ProxyPolicyController | undefined {
+	return proxyContext.getStore()?.controller;
+}
+
+export function setDefaultProxyPolicyController(controller: ProxyPolicyController): void {
+	defaultController = controller;
+}
+
+export function withProxyPolicy<T>(controller: ProxyPolicyController, callback: () => T): T {
+	return proxyContext.run({ ...proxyContext.getStore(), controller }, callback);
+}
+
+export function withProxyProvider<T>(provider: string, callback: () => T): T {
+	return proxyContext.run({ ...proxyContext.getStore(), provider }, callback);
 }
 
 /**
@@ -57,25 +135,11 @@ export function isLocalOrMetadataHost(host: string): boolean {
 	return false;
 }
 
-/**
- * Check if the url should bypass the proxy due to hard-coded localhost/metadata checks
- * or custom NO_PROXY/no_proxy environment variables rules.
- */
+/** Local/private hosts always bypass; optional policy rules match host suffixes and ports. */
 export function shouldBypassProxy(urlObj: URL): boolean {
-	if (isLocalOrMetadataHost(urlObj.hostname)) {
-		return true;
-	}
-
-	const noProxyVal = process.env.NO_PROXY || process.env.no_proxy;
-	if (!noProxyVal) {
-		return false;
-	}
-
-	const rules = noProxyVal
-		.split(/[,\s]+/)
-		.map(r => r.trim())
-		.filter(Boolean);
-	const targetHost = urlObj.hostname.toLowerCase();
+	if (isLocalOrMetadataHost(urlObj.hostname)) return true;
+	const rules = getProxyPolicyController().getPolicy().noProxy ?? [];
+	const targetHost = urlObj.hostname.toLowerCase().replace(/^\[|\]$/g, "");
 	const targetPort = urlObj.port || (urlObj.protocol === "https:" || urlObj.protocol === "wss:" ? "443" : "80");
 
 	for (const rule of rules) {
@@ -120,160 +184,59 @@ export function shouldBypassProxy(urlObj: URL): boolean {
 	return false;
 }
 
-const proxyCache = new Map<string, string | undefined>();
-
-/** Test seam: clears the provider proxy cache. */
-export function __resetProxyCache(): void {
-	proxyCache.clear();
+/** Resolve the current policy at request time, preserving provider IDs verbatim. */
+export function getProxyForProvider(provider?: string): string | undefined {
+	const policy = getProxyPolicyController().getPolicy();
+	if (!policy.enabled) return undefined;
+	const id = provider ?? proxyContext.getStore()?.provider;
+	const route = (id && Object.hasOwn(policy.providers ?? {}, id) ? policy.providers?.[id] : undefined) ?? policy.default;
+	return route?.mode === "proxy" ? route.url : undefined;
 }
 
-/**
- * Normalizes provider id (e.g. github-copilot -> PI_PROXY_GITHUB_COPILOT) and looks it up.
- * If not found, falls back to PI_PROXY. Results are memoized because env values are static
- * for the lifetime of the process and this function is called for every outgoing request.
- */
-export function getProxyForProvider(provider: string): string | undefined {
-	if (proxyCache.has(provider)) {
-		return proxyCache.get(provider);
-	}
-
-	const normalized = provider.toUpperCase().replace(/[^A-Z0-9]/g, "_");
-	const envKey = `PI_PROXY_${normalized}`;
-	const value = process.env[envKey] || process.env.PI_PROXY;
-	proxyCache.set(provider, value);
-	// Once per provider per process: a silently unproxied provider request is
-	// otherwise indistinguishable from a proxied one until the region block
-	// answers 403.
-	logger.debug("provider proxy resolved", {
-		provider,
-		source: process.env[envKey] ? envKey : value ? "PI_PROXY" : "none",
-		proxy: value ? proxyLogTarget(value) : undefined,
-	});
-	return value;
+export function getProxyForUrl(provider: string | undefined, url: URL): string | undefined {
+	return shouldBypassProxy(url) ? undefined : getProxyForProvider(provider);
 }
 
-/** Resolves provider-specific and standard proxy variables for a target URL, honoring NO_PROXY. */
-export function getProxyForUrl(provider: string, url: URL): string | undefined {
-	if (shouldBypassProxy(url)) return undefined;
-	const protocolProxy =
-		url.protocol === "https:" || url.protocol === "wss:"
-			? process.env.HTTPS_PROXY || process.env.https_proxy
-			: process.env.HTTP_PROXY || process.env.http_proxy;
-	return getProxyForProvider(provider) || protocolProxy || process.env.ALL_PROXY || process.env.all_proxy || undefined;
-}
-
-/**
- * Return `init` with `proxy: proxyUrl` set when the request should tunnel.
- * A caller-supplied `init.proxy` always wins (the innermost, most specific
- * decision); Unix sockets, local/metadata hosts, NO_PROXY matches, and
- * unparseable URLs pass through unchanged.
- */
-export function withProxyInit(
-	input: string | URL | Request,
-	init: RequestInit | undefined,
-	proxyUrl: string,
-): RequestInit | undefined {
-	if (init && (("unix" in init && init.unix) || ("proxy" in init && init.proxy))) return init;
-	const urlStr = input instanceof Request ? input.url : input.toString();
-	let urlObj: URL;
+/** Always stamp direct explicitly: Bun must never consult ambient proxy variables. */
+export function withProxyInit(input: string | URL | Request, init: RequestInit | undefined, proxyUrl?: string): RequestInit {
+	let proxy = proxyUrl ?? "";
+	if (init && "unix" in init && init.unix) proxy = "";
 	try {
-		urlObj = new URL(urlStr);
+		if (shouldBypassProxy(new URL(input instanceof Request ? input.url : input.toString()))) proxy = "";
 	} catch {
-		return init;
+		proxy = "";
 	}
-
-	if (shouldBypassProxy(urlObj)) {
-		// A NO_PROXY rule silencing a configured proxy is otherwise invisible
-		// until the unproxied egress is refused; local hosts are routine.
-		if (!isLocalOrMetadataHost(urlObj.hostname)) {
-			logger.debug("proxy bypassed by NO_PROXY", {
-				host: urlObj.host,
-				noProxy: process.env.NO_PROXY || process.env.no_proxy,
-			});
-		}
-		return init;
-	}
-
-	const proxied: RequestInit & { proxy: string } = { ...init, proxy: proxyUrl };
-	return proxied;
+	return { ...init, proxy } as RequestInit;
 }
 
-/** Wraps `fetchImpl` so non-local requests tunnel through `proxyUrl`; see {@link withProxyInit}. */
-function wrapFetchWithProxyUrl(fetchImpl: FetchImpl, proxyUrl: string | undefined): FetchImpl {
-	if (!proxyUrl) {
-		return fetchImpl;
-	}
-
-	const wrapped = (input: string | URL | Request, init?: RequestInit): Promise<Response> =>
-		fetchImpl(input, withProxyInit(input, init, proxyUrl));
-
-	if (fetchImpl.preconnect) {
-		wrapped.preconnect = fetchImpl.preconnect;
-	}
+export function wrapFetchForProxy(fetchImpl: FetchImpl, provider?: string): FetchImpl {
+	const base = portableFetch(fetchImpl);
+	const wrapped: FetchImpl = (input, init) => {
+		const dispatch = () => base(input, withProxyInit(input, init, getProxyForProvider(provider)));
+		return provider === undefined ? dispatch() : withProxyProvider(provider, dispatch);
+	};
 	return wrapped;
 }
 
-/**
- * Wraps a fetch implementation to inject proxy options for non-local hosts.
- */
-export function wrapFetchForProxy(fetchImpl: FetchImpl, provider: string): FetchImpl {
-	return wrapFetchWithProxyUrl(fetchImpl, getProxyForProvider(provider));
+/** Dynamic provider-aware SDK fetch, backed by native Bun fetch or undici on Node. */
+export function proxyFetch(provider?: string): FetchImpl {
+	const base = globalThis.fetch === installedPolicyFetch ? installedPortableFetch! : portableFetch(globalThis.fetch);
+	return wrapFetchForProxy(base, provider);
 }
 
-let globalProxyFetchInstalled = false;
+let installedPolicyFetch: FetchImpl | undefined;
+let installedPortableFetch: FetchImpl | undefined;
 
-/** Test seam: re-arms {@link installGlobalProxyFetch}. */
-export function __resetGlobalProxyFetch(): void {
-	globalProxyFetchInstalled = false;
-}
-
-/**
- * Routes the process-wide `globalThis.fetch` through `PI_PROXY`.
- *
- * Bun's native fetch resolves `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` by
- * itself but knows nothing about `PI_PROXY`. Provider *streams* get their proxy
- * from {@link wrapFetchForProxy}; every other provider-bound request — OAuth
- * token refresh and login, usage probes, model discovery — goes out through the
- * bare global `fetch` and would silently ignore `PI_PROXY`. That asymmetry is
- * fatal wherever a provider geo-blocks its token endpoint: the stream is
- * proxied, the refresh is not, and the credential dies with a 403.
- *
- * A per-request `proxy` (including `PI_PROXY_<PROVIDER>` injected by
- * {@link wrapFetchForProxy}) still wins, and loopback / private-range /
- * `NO_PROXY` targets bypass, so local model servers and MCP hosts are
- * untouched. Idempotent; a no-op when `PI_PROXY` is unset.
- */
-export function installGlobalProxyFetch(): void {
-	if (globalProxyFetchInstalled) return;
-	globalThis.fetch = portableFetch(globalThis.fetch) as typeof globalThis.fetch;
-	const proxyUrl = process.env.PI_PROXY?.trim();
-	// One line naming every proxy-relevant variable this process can see: a
-	// missing PI_PROXY and a NO_PROXY rule that silences it are otherwise
-	// indistinguishable from a working proxy that the peer rejected.
-	const env = {
-		PI_PROXY: proxyUrl ? proxyLogTarget(proxyUrl) : undefined,
-		PI_PROXY_ANTHROPIC: process.env.PI_PROXY_ANTHROPIC ? proxyLogTarget(process.env.PI_PROXY_ANTHROPIC) : undefined,
-		HTTPS_PROXY: process.env.HTTPS_PROXY || process.env.https_proxy ? "set" : undefined,
-		ALL_PROXY: process.env.ALL_PROXY || process.env.all_proxy ? "set" : undefined,
-		NO_PROXY: process.env.NO_PROXY || process.env.no_proxy,
+/** Keep non-provider SDK-host networking direct, including tool and MCP fetches. */
+export function installProxyFetch(): void {
+	if (globalThis.fetch === installedPolicyFetch) return;
+	const base = portableFetch(globalThis.fetch);
+	installedPortableFetch = base;
+	installedPolicyFetch = (input, init) => {
+		const provider = proxyContext.getStore()?.provider;
+		return base(input, withProxyInit(input, init, provider === undefined ? undefined : getProxyForProvider(provider)));
 	};
-	if (!proxyUrl) {
-		// Without any proxy variable there is nothing to diagnose; skip the
-		// per-process line. When some are set, record why none was installed.
-		if (Object.values(env).some(value => value !== undefined && value !== "")) {
-			logger.debug("global proxy fetch not installed", {
-				reason: "PI_PROXY unset",
-				env,
-			});
-		}
-		return;
-	}
-	globalProxyFetchInstalled = true;
-	globalThis.fetch = wrapFetchWithProxyUrl(globalThis.fetch, proxyUrl) as typeof globalThis.fetch;
-	logger.debug("global proxy fetch installed", {
-		proxy: proxyLogTarget(proxyUrl),
-		env,
-	});
+	globalThis.fetch = installedPolicyFetch as typeof globalThis.fetch;
 }
 
 export interface ConnectProxiedSocketOptions {
@@ -298,12 +261,14 @@ export async function connectProxiedSocket(
 		throw new AbortError("Proxy tunnel aborted");
 	}
 
-	const proxyUrl = new URL(proxyUrlStr);
+	const route = validateRoute({ mode: "proxy", url: proxyUrlStr });
+	if (route.mode !== "proxy") throw new ValidationError("Expected proxy route");
+	const proxyUrl = new URL(route.url);
 	const targetUrl = new URL(targetUrlStr);
 
 	const useProxySsl = proxyUrl.protocol === "https:";
 	const proxyPort = proxyUrl.port ? parseInt(proxyUrl.port, 10) : useProxySsl ? 443 : 80;
-	const proxyHost = proxyUrl.hostname;
+	const proxyHost = proxyUrl.hostname.replace(/^\[|\]$/g, "");
 
 	const targetPort = targetUrl.port ? parseInt(targetUrl.port, 10) : 443;
 	const targetHost = targetUrl.hostname;

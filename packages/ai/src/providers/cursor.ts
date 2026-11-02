@@ -845,6 +845,8 @@ function wrapHttp2RunTransport(request: http2.ClientHttp2Stream): CursorRunTrans
 
 interface CursorHttp1RunTransportOptions {
 	baseUrl: string;
+	provider: string;
+	fetch?: CursorOptions["fetch"];
 	headers: Record<string, string>;
 	requestId: string;
 	signal?: AbortSignal;
@@ -877,7 +879,7 @@ function readConnectFrameMessage(frame: Uint8Array): Uint8Array {
 function createHttp1RunTransport(options: CursorHttp1RunTransportOptions): CursorRunTransport {
 	const abortController = new AbortController();
 	const signal = options.signal ? AbortSignal.any([options.signal, abortController.signal]) : abortController.signal;
-	const fetchImpl = wrapFetchForProxy(globalThis.fetch, "cursor");
+	const fetchImpl = wrapFetchForProxy(options.fetch ?? globalThis.fetch, options.provider);
 	const requestId = create(BidiRequestIdSchema, { requestId: options.requestId });
 	const pendingAppends: CursorPendingAppend[] = [];
 	let appendSeqno = 0n;
@@ -1503,6 +1505,8 @@ function streamCursorWithWireMode(
 			} else {
 				runTransport = createHttp1RunTransport({
 					baseUrl,
+					provider: model.provider,
+					fetch: options?.fetch,
 					headers: requestHeaders,
 					requestId,
 					signal: options?.signal,

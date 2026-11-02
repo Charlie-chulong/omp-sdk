@@ -1,3 +1,4 @@
+import { transportFetch } from "../utils/transport-fetch";
 import type { Model } from "@oh-my-pi/pi-catalog/types";
 import { prompt, readSseJson } from "@oh-my-pi/pi-utils";
 import { type ApiKey, isApiKeyResolver, resolvedApiKeyBearer, withAuth } from "../auth-retry";
@@ -94,7 +95,7 @@ export async function generateFactoryDroidImage(
 	request: ImageGenerationRequest,
 	options: ImageGenerationOptions,
 ): Promise<ImageGenerationResult> {
-	const fetchImpl = options.fetch ?? fetch;
+	const fetchImpl = transportFetch(model, options.fetch);
 	const inputImages = request.inputImages ?? [];
 	const auth = trackIdentities(options.apiKey);
 	const result = await withAuth(

@@ -5,10 +5,12 @@
 ### Breaking Changes
 
 - `startAuthBroker()` and `startAuthGateway()` now return promises; await startup before using their server handles.
+- Provider routing now uses explicit live `ProxyPolicy` controllers instead of proxy environment variables. Broker refresh moved to `/v1/credential/:id/refresh-with-proxy-policy`; upgrade clients and broker together.
 
 ### Added
 
 - Added Node.js-compatible model transport and authentication storage adapters for headless SDK hosts.
+- Added per-session and exact per-provider proxy policies across model, OAuth, usage, discovery, media, judgment, compaction, and WebSocket traffic without interrupting active responses.
 
 ### Changed
 
