@@ -10,6 +10,7 @@
 ### Fixed
 
 - Fixed native addon package loading under Node.js and Electron.
+- Fixed Windows Desktop addon builds failing with `EPERM` during temporary-directory cleanup by validating the installed addon instead of loading the temporary DLL.
 
 ### Removed
 

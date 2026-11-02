@@ -298,7 +298,8 @@ try {
 	}
 
 	if (desktopBuild) {
-		const bindings = require_(builtAddonPath);
+		// Loading the installed addon leaves the temporary DLL unlocked for Windows cleanup.
+		const bindings = require_(canonicalAddonPath);
 		if (typeof bindings.nativeCapabilities !== "function") {
 			throw new Error("Desktop addon is missing nativeCapabilities(); rebuild the current native Rust sources.");
 		}
