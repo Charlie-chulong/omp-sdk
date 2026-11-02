@@ -223,6 +223,11 @@ publishes npm packages, upstream CLI binaries or the draft itself. Review the
 bilingual notes and all five assets before publishing in GitHub. A published tag
 is immutable for this workflow; use a new pinned SDK release tag for new bytes.
 
+Before publishing, select the exact tag from `sdk/node-release.json` and the
+commit used by the successful Actions run. GitHub may display an `untagged-*`
+placeholder for a draft; do not publish that placeholder. Desktop's download
+URLs require the configured SDK tag.
+
 **中文：** SDK 暂存实现统一位于子模块 `stageNodeSdk`，通过显式参数选择
 desktop/core；不会读取 Desktop 环境配置，也不会伪造跨平台原生依赖。
 四个平台必须分别在对应真实主机安装锁定依赖、构建原生插件并运行最终压缩包
@@ -234,6 +239,10 @@ desktop/core；不会读取 Desktop 环境配置，也不会伪造跨平台原�
 只有四个平台烟测全部通过后才生成索引、上传同一发布草稿并重新下载校验资产。
 必须人工核对双语说明和四个压缩包加索引，再正式发布；失败或资产缺失时不得
 声称发布就绪。已发布标签不会被覆盖，更新时必须使用新的固定 SDK 标签。
+
+正式发布前，必须选择 `sdk/node-release.json` 中的准确标签，以及已通过烟测的
+Actions 运行对应提交。GitHub 草稿可能显示 `untagged-*` 占位标识；不要使用该
+占位标签发布，否则 Desktop 固定版本的下载地址无法访问。
 
 
 ### Plugin management in a dedicated Node child
