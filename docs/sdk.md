@@ -53,10 +53,16 @@ persistence remain reachable through the same SDK APIs.
 `gen:bundle:node` still writes the independent, generic `dist/node/` artifact.
 
 Node uses its native SQLite driver with the existing OMP schemas and JSONL
-session format. Extension TypeScript is compiled in-process; extension imports
-resolve to the host's shared SDK modules. Workers re-enter a single Node host
-using the same selectors as the Bun CLI. Installing additional JS dependencies
-or plugin packages under Node requires npm on PATH.
+session format. Executable plugins, extensions, custom tools/commands, and eval
+support JavaScript only; no TypeScript compiler is shipped. Precompile
+TS/TSX/MTS/CTS/JSX modules to `.js`, `.mjs`, or `.cjs` and point plugin manifests
+at the emitted files. Reading or editing TypeScript source remains supported;
+the standalone Bun CLI retains its built-in TypeScript transpilation.
+Extension imports resolve to the host's shared SDK modules. Workers re-enter a
+single Node host using the same selectors as the Bun CLI. Installing additional
+JS dependencies or plugin packages under Node requires npm on PATH.
+Concurrent Node plugin imports share a CommonJS reload wave; cache entries are
+invalidated only between completed waves, never during an active module import.
 
 In Electron, run the SDK in a Node-enabled utility process or backend rather
 than an isolated renderer. Package the platform-specific native addon outside

@@ -4,6 +4,8 @@ Custom tools are model-callable functions that plug into the same tool execution
 
 A custom tool is a TypeScript/JavaScript module that exports a factory. The factory receives a host API (`CustomToolAPI`) and returns one tool or an array of tools.
 
+TypeScript examples run directly under Bun. The Node SDK requires precompiled `.js`, `.mjs`, or `.cjs` tools, including their dependencies; see [Node.js and Electron](./sdk.md#nodejs-and-electron).
+
 ## What this is (and is not)
 
 - **Custom tool**: callable by the model during a turn (`execute` + parameter schema).

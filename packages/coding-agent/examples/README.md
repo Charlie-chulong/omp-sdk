@@ -2,6 +2,8 @@
 
 Example code for omp-coding-agent SDK, extensions, hooks, and custom tools.
 
+TypeScript examples run directly with Bun. Node SDK/Desktop executable plugins, tools, commands, and eval scripts must be precompiled to `.js`, `.mjs`, or `.cjs`, including their dependencies; manifests must reference the emitted files.
+
 ## Directories
 
 ### [sdk/](sdk/)

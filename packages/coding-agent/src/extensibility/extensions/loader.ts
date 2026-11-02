@@ -578,12 +578,17 @@ export async function bindPreparedExtensions(
 }
 
 function isExtensionFile(name: string): boolean {
-	return name.endsWith(".ts") || name.endsWith(".js");
+	return typeof Bun === "undefined" ? /\.(?:js|mjs|cjs)$/.test(name) : name.endsWith(".ts") || name.endsWith(".js");
 }
 
 const CONFIGURED_EXTENSION_DIRECTORY_OPTIONS = {
-	indexNames: ["index.ts", "index.js"],
-	isScanFile: isExtensionFile,
+	// Explicit source-only directories must reach the loader's actionable error.
+	indexNames:
+		typeof Bun === "undefined"
+			? ["index.js", "index.mjs", "index.cjs", "index.ts", "index.tsx", "index.mts", "index.cts", "index.jsx"]
+			: ["index.ts", "index.js"],
+	isScanFile: (name: string) =>
+		isExtensionFile(name) || (typeof Bun === "undefined" && /\.(?:ts|tsx|mts|cts|jsx)$/.test(name)),
 	throwUnexpectedStatErrors: true,
 	onReadError: (filePath: string, error: unknown) => {
 		logger.warn("Failed to resolve extension directory", { path: filePath, error: String(error) });

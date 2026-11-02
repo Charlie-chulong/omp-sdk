@@ -3,11 +3,10 @@ import { createRequire } from "node:module";
 import type * as NodeModule from "node:module";
 import * as path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import type * as CompilerModule from "@ts-morph/common";
 
 const hostRequire = createRequire(import.meta.url);
 let installed = false;
-let compiler: typeof CompilerModule.ts | undefined;
+let activeLoads = 0;
 const owned = new Set<string>();
 
 function sourcePath(url: string): string | undefined {
@@ -16,20 +15,10 @@ function sourcePath(url: string): string | undefined {
 
 function resolveFile(specifier: string, parentURL: string): string | undefined {
 	const target = fileURLToPath(new URL(specifier, parentURL));
-	const extension = path.extname(target);
-	const sourceAlternatives =
-		extension === ".js"
-			? [target.slice(0, -3) + ".ts", target.slice(0, -3) + ".tsx"]
-			: extension === ".mjs"
-				? [target.slice(0, -4) + ".mts"]
-				: extension === ".cjs"
-					? [target.slice(0, -4) + ".cts"]
-					: [];
 	for (const candidate of [
 		target,
-		...sourceAlternatives,
-		...[".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs"].map(ext => target + ext),
-		...["index.ts", "index.tsx", "index.js"].map(name => path.join(target, name)),
+		...[".js", ".mjs", ".cjs"].map(ext => target + ext),
+		path.join(target, "index.js"),
 	]) {
 		try {
 			if (fs.statSync(candidate).isFile()) return pathToFileURL(candidate).href;
@@ -38,6 +27,14 @@ function resolveFile(specifier: string, parentURL: string): string | undefined {
 		}
 	}
 	return undefined;
+}
+
+function rejectSourceModule(filename: string): void {
+	if (/\.(?:ts|tsx|mts|cts|jsx)$/.test(filename)) {
+		throw new Error(
+			`Node plugins cannot execute TypeScript or JSX modules: ${filename}. Precompile plugins and their dependencies to .js, .mjs, or .cjs before loading them.`,
+		);
+	}
 }
 
 /** Install synchronous Node hooks; real module evaluation stays in Node's loader. */
@@ -64,6 +61,7 @@ function installNodeHooks(resolveHost: (specifier: string) => string | null): vo
 			}
 			const parentPath = context.parentURL && sourcePath(context.parentURL);
 			const targetPath = sourcePath(result.url);
+			if (targetPath && context.importAttributes?.type !== "text") rejectSourceModule(targetPath);
 			if (parentPath && owned.has(parentPath) && targetPath) {
 				owned.add(targetPath);
 				const tag = new URL(context.parentURL!).searchParams.get("mtime");
@@ -85,24 +83,8 @@ function installNodeHooks(resolveHost: (specifier: string) => string | null): vo
 					shortCircuit: true,
 				};
 			}
-			if (!/\.(?:ts|tsx|mts|cts|jsx)$/.test(filename)) return nextLoad(url, context);
-			if (!compiler) {
-				// The installed package exposes the compiler API through its typed namespace.
-				const module: typeof CompilerModule = hostRequire("@ts-morph/common");
-				compiler = module.ts;
-			}
-			const commonjs = filename.endsWith(".cts") || context.format?.startsWith("commonjs") === true;
-			const result = compiler.transpileModule(fs.readFileSync(filename, "utf8"), {
-				fileName: filename,
-				compilerOptions: {
-					target: compiler.ScriptTarget.ESNext,
-					module: commonjs ? compiler.ModuleKind.CommonJS : compiler.ModuleKind.ESNext,
-					jsx: compiler.JsxEmit.ReactJSX,
-					inlineSourceMap: true,
-					inlineSources: true,
-				},
-			});
-			return { format: commonjs ? "commonjs" : "module", source: result.outputText, shortCircuit: true };
+			rejectSourceModule(filename);
+			return nextLoad(url, context);
 		},
 	});
 	installed = true;
@@ -113,15 +95,25 @@ export async function loadNodeExtensionModule(
 	tag: string | undefined,
 	resolveHost: (specifier: string) => string | null,
 ): Promise<unknown> {
+	rejectSourceModule(filename);
 	installNodeHooks(resolveHost);
 	const realPath = fs.realpathSync(filename);
+	rejectSourceModule(realPath);
 	owned.add(realPath);
-	if (tag) {
+	// Concurrent imports share one reload wave: deleting a CJS cache entry
+	// while Node is evaluating its ESM wrapper violates Node's cache invariant.
+	if (tag && activeLoads === 0) {
 		for (const key of Object.keys(hostRequire.cache)) {
 			if (owned.has(key)) delete hostRequire.cache[key];
 		}
 	}
 	const url = pathToFileURL(realPath);
 	if (tag) url.searchParams.set("mtime", tag);
-	return import(url.href);
+	activeLoads++;
+	// Plugin URLs are selected at runtime, including the reload tag.
+	try {
+		return await import(url.href);
+	} finally {
+		activeLoads--;
+	}
 }

@@ -270,7 +270,6 @@ async function writeRuntimeDependencies(
 		outDir,
 		[
 			"koffi", // utils/ptree.ts resolves the detached Node process guardian
-			"@ts-morph/common", // Node extension loading and JS eval TypeScript stripping
 			"@huggingface/transformers", // src/subprocess/worker-runtime.ts
 			"fastembed", // pi-mnemopi's embedding runtime loader
 			"sherpa-onnx-node", // src/stt/sherpa-runtime.ts
@@ -397,7 +396,6 @@ export async function bundleNodeSdk(outDir?: string, buildTarget: NodeSdkBuildTa
 				"@huggingface/transformers",
 				"fastembed",
 				"onnxruntime-node",
-				"@ts-morph/common",
 				"koffi",
 				"omp-legacy-pi-modules",
 				"bun",

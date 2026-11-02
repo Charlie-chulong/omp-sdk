@@ -289,13 +289,18 @@ async function loadEnabledPlugins(cwd: string, home?: string): Promise<ScopedIns
 // Path Resolution
 // =============================================================================
 
-const MANIFEST_ENTRY_MODULE_EXTENSIONS = [".ts", ".js", ".mjs", ".cjs"];
+// Keep source entries discoverable in explicit manifests so the Node loader
+// reports how to precompile them, but prefer emitted JavaScript when present.
+const MANIFEST_ENTRY_MODULE_EXTENSIONS =
+	typeof Bun === "undefined"
+		? [".js", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".jsx"]
+		: [".ts", ".js", ".mjs", ".cjs"];
 const MANIFEST_ENTRY_INDEX_NAMES = MANIFEST_ENTRY_MODULE_EXTENSIONS.map(ext => `index${ext}`);
 
 /** `.d.ts` / `.d.mts` / `.d.cts` TypeScript declaration files — never loadable as modules. */
 const DECLARATION_FILE_RE = /\.d\.[mc]?ts$/;
 
-/** A loadable module file: a .ts/.js/.mjs/.cjs that is not a declaration file. */
+/** A manifest module candidate, excluding TypeScript declaration files. */
 function isModuleFile(name: string): boolean {
 	return MANIFEST_ENTRY_MODULE_EXTENSIONS.includes(path.extname(name)) && !DECLARATION_FILE_RE.test(name);
 }

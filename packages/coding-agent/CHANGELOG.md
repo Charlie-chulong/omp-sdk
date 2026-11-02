@@ -17,9 +17,12 @@
 - Reduced standalone binary size by disabling bundled bytecode, trading faster startup for smaller executables.
 - Reduced the packaged Node SDK footprint while retaining browser, code-parsing, and ordinary image capabilities.
 - Desktop packaging now validates an isolated native addon and excludes full-native platform leaf packages, while generic SDK and Bun CLI defaults retain full native features.
+- Node SDK plugins, custom tools/commands, and eval now execute JavaScript only, removing the runtime TypeScript compiler dependency; TS/TSX/JSX extensions must be precompiled. Bun CLI TypeScript support and source-file read/write/edit remain unchanged.
 
 ### Fixed
 
+- Fixed concurrent Node plugin imports/reloads invalidating CommonJS cache entries while another module graph is evaluating.
+- Fixed relative JavaScript eval `require()` resolution for cells without a file-backed path.
 - Explicit user Stop now waits for owned background jobs, child agents, host calls, retained shell processes, JS/Python kernels, and browser/computer workers to stop; independent owners remain alive and subsequent prompts resume the same conversation with fresh eval kernels.
 - Stop fences delayed continuations and new owned jobs during cleanup, and reports shared-kernel or unconfirmed-shutdown failures instead of acknowledging live execution.
 - Tool approval can now change during a running session through `/permissions`, `/settings`, or SDK/RPC controls, including sessions started with approval flags.

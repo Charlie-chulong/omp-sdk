@@ -1,5 +1,5 @@
 /**
- * Custom command loader - loads TypeScript command modules using native Bun import.
+ * Custom command loader - loads JavaScript modules (also TypeScript under Bun).
  *
  * Dependencies (the arktype validation and pi-coding-agent) are injected via the
  * CustomCommandAPI to avoid import resolution issues with custom commands loaded from user directories.
@@ -14,6 +14,7 @@ import { getConfigDirs } from "../../config";
 import { execCommand } from "../../exec/exec";
 import { getCodingAgentApi } from "#coding-agent-host-api";
 import * as typebox from "../legacy-typebox";
+import { loadLegacyPiModule } from "../plugins/legacy-pi-compat";
 import { GreenCommand } from "./bundled/ci-green";
 import { AnnotateCommand } from "./bundled/annotate";
 import { ReviewCommand } from "./bundled/review";
@@ -29,7 +30,7 @@ import type {
 const arktype = Object.assign(Function.prototype.bind.call(type, undefined) as typeof type, type, { type });
 
 /**
- * Load a single command module using native Bun import.
+ * Load a single command module using the runtime's executable-module policy.
  */
 async function loadCommandModule(
 	commandPath: string,
@@ -37,7 +38,10 @@ async function loadCommandModule(
 	sharedApi: CustomCommandAPI,
 ): Promise<{ commands: CustomCommand[] | null; error: string | null }> {
 	try {
-		const module = await import(commandPath);
+		// Command paths come from user directories, so static imports cannot select them.
+		const module = (await (typeof Bun === "undefined"
+			? loadLegacyPiModule(commandPath, { reload: false })
+			: import(commandPath))) as { default?: unknown };
 		const factory = (module.default ?? module) as CustomCommandFactory;
 
 		if (typeof factory !== "function") {
@@ -80,7 +84,7 @@ export interface DiscoverCustomCommandsResult {
 }
 
 /**
- * Discover custom command modules (TypeScript slash commands).
+ * Discover executable custom slash-command modules.
  * Markdown slash commands are handled by core/slash-commands.ts.
  */
 export async function discoverCustomCommands(
@@ -113,7 +117,10 @@ export async function discoverCustomCommands(
 		}
 	}
 
-	const indexCandidates = ["index.ts", "index.js", "index.mjs", "index.cjs"];
+	const indexCandidates =
+		typeof Bun === "undefined"
+			? ["index.js", "index.mjs", "index.cjs"]
+			: ["index.ts", "index.js", "index.mjs", "index.cjs"];
 	for (const { path: commandsDir, source } of commandDirs) {
 		let entries: fs.Dirent[];
 		try {

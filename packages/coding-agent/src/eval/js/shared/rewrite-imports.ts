@@ -1,7 +1,5 @@
 import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type * as BabelParser from "@babel/parser";
-import { createRequire } from "node:module";
-import type * as CompilerModule from "@ts-morph/common";
 
 // Static ESM `import` declarations are not valid inside vm.runInContext (script-mode parsing),
 // and dynamic `import(...)` would otherwise resolve specifiers against the worker module's URL
@@ -123,7 +121,7 @@ async function tryParseProgram(
 			allowSuperOutsideMethod: true,
 			allowUndeclaredExports: true,
 			errorRecovery: true,
-			plugins: ["typescript"],
+			plugins: typeof Bun === "undefined" ? [] : ["typescript"],
 		});
 		return { ast: file as unknown as ParsedProgram, recovered: file.errors ?? [] };
 	} catch (error) {
@@ -1146,64 +1144,27 @@ async function requiresAsyncWrapper(code: string): Promise<boolean> {
 }
 
 /**
- * Strip TypeScript syntax (type annotations, type-only imports/exports, `interface`, `as`,
- * `satisfies`, generics in call expressions, etc.) before the import/lexical rewriters parse
- * the code. Bun's native transpiler preserves `import`/`export` declarations, so downstream
- * Babel rewrites still control module resolution.
- *
- * Eval cells use a cheap "looks like TS" heuristic to avoid transpiling ordinary JS. Known
- * TypeScript modules pass `force` because a file can contain TS-only module syntax such as
- * `import type` without any value-level type annotations.
+ * Strip TypeScript only on Bun, using its built-in transpiler. Node keeps the source
+ * unchanged so the JavaScript parser/engine rejects typed cells without executing them.
+ * Known TypeScript modules pass `force` to cover type-only module declarations.
  */
 type TypeScriptStripLoader = "ts" | "tsx";
 
 const TS_TRANSPILER = typeof Bun === "undefined" ? undefined : new Bun.Transpiler({ loader: "ts" });
 const TSX_TRANSPILER = typeof Bun === "undefined" ? undefined : new Bun.Transpiler({ loader: "tsx" });
-const compilerRequire = createRequire(import.meta.url);
-let nodeCompiler: typeof CompilerModule.ts | undefined;
 
-function stripTypeScript(code: string, options: { force?: boolean; loader?: TypeScriptStripLoader } = {}): string {
-	if (!options.force && !LOOKS_LIKE_TS.test(code)) return code;
-	const transpiler = options.loader === "tsx" ? TSX_TRANSPILER : TS_TRANSPILER;
-	if (!transpiler && !nodeCompiler) {
-		// The installed package exposes the same compiler namespace used by our build tooling.
-		const module: typeof CompilerModule = compilerRequire("@ts-morph/common");
-		nodeCompiler = module.ts;
-	}
-	try {
-		if (transpiler) return transpiler.transformSync(code);
-		const ts = nodeCompiler!;
-		const result = ts.transpileModule(code, {
-			fileName: options.loader === "tsx" ? "cell.tsx" : "cell.ts",
-			compilerOptions: {
-				target: ts.ScriptTarget.ESNext,
-				module: ts.ModuleKind.ESNext,
-				jsx: ts.JsxEmit.ReactJSX,
-				verbatimModuleSyntax: true,
-			},
-			reportDiagnostics: true,
-		});
-		const errors = result.diagnostics?.filter(diagnostic => diagnostic.category === ts.DiagnosticCategory.Error);
-		if (errors?.length)
-			throw new SyntaxError(
-				ts.formatDiagnosticsWithColorAndContext(errors, {
-					getCanonicalFileName: name => name,
-					getCurrentDirectory: () => process.cwd(),
-					getNewLine: () => "\n",
-				}),
-			);
-		return result.outputText;
-	} catch {
-		// Transpiler failed (e.g. unrecoverable syntax). Hand the original source back so the
-		// downstream rewriter / VM surfaces the real error to the user.
-		return code;
-	}
-}
 export function stripTypeScriptSyntax(
 	code: string,
 	options: { force?: boolean; loader?: TypeScriptStripLoader } = {},
 ): string {
-	return stripTypeScript(code, options);
+	const transpiler = options.loader === "tsx" ? TSX_TRANSPILER : TS_TRANSPILER;
+	if (!transpiler || (!options.force && !LOOKS_LIKE_TS.test(code))) return code;
+	try {
+		return transpiler.transformSync(code);
+	} catch {
+		// Let the downstream parser/engine surface unrecoverable syntax errors.
+		return code;
+	}
 }
 
 // Heuristic: obvious TS-only tokens, including type-only module syntax. Plain JS using `as`
@@ -1217,7 +1178,7 @@ export async function wrapCode(
 ): Promise<{ source: string; asyncWrapped: boolean; finalExpressionReturned: boolean }> {
 	const instrumented = await instrumentRuntimeCallSites(code);
 	const finalExpression = await returnFinalExpression(instrumented);
-	const stripped = stripTypeScript(finalExpression.source);
+	const stripped = stripTypeScriptSyntax(finalExpression.source);
 	const importsRewritten = await rewriteImports(stripped);
 	const needsAsyncWrapper = await requiresAsyncWrapper(importsRewritten);
 	const rewritten = {

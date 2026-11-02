@@ -613,7 +613,6 @@
 		"@opentelemetry/sdk-metrics": "catalog:",
 		"@opentelemetry/sdk-trace-base": "catalog:",
 		"@opentelemetry/sdk-trace-node": "catalog:",
-		"@ts-morph/common": "catalog:",
 		"axe-core": "4.13.0",
 		"core-js": "3.51.0",
 		"koffi": "^2.15.1",

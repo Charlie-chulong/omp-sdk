@@ -12,6 +12,8 @@ This document covers the current extension runtime in:
 
 For discovery paths and filesystem loading rules, see [`extension-loading.md`](./extension-loading.md).
 
+TypeScript examples in this guide target Bun. The Node SDK loads JavaScript only; precompile extension sources and dependencies and configure the emitted `.js`, `.mjs`, or `.cjs` entrypoints.
+
 For packaged user-facing extension CLIs/features, see [`user-facing-packages.md`](./user-facing-packages.md).
 
 ## What an extension is

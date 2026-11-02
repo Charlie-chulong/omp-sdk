@@ -7,6 +7,8 @@ description: Use when creating a new omp extension. Covers ExtensionAPI, factory
 
 Extensions are the primary way to add capabilities to `omp`. A single extension module can register tools the LLM can call, slash commands users can invoke, and event handlers that run throughout the session lifecycle — all from one TypeScript file. Its default factory may initialize synchronously or return a promise.
 
+The TypeScript examples below target Bun. For the Node SDK/Desktop, precompile the extension and its dependencies to `.js`, `.mjs`, or `.cjs`, and reference those emitted files in configuration/manifests. Node does not ship a runtime TypeScript or JSX compiler.
+
 ## Minimum viable extension
 
 ```ts

@@ -783,6 +783,9 @@ interface ExtensionModuleManifest {
 	extensions?: string[];
 }
 
+const EXTENSION_INDEX_NAMES =
+	typeof Bun === "undefined" ? ["index.js", "index.mjs", "index.cjs"] : ["index.ts", "index.js"];
+
 async function discoverLinkedExtensionModuleFiles(dir: string): Promise<{
 	indexFiles: Array<{ path: string }>;
 	packageJsonFiles: Array<{ path: string }>;
@@ -799,19 +802,17 @@ async function discoverLinkedExtensionModuleFiles(dir: string): Promise<{
 			const stat = await fs.promises.stat(entryPath).catch(() => null);
 			if (!stat?.isDirectory()) return;
 
-			const [packageJsonContent, indexTsContent, indexJsContent] = await Promise.all([
+			const [packageJsonContent, ...indexContents] = await Promise.all([
 				readFile(path.join(entryPath, "package.json")),
-				readFile(path.join(entryPath, "index.ts")),
-				readFile(path.join(entryPath, "index.js")),
+				...EXTENSION_INDEX_NAMES.map(name => readFile(path.join(entryPath, name))),
 			]);
 
 			if (packageJsonContent !== null) {
 				packageJsonFiles.push({ path: `${entry.name}/package.json` });
 			}
-			if (indexTsContent !== null) {
-				indexFiles.push({ path: `${entry.name}/index.ts` });
-			} else if (indexJsContent !== null) {
-				indexFiles.push({ path: `${entry.name}/index.js` });
+			const index = indexContents.findIndex(content => content !== null);
+			if (index !== -1) {
+				indexFiles.push({ path: `${entry.name}/${EXTENSION_INDEX_NAMES[index]}` });
 			}
 		}),
 	);
@@ -838,8 +839,8 @@ async function readExtensionModuleManifest(
  * Discover extension module entry points in a directory.
  *
  * Discovery rules:
- * 1. Direct files: `extensions/*.ts` or `*.js` → load
- * 2. Subdirectory with index: `extensions/<ext>/index.ts` or `index.js` → load
+ * 1. Direct JS files (also TS under Bun) → load
+ * 2. Subdirectory with a runtime-supported index → load
  * 3. Subdirectory with package.json: `extensions/<ext>/package.json` with "omp"/"pi" field → load declared paths
  *
  * No recursion beyond one level. Complex packages must use package.json manifest.
@@ -849,10 +850,9 @@ export async function discoverExtensionModulePaths(_ctx: LoadContext, dir: strin
 	const discovered = new Set<string>();
 	// Find all candidate files in parallel using glob
 	const [directFiles, globIndexFiles, globPackageJsonFiles, linkedFiles] = await Promise.all([
-		// 1. Direct *.ts or *.js files
-		globIf(dir, "*.{ts,js}", FileType.File, false),
-		// 2. Subdirectory index files
-		globIf(dir, "*/index.{ts,js}", FileType.File, false),
+		// Convention scans expose only executable modules for the current runtime.
+		globIf(dir, typeof Bun === "undefined" ? "*.{js,mjs,cjs}" : "*.{ts,js}", FileType.File, false),
+		globIf(dir, typeof Bun === "undefined" ? "*/index.{js,mjs,cjs}" : "*/index.{ts,js}", FileType.File, false),
 		// 3. Subdirectory package.json files
 		globIf(dir, "*/package.json", FileType.File, false),
 		// Native glob does not follow linked extension directories.
@@ -876,8 +876,8 @@ export async function discoverExtensionModulePaths(_ctx: LoadContext, dir: strin
 		const hasEntry = (name: string): boolean =>
 			subEntries.some(e => e.name === name && (e.isFile() || e.isSymbolicLink()));
 		if (hasEntry("package.json")) packageJsonFiles.push({ path: `${entry.name}/package.json` });
-		if (hasEntry("index.ts")) indexFiles.push({ path: `${entry.name}/index.ts` });
-		else if (hasEntry("index.js")) indexFiles.push({ path: `${entry.name}/index.js` });
+		const indexName = EXTENSION_INDEX_NAMES.find(hasEntry);
+		if (indexName) indexFiles.push({ path: `${entry.name}/${indexName}` });
 	}
 
 	// Process direct files
@@ -900,9 +900,15 @@ export async function discoverExtensionModulePaths(_ctx: LoadContext, dir: strin
 			let resolvedExtPath = path.resolve(subdirPath, extPath);
 			const entries = await readDirEntries(resolvedExtPath);
 			if (entries.length !== 0) {
-				const pluginFilePath = entries.find(
-					e => e.isFile() && (e.name === "index.ts" || e.name === "index.js"),
-				)?.name;
+				// Declared source-only entries remain visible for an actionable load error.
+				const indexNames =
+					typeof Bun === "undefined"
+						? [...EXTENSION_INDEX_NAMES, "index.ts", "index.tsx", "index.mts", "index.cts", "index.jsx"]
+						: EXTENSION_INDEX_NAMES;
+				const pluginFilePath =
+					typeof Bun === "undefined"
+						? indexNames.find(name => entries.some(e => e.isFile() && e.name === name))
+						: entries.find(e => e.isFile() && (e.name === "index.ts" || e.name === "index.js"))?.name;
 				resolvedExtPath = pluginFilePath ? path.join(resolvedExtPath, pluginFilePath) : resolvedExtPath;
 			}
 			const content = await readFile(resolvedExtPath);
@@ -917,7 +923,11 @@ export async function discoverExtensionModulePaths(_ctx: LoadContext, dir: strin
 		const subdir = path.dirname(match.path);
 		if (subdirsWithDeclaredExtensions.has(subdir)) continue;
 		const existing = preferredIndexBySubdir.get(subdir);
-		if (!existing || (existing.endsWith("index.js") && match.path.endsWith("index.ts"))) {
+		if (
+			!existing ||
+			EXTENSION_INDEX_NAMES.indexOf(path.basename(match.path)) <
+				EXTENSION_INDEX_NAMES.indexOf(path.basename(existing))
+		) {
 			preferredIndexBySubdir.set(subdir, match.path);
 		}
 	}
@@ -933,7 +943,7 @@ export async function discoverExtensionModulePaths(_ctx: LoadContext, dir: strin
 export function getExtensionNameFromPath(extensionPath: string): string {
 	const base = extensionPath.replace(/\\/g, "/").split("/").pop() ?? extensionPath;
 
-	if (base === "index.ts" || base === "index.js") {
+	if (["index.ts", "index.js", "index.mjs", "index.cjs"].includes(base)) {
 		const parts = extensionPath.replace(/\\/g, "/").split("/");
 		const parent = parts[parts.length - 2];
 		return parent ?? base;

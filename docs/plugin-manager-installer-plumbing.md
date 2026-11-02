@@ -13,6 +13,8 @@ There are two plugin-management implementations in the codebase:
 
 `installer.ts` still documents important safety checks and filesystem behavior, but it is not the path used by `src/commands/plugin.ts` + `src/cli/plugin-cli.ts`.
 
+Node SDK plugin management does not compile installed sources. Executable extension/tool/command manifests must point at emitted `.js`, `.mjs`, or `.cjs` files, with precompiled dependencies. Skills, rules, prompts, and other non-executable resources are unaffected; Bun CLI TypeScript loading remains available.
+
 ## Lifecycle: from CLI invocation to runtime availability
 
 ```text

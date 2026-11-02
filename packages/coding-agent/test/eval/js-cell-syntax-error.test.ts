@@ -103,6 +103,16 @@ describe("cell syntax error position", () => {
 		expect(await runtime.run(cell, undefined, hooks)).toBe("a2b");
 	});
 
+	it("preserves JavaScript strings and comments containing TypeScript-looking text", async () => {
+		const text = "interface Item { value: number }; import type { Item } from './types'; as const";
+		expect(await runtime.run(`/* type Item = number */ ${JSON.stringify(text)}`, undefined, hooks)).toBe(text);
+	});
+
+	it("retains Bun's built-in TypeScript cell support", async () => {
+		expect(await runtime.run("const bunTypedValue: number = 42;\nbunTypedValue", undefined, hooks)).toBe(42);
+		expect(await runtime.run("import type { Missing } from './never-imported.js';\nreturn 42;", undefined, hooks)).toBe(42);
+	});
+
 	it("does not mask a runtime error thrown by a cell that parses", async () => {
 		const error = await runError('throw new SyntaxError("from user code");');
 		expect((error as SyntaxError).message).toBe("from user code");

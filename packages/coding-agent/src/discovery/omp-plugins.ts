@@ -28,6 +28,7 @@ import { type Skill, skillCapability } from "../capability/skill";
 import { type SlashCommand, slashCommandCapability } from "../capability/slash-command";
 import { type CustomTool, toolCapability } from "../capability/tool";
 import type { LoadContext, LoadResult } from "../capability/types";
+import { findExtensionDirectoryIndex } from "../extensibility/extensions/directory-resolution";
 import { legacyProviderAllowed } from "./agent-plugin-format";
 import {
 	discoverRuleFromMarkdown,
@@ -195,7 +196,10 @@ async function loadHooks(ctx: LoadContext): Promise<LoadResult<Hook>> {
 // Custom Tools
 // =============================================================================
 
-const TOOL_EXTENSIONS = ["json", "md", "ts", "js", "sh", "bash", "py"];
+const TOOL_EXTENSIONS =
+	typeof Bun === "undefined"
+		? ["json", "md", "js", "mjs", "cjs", "sh", "bash", "py"]
+		: ["json", "md", "ts", "js", "sh", "bash", "py"];
 
 async function loadTools(ctx: LoadContext): Promise<LoadResult<CustomTool>> {
 	const roots = await allowedRoots(ctx, "other");
@@ -224,7 +228,7 @@ async function loadTools(ctx: LoadContext): Promise<LoadResult<CustomTool>> {
 									: `${toolName} custom tool`;
 							return { name: toolName, path: filePath, description, level: root.level, _source: source };
 						}
-						const toolName = name.replace(/\.(ts|js|sh|bash|py)$/, "");
+						const toolName = name.replace(/\.(ts|js|mjs|cjs|sh|bash|py)$/, "");
 						return {
 							name: toolName,
 							path: filePath,
@@ -237,10 +241,15 @@ async function loadTools(ctx: LoadContext): Promise<LoadResult<CustomTool>> {
 				readDirEntries(toolsDir),
 			]);
 
-			// `<tools>/<name>/index.ts` sub-directory tools, mirroring `builtin.ts:loadTools`.
+			// Node convention scans prefer emitted JavaScript; Bun keeps index.ts.
 			const indexCandidates = entries
 				.filter(e => !e.name.startsWith(".") && e.isDirectory())
-				.map(e => path.join(toolsDir, e.name, "index.ts"));
+				.map(e =>
+					typeof Bun === "undefined"
+						? findExtensionDirectoryIndex(path.join(toolsDir, e.name), ["index.js", "index.mjs", "index.cjs"])
+						: path.join(toolsDir, e.name, "index.ts"),
+				)
+				.filter((indexPath): indexPath is string => indexPath !== null);
 			const indexContents = await Promise.all(indexCandidates.map(p => readFile(p)));
 			const indexItems: CustomTool[] = [];
 			for (let i = 0; i < indexCandidates.length; i++) {

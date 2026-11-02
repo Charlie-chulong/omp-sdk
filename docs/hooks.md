@@ -13,6 +13,8 @@ The default CLI runtime initializes the **extension runner** path. In current st
 
 So this file documents the legacy hook subsystem implementation itself (types/loader/runner/wrapper), plus the factory shape still accepted when a discovered hook path is loaded by the extension runner.
 
+The Node SDK discovers JavaScript hook factories only. Precompile TS/TSX hooks and their dependencies to `.js`, `.mjs`, or `.cjs`; Bun retains direct TypeScript loading.
+
 A discovered factory receives `ExtensionAPI`/`ExtensionContext` in normal
 sessions, not an instance of `HookAPI`/`HookContext`. Shared `pi.on(...)`
 handlers work, but legacy-only context names are not shimmed: for example,

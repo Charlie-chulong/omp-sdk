@@ -23,6 +23,7 @@ import { type SlashCommand, slashCommandCapability } from "../capability/slash-c
 import { type SystemPrompt, systemPromptCapability } from "../capability/system-prompt";
 import { type CustomTool, toolCapability } from "../capability/tool";
 import type { LoadContext, LoadResult } from "../capability/types";
+import { findExtensionDirectoryIndex } from "../extensibility/extensions/directory-resolution";
 import { expandTilde } from "../tools/path-utils";
 import {
 	discoverRuleFromMarkdown,
@@ -787,7 +788,10 @@ async function loadTools(ctx: LoadContext): Promise<LoadResult<CustomTool>> {
 
 		fileLoadPromises.push(
 			loadFilesFromDir<CustomTool>(ctx, toolsDir, PROVIDER_ID, level, {
-				extensions: ["json", "md", "ts", "js", "sh", "bash", "py"],
+				extensions:
+					typeof Bun === "undefined"
+						? ["json", "md", "js", "mjs", "cjs", "sh", "bash", "py"]
+						: ["json", "md", "ts", "js", "sh", "bash", "py"],
 				transform: (name, content, path, source) => {
 					if (name.endsWith(".json")) {
 						const data = tryParseJson<{ name?: string; description?: string }>(content);
@@ -819,8 +823,8 @@ async function loadTools(ctx: LoadContext): Promise<LoadResult<CustomTool>> {
 							_source: source,
 						};
 					}
-					// Executable tool files (.ts, .js, .sh, .bash, .py)
-					const toolName = name.replace(/\.(ts|js|sh|bash|py)$/, "");
+					// Executable modules and shell/Python scripts.
+					const toolName = name.replace(/\.(ts|js|mjs|cjs|sh|bash|py)$/, "");
 					return {
 						name: toolName,
 						path,
@@ -835,9 +839,14 @@ async function loadTools(ctx: LoadContext): Promise<LoadResult<CustomTool>> {
 		for (const entry of toolEntries) {
 			if (entry.name.startsWith(".")) continue;
 			if (!entry.isDirectory()) continue;
+			const indexPath =
+				typeof Bun === "undefined"
+					? findExtensionDirectoryIndex(path.join(toolsDir, entry.name), ["index.js", "index.mjs", "index.cjs"])
+					: path.join(toolsDir, entry.name, "index.ts");
+			if (!indexPath) continue;
 
 			subDirCandidates.push({
-				indexPath: path.join(toolsDir, entry.name, "index.ts"),
+				indexPath,
 				entryName: entry.name,
 				level,
 			});

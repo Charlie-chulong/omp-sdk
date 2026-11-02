@@ -175,7 +175,7 @@ describe("rewriteImports", () => {
 		expect(wrapped.source).toContain("__omp_set_final_expr__((await Promise.resolve(1)))");
 	});
 
-	it("strips type-only imports before rewriting imports and top-level return", async () => {
+	it("uses Bun's built-in transpiler for type-only imports before rewriting top-level return", async () => {
 		const wrapped = await wrapCode(`${IMPORT} type { Thing } from "./types";\nreturn 42;`);
 		expect(wrapped.finalExpressionReturned).toBe(true);
 		expect(wrapped.source).toContain("__omp_set_final_expr__(42)");

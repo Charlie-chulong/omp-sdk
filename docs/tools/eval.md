@@ -51,7 +51,7 @@ Save reusable setup in a file, then load it once:
 { "language": "py", "code": "%load ./analysis.py" }
 ```
 
-Later cells reuse its definitions. Calling `%load` again executes the current file again; editing it alone does not reload it. The host reads the file (quote paths containing spaces; `local://` files are supported) and runs it with its filename: Python sets `__file__`, puts the script directory on `sys.path`, and reports tracebacks against the script; JavaScript/TypeScript resolves relative imports from the script while eval keeps its working directory.
+Later cells reuse its definitions. Calling `%load` again executes the current file again; editing it alone does not reload it. The host reads the file (quote paths containing spaces; `local://` files are supported) and runs it with its filename: Python sets `__file__`, puts the script directory on `sys.path`, and reports tracebacks against the script; JavaScript resolves relative imports from the script while eval keeps its working directory. The Node SDK accepts JavaScript scripts only; Bun additionally supports TypeScript/TSX scripts.
 
 Python dependencies install with `%pip install pillow`: the runner's pip magic runs `python -m pip` for the kernel's own interpreter (in an interpreter without pip, such as a `uv venv` env, it first installs pip with `ensurepip`, or with `uv` when that fails and `uv` is on `PATH`), pauses the cell watchdog while it runs, and keeps kernel variables. A missing-module error reminds that distribution names can differ from import names (`PIL` belongs to `pillow`).
 
@@ -70,7 +70,7 @@ Compaction receives a bounded live-kernel snapshot with environment and successf
 | Token | Runtime                              | Setting/default | Environment override | Additional prerequisite                                             |
 | ----- | ------------------------------------ | --------------- | -------------------- | ------------------------------------------------------------------- |
 | `py`  | retained IPython-style Python kernel | `eval.py=true`  | `PI_PY`              | working Python 3.8+ on PATH or configured with `python.interpreter` |
-| `js`  | retained Bun worker VM               | `eval.js=true`  | `PI_JS`              | bundled JS runtime                                                  |
+| `js`  | retained Bun or Node worker VM        | `eval.js=true`  | `PI_JS`              | bundled JS runtime                                                  |
 
 Disabled runtimes are removed from the session-scoped wire schema and model prompt. After a definitive failed Python probe, the next schema, description, and prelude also omit `py`; synchronous schema reads never run a probe. A successful explicit availability refresh restores Python, while changes to PATH, active environment, cwd, or the configured interpreter invalidate the advertised snapshot. Cancelled or deadline-limited probes do not establish permanent unavailability. Explicit Python calls retry failed probes, so a repaired interpreter can be picked up without restarting.
 
@@ -129,9 +129,11 @@ With `eval.autoBackground.enabled` (default `false`), a cell that outlives `eval
 ### JavaScript (`js`)
 
 - Persistent worker VM keyed by `js:${sessionId}`; `reset` recreates the VM and is destructive to concurrent users of that session id.
-- Runs under Bun and exposes host globals including `Bun`, `Buffer`, `fetch`, `process`, `require`, `createRequire`, `fs`, and Web Crypto.
+- Runs under Bun or the Node SDK and exposes host globals including `Buffer`, `fetch`, `process`, `require`, `createRequire`, `fs`, and Web Crypto. `Bun` exists only under Bun.
+- Node eval cells, `%load`, and executable module imports are JavaScript-only. Precompile TS/TSX/MTS/CTS/JSX scripts to `.js`, `.mjs`, or `.cjs`; reading and writing those source files is unaffected. Bun retains its built-in TypeScript transpilation.
 - Top-level `await` and bare `return` work through async wrapping.
 - Static top-level imports and dynamic imports are rewritten through the local module loader. Local filesystem imports are cache-busted between cells; bare package and scheme/URL imports retain normal cache identity.
+- Relative `require()` calls in cells resolve from the active cwd; calls inside file-backed modules resolve from the importing file.
 - Awaited regions can interleave with another session sharing the executor; synchronous code still blocks the worker event loop.
 
 ### Python (`py`)

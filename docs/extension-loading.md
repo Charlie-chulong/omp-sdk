@@ -1,12 +1,12 @@
 # Extension Loading (TypeScript/JavaScript Modules)
 
-This document covers how the coding agent discovers and loads extension modules at startup. Scanned native/configured directories auto-discover `.ts` and `.js`; explicitly named files and installed-plugin manifest entries may also use `.mjs` and `.cjs`.
+This document covers how the coding agent discovers and loads extension modules at startup. Bun scans auto-discover `.ts` and `.js`; explicitly named files and installed-plugin manifest entries may also use `.mjs` and `.cjs`. The Node SDK scans `.js`, `.mjs`, and `.cjs` only. Configured TS/TSX/MTS/CTS/JSX entries and their executable dependencies are rejected with a precompilation remedy; text imports remain supported.
 
 It does **not** cover [`gemini-extension.json` manifest extensions](./gemini-manifest-extensions.md), which are documented separately.
 
 ## What this subsystem does
 
-Extension loading builds an ordered list of module entry files, imports the modules concurrently with Bun, then binds their factories sequentially in path order. It returns:
+Extension loading builds an ordered list of module entry files, imports the modules concurrently in the active runtime, then binds their factories sequentially in path order. It returns:
 
 - loaded extension definitions
 - per-path import/factory errors (without aborting the other module loads)
@@ -229,7 +229,7 @@ Rules and constraints:
 - a non-empty declared array is authoritative: convention-based index/scan fallback stays suppressed even when every declared entry is missing
 - `omp` takes precedence over `pi` when both manifest objects exist
 - missing or inaccessible declared entries are skipped individually, so existing entries in a partially missing manifest still load
-- in `*/index.{ts,js}` pairs, TypeScript is preferred over JavaScript
+- in `*/index.{ts,js}` pairs, Bun prefers TypeScript; Node prefers emitted JavaScript indexes, and explicitly configured source-only directories report the precompilation error
 - symlinks are treated as eligible files/directories
 
 ### Ignore behavior differs by source

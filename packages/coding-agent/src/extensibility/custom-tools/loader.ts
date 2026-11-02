@@ -281,7 +281,9 @@ export async function discoverCustomToolPaths(
 	const discoveredTools = await loadCapability<CustomTool>(toolCapability.id, {
 		cwd,
 		agentDir,
-		filter: tool => /\.(ts|js|mjs|cjs)$/.test(tool.path) && !tool.path.endsWith(".d.ts"),
+		filter: tool =>
+			(typeof Bun === "undefined" ? /\.(js|mjs|cjs)$/ : /\.(ts|js|mjs|cjs)$/).test(tool.path) &&
+			!tool.path.endsWith(".d.ts"),
 	});
 	for (const tool of discoveredTools.items) {
 		addPath(tool.path, {

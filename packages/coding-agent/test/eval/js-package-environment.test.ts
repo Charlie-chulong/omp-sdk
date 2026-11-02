@@ -96,21 +96,21 @@ describe("persistent JavaScript package environments", () => {
 	it("resolves file imports from the filename while preserving cwd and repeat execution", async () => {
 		using workspace = TempDir.createSync("@omp-js-file-workspace-");
 		using scriptDir = TempDir.createSync("@omp-js-file-script-");
-		const filename = path.join(scriptDir.path(), "loaded.ts");
+		const filename = path.join(scriptDir.path(), "loaded.js");
 		const source = [
-			'import { amount } from "./sibling.ts";',
+			'import { amount } from "./sibling.js";',
 			"globalThis.fileLoadCount = (globalThis.fileLoadCount ?? 0) + 1;",
 			"var fileLoadedValue = fileSeed + amount;",
 			"function fileAnswer() { return fileLoadedValue; }",
 			"var fileObservedCwd = process.cwd();",
 		].join("\n");
-		await Bun.write(path.join(scriptDir.path(), "sibling.ts"), "export const amount = 2;\n");
+		await Bun.write(path.join(scriptDir.path(), "sibling.js"), "export const amount = 2;\n");
 		await Bun.write(filename, source);
 
 		const sessionId = `js-file:${crypto.randomUUID()}`;
 		const session = makeSession(workspace.path(), sessionId);
 		const options = executorOptions(session, sessionId);
-		await executeJs("var fileSeed = 10;", options);
+		await executeJs("var fileSeed = 10; var fileInitialCwd = process.cwd();", options);
 		const first = await executeJs(source, { ...options, filename });
 		const second = await executeJs(source, { ...options, filename });
 		expect(first.exitCode).toBe(0);
@@ -123,8 +123,11 @@ describe("persistent JavaScript package environments", () => {
 		const reloaded = await executeJs(reloadSource, { ...options, filename });
 		expect(reloaded.output.trim()).toBe("13");
 
-		const retained = await executeJs("JSON.stringify([fileAnswer(), fileObservedCwd, fileLoadCount])", options);
-		expect(JSON.parse(retained.output.trim())).toEqual([13, await fs.realpath(workspace.path()), 2]);
+		const retained = await executeJs(
+			"JSON.stringify([fileAnswer(), fileObservedCwd === fileInitialCwd, fileLoadCount])",
+			options,
+		);
+		expect(JSON.parse(retained.output.trim())).toEqual([13, true, 2]);
 	});
 
 	it("does not resolve a missing project package from OMP's own dependencies", async () => {

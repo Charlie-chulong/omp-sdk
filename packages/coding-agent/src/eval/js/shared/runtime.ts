@@ -2,7 +2,6 @@ import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Console } from "node:console";
 import * as fs from "node:fs";
-import { createRequire } from "node:module";
 import * as path from "node:path";
 import { Writable } from "node:stream";
 import * as util from "node:util";
@@ -18,7 +17,7 @@ import { type EvalDisplayOutput, evalImageMetadata } from "../../types";
 import type { EvalPreludeSource } from "../worker-protocol";
 import { createHelpers, type HelperBundle } from "./helpers";
 import { awaitMaybePromise, indirectEval } from "./indirect-eval";
-import { LocalModuleLoader } from "./local-module-loader";
+import { assertNodeExecutableModule, LocalModuleLoader } from "./local-module-loader";
 import { JAVASCRIPT_PRELUDE_SOURCE } from "./prelude";
 import { diagnoseCellSyntaxError, wrapCode } from "./rewrite-imports";
 import type { JsStatusEvent } from "./types";
@@ -535,6 +534,7 @@ export class JsRuntime {
 		options: { runId?: string; cwd?: string; localRoots?: Record<string, string> } = {},
 	): Promise<unknown> {
 		this.#activateGlobals("run code");
+		if (filename && path.isAbsolute(filename)) assertNodeExecutableModule(filename);
 		this.#namespaceRevision++;
 		const leaveRun = enterGlobalRun(this.#globalOwner, "run code");
 		const context: RunContext = {
@@ -720,7 +720,7 @@ export class JsRuntime {
 			// `process` object. Subsetting it caused segfaults in workers that share state with
 			// puppeteer/worker_threads internals.
 			require: this.#buildDynamicRequire(),
-			createRequire,
+			createRequire: (filename: string | URL) => this.#moduleLoader.createRequire(filename),
 			fs,
 		};
 

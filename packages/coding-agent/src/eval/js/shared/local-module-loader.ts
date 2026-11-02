@@ -17,6 +17,13 @@ interface LocalModuleEntry {
 export type LocalImportResolution = { mode: "local"; value: unknown } | { mode: "external"; target: string };
 
 const LOCAL_MODULE_EXTENSIONS = new Set([".js", ".jsx", ".mjs", ".ts", ".tsx", ".mts"]);
+const NODE_UNSUPPORTED_MODULE_EXTENSIONS: Record<string, true> = {
+	".ts": true,
+	".tsx": true,
+	".mts": true,
+	".cts": true,
+	".jsx": true,
+};
 
 export class LocalModuleLoader {
 	#context: vm.Context;
@@ -58,13 +65,17 @@ export class LocalModuleLoader {
 	}
 
 	requireForFile(moduleUrlOrPath: string | undefined, cwd: string): NodeJS.Require {
-		const basePath = this.filenameForUrl(moduleUrlOrPath) ?? path.join(cwd, "[eval]");
+		const basePath = this.filenameForUrl(moduleUrlOrPath) ?? path.join(cwd, "[eval].js");
 		let cached = this.#requireCache.get(basePath);
 		if (!cached) {
 			cached = buildRequire(basePath, this.#packageRoot);
 			this.#requireCache.set(basePath, cached);
 		}
 		return cached;
+	}
+
+	createRequire(filename: string | URL): NodeJS.Require {
+		return wrapRequire(createRequire(filename), undefined);
 	}
 
 	filenameForUrl(moduleUrlOrPath: string | undefined): string | null {
@@ -316,30 +327,42 @@ export class LocalModuleLoader {
 
 function buildRequire(fromPath: string, packageRoot: string | undefined): NodeJS.Require {
 	const basePath = path.extname(fromPath) ? fromPath : path.join(fromPath, "[eval]");
-	const primary = createRequire(pathToFileURL(basePath).href);
-	if (!packageRoot) return primary;
-	const fallback = createRequire(pathToFileURL(path.join(packageRoot, "package.json")).href);
+	return wrapRequire(createRequire(pathToFileURL(basePath).href), packageRoot);
+}
+
+function wrapRequire(primary: NodeJS.Require, packageRoot: string | undefined): NodeJS.Require {
+	if (!packageRoot && typeof Bun !== "undefined") return primary;
+	const fallback = packageRoot ? createRequire(pathToFileURL(path.join(packageRoot, "package.json")).href) : undefined;
 	const requireWithFallback = ((id: string) => {
-		if (!isBareSpecifier(id)) return primary(id);
+		assertNodeExecutableModule(id);
+		if (!fallback || !packageRoot || !isBareSpecifier(id)) {
+			if (typeof Bun === "undefined") assertNodeExecutableModule(primary.resolve(id));
+			return primary(id);
+		}
 		let primaryResolutionError: unknown;
+		let resolved: string | undefined;
 		try {
-			primary.resolve(id);
+			resolved = primary.resolve(id);
 		} catch (error) {
 			primaryResolutionError = error;
 		}
-		if (!primaryResolutionError) return primary(id);
+		if (resolved !== undefined) {
+			assertNodeExecutableModule(resolved);
+			return primary(id);
+		}
 		try {
-			fallback.resolve(id);
+			resolved = fallback.resolve(id);
 		} catch (fallbackError) {
 			throw packageFallbackError(primaryResolutionError, fallbackError, packageRoot);
 		}
+		assertNodeExecutableModule(resolved);
 		return fallback(id);
 	}) as NodeJS.Require;
 	const resolve = ((id: string, options?: { paths?: string[] }) => {
 		try {
 			return primary.resolve(id, options);
 		} catch (primaryError) {
-			if (!isBareSpecifier(id)) throw primaryError;
+			if (!fallback || !packageRoot || !isBareSpecifier(id)) throw primaryError;
 			try {
 				return fallback.resolve(id, options);
 			} catch (fallbackError) {
@@ -368,6 +391,13 @@ function buildModuleSource(source: string, modulePath: string): string {
 }
 
 function resolveImportSpecifier(baseDir: string, source: string, packageRoot: string | undefined): string {
+	assertNodeExecutableModule(source);
+	const resolved = resolveImportTarget(baseDir, source, packageRoot);
+	assertNodeExecutableModule(resolved);
+	return resolved;
+}
+
+function resolveImportTarget(baseDir: string, source: string, packageRoot: string | undefined): string {
 	if (/^[a-z][a-z0-9+.-]*:/i.test(source) || isBuiltin(source)) return source;
 	if (!isBareSpecifier(source))
 		return typeof Bun === "undefined"
@@ -446,6 +476,17 @@ function isLocalPathSpecifier(source: string): boolean {
 		source.startsWith("~/") ||
 		/^[a-zA-Z]:[\\/]/.test(source)
 	);
+}
+
+/** Reject executable typed/JSX files before Node's loaders can strip their syntax. */
+export function assertNodeExecutableModule(target: string): void {
+	if (typeof Bun !== "undefined") return;
+	const filename = target.startsWith("file://") ? fileURLToPath(target) : target;
+	if (NODE_UNSUPPORTED_MODULE_EXTENSIONS[path.extname(filename)] === true) {
+		throw new Error(
+			`Node eval cannot execute TypeScript or JSX modules: ${target}. Precompile to .js, .mjs, or .cjs before importing.`,
+		);
+	}
 }
 
 function isTypeScriptModulePath(modulePath: string): boolean {
