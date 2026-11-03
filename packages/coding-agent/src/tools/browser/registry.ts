@@ -1,6 +1,7 @@
 import { runtime, type RuntimeSubprocess } from "@oh-my-pi/pi-utils/runtime";
 import * as path from "node:path";
 import { getLogsDir, isCompiledBinary, logger, untilAborted, withTimeout, workerHostEntry } from "@oh-my-pi/pi-utils";
+import { nodeWorkerHostEntry } from "@oh-my-pi/pi-utils/worker-host";
 import type { Browser, CDPSession } from "puppeteer-core";
 import { ToolAbortError } from "../tool-errors";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
@@ -264,10 +265,12 @@ async function openBrowserHandle(kind: BrowserKind, opts: AcquireBrowserOptions)
 	if (kind.kind === "relay") {
 		const cdpUrl = normalizeConnectedCdpUrl(kind.cdpUrl);
 		// Loopback relays are owned by a machine-global broker and auto-started
-		// on demand (the extension dials in on its own). Hosts without a CLI
-		// worker entry (bun test, SDK embedding) never spawn brokers. Remote
-		// relay URLs must already be serving.
-		const autoStart = isLoopbackRelayUrl(cdpUrl) && (isCompiledBinary() || workerHostEntry() !== null);
+		// on demand. CLI hosts and the Node SDK register their own dispatcher;
+		// hosts without either entry (e.g. bun test) never spawn brokers.
+		// Remote relay URLs must already be serving.
+		const autoStart =
+			isLoopbackRelayUrl(cdpUrl) &&
+			(isCompiledBinary() || workerHostEntry() !== null || nodeWorkerHostEntry() !== null);
 		if (autoStart) {
 			await ensureRelayDaemon({ cdpUrl, signal: opts.signal });
 		}
@@ -287,12 +290,14 @@ async function openBrowserHandle(kind: BrowserKind, opts: AcquireBrowserOptions)
 		}
 		if (outcome === "unreachable") {
 			throw new ToolError(
-				`omp browser relay is not reachable at ${cdpUrl}. Start it with \`omp browser-relay\` (or check the endpoint), and make sure the OMP Browser Relay extension is loaded in Chrome.`,
+				autoStart
+					? `omp browser relay could not be started at ${cdpUrl}. Check the backend logs and whether the port is occupied by another application.`
+					: `omp browser relay is not reachable at ${cdpUrl}. Start the relay on that host (or check the endpoint), and make sure the OMP Browser Relay extension is loaded in Chrome.`,
 			);
 		}
 		if (outcome === "no-extension") {
 			throw new ToolError(
-				`omp browser relay is serving at ${cdpUrl} but its extension never connected. Install it with \`omp browser-relay install\` and check the toolbar badge shows "on".`,
+				`omp browser relay is serving at ${cdpUrl} but its extension never connected. Load and enable the OMP Browser Relay extension in Chrome and check the toolbar badge shows "on".`,
 			);
 		}
 		if (outcome === "extension-gone") {

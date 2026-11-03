@@ -22,6 +22,7 @@
 
 ### Fixed
 
+- Fixed embedded Node SDK browser opens skipping Relay auto-start and the shared Node host rejecting `browser-relay`; relays now use the existing global broker and embedded runtime without requiring an OMP executable on PATH.
 - Fixed RPC login-provider status counting configuration placeholders and environment keys as signed-in accounts; status now tracks stored credentials, including shared login aliases, and clears after logout.
 - Fixed Node SDK builds requiring a generic native addon when packaging an isolated Desktop addon.
 - Fixed Windows Node SDK MCP, clipboard, and dependency-installation helpers opening terminal windows in GUI hosts while preserving real console inheritance.
