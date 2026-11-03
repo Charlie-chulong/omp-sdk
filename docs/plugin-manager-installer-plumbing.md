@@ -15,6 +15,8 @@ There are two plugin-management implementations in the codebase:
 
 Node SDK plugin management does not compile installed sources. Executable extension/tool/command manifests must point at emitted `.js`, `.mjs`, or `.cjs` files, with precompiled dependencies. Skills, rules, prompts, and other non-executable resources are unaffected; Bun CLI TypeScript loading remains available.
 
+`omp plugin check --json` loads enabled manifest entries using the current runtime and reports per-plugin errors without creating a model session or executing tools. `--fix` persistently disables plugins that fail to load, preserves settings and feature selection, and synchronizes matching marketplace registry entries in the same scope. Disabled plugins and inactive features are not loaded. Node RPC hosts run this check before session creation; Desktop also runs it at daemon startup. Check execution/configuration errors are not evidence that every plugin failed. After fixing an entry, re-enable its package or marketplace ID with the existing `plugin enable` command.
+
 ## Lifecycle: from CLI invocation to runtime availability
 
 ```text
@@ -41,6 +43,7 @@ omp plugin install name@marketplace / omp install name@marketplace
 - `src/cli/plugin-cli.ts` maps npm/link subcommands to `PluginManager` methods:
    - `install`, `uninstall`, `list`, `link`, `doctor`, `features`, `config`, `enable`, `disable`, and npm/git `upgrade`
 - `discover`, marketplace `upgrade`, and `marketplace ...` subcommands use `MarketplaceManager`.
+- `check` uses the native startup loader; `--fix` disables failing plugins rather than reinstalling or repairing them.
 - `upgrade <package-name>` updates an npm/git plugin; a bare name matching one installed marketplace plugin resolves to that marketplace ID instead. Multiple marketplace matches require qualification. `upgrade` without a target upgrades outdated marketplace plugins only.
 
 ## On-disk model

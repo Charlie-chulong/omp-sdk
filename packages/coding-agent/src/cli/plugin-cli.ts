@@ -10,6 +10,7 @@ import chalk from "@oh-my-pi/pi-utils/chalk";
 import { resolveOrDefaultProjectRegistryPath } from "../discovery/helpers";
 import { PluginManager, parseSettingValue, validateSetting } from "../extensibility/plugins";
 import { setInstalledPluginEnabled } from "../extensibility/plugins/toggle";
+import { checkPluginStartup } from "../extensibility/plugins/startup-check";
 import {
 	getInstalledPluginsRegistryPath,
 	getMarketplacesCacheDir,
@@ -31,6 +32,7 @@ export type PluginAction =
 	| "list"
 	| "link"
 	| "doctor"
+	| "check"
 	| "features"
 	| "config"
 	| "enable"
@@ -65,6 +67,7 @@ const VALID_ACTIONS: PluginAction[] = [
 	"list",
 	"link",
 	"doctor",
+	"check",
 	"features",
 	"config",
 	"enable",
@@ -178,6 +181,19 @@ export async function runPluginCommand(cmd: PluginCommandArgs): Promise<void> {
 		case "doctor":
 			await handleDoctor(manager, cmd.flags);
 			break;
+		case "check": {
+			if (cmd.flags.dryRun && cmd.flags.fix) refuseDryRun(cmd.flags, "check --fix");
+			const checks = await checkPluginStartup(getProjectDir(), { disableFailed: cmd.flags.fix });
+			if (cmd.flags.json) console.log(JSON.stringify(checks));
+			else
+				for (const check of checks) {
+					console.log(
+						`${check.name} (${check.scope}): ${check.disabled ? "disabled" : check.errors.length ? "failed" : "ok"}`,
+					);
+					for (const error of check.errors) console.error(error);
+				}
+			break;
+		}
 		case "features":
 			await handleFeatures(manager, cmd.args, cmd.flags);
 			break;

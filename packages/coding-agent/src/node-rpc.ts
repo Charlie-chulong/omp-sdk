@@ -9,17 +9,14 @@ import { Settings } from "./config/settings";
 import { initializeNodeSdk } from "./node-bootstrap";
 import { runRpcMode } from "./modes/rpc/rpc-mode";
 import { claimRpcInput } from "./modes/rpc/rpc-input";
+import { checkPluginStartup } from "./extensibility/plugins/startup-check";
 import { createAgentSession } from "./sdk";
 import { SessionManager } from "./session/session-manager";
 import { resolveResumableSession } from "./session/session-listing";
 import { closeDaemonClients, daemonClientForProject } from "./launch/client";
 import { BUILTIN_TOOL_NAMES } from "./tools/builtin-names";
 import { cfgToolsApprovalMode } from "./tools/settings";
-import {
-	ProxyPolicyController,
-	type ProxyPolicy,
-	setDefaultProxyPolicyController,
-} from "@oh-my-pi/pi-ai/utils/proxy";
+import { ProxyPolicyController, type ProxyPolicy, setDefaultProxyPolicyController } from "@oh-my-pi/pi-ai/utils/proxy";
 
 export * from "./modes/rpc/rpc-mode";
 
@@ -93,6 +90,11 @@ export async function startNodeRpcHost(options: NodeRpcHostOptions): Promise<nev
 	for (const [key, value] of Object.entries(parsed)) {
 		if (value !== undefined && value !== false && !supportedParsedOptions[key]) {
 			throw new Error(`Node SDK backend does not support the CLI option '${key}'`);
+		}
+	}
+	for (const check of await checkPluginStartup(options.cwd, { disableFailed: true })) {
+		if (check.disabled) {
+			console.error(`Disabled failed plugin ${check.name} (${check.scope}): ${check.errors.join("; ")}`);
 		}
 	}
 	const agentDir = options.agentDir ?? getAgentDir();

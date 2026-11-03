@@ -13,6 +13,7 @@ const ACTIONS: PluginAction[] = [
 	"list",
 	"link",
 	"doctor",
+	"check",
 	"features",
 	"config",
 	"enable",
@@ -40,7 +41,9 @@ export default class Plugin extends Command {
 
 	static flags = {
 		json: Flags.boolean({ description: "Output JSON" }),
-		fix: Flags.boolean({ description: "Attempt to fix issues (doctor)" }),
+		fix: Flags.boolean({
+			description: "Attempt to fix issues (doctor), or disable plugins that fail to load (check)",
+		}),
 		force: Flags.boolean({ description: "Force install" }),
 		"dry-run": Flags.boolean({
 			description:

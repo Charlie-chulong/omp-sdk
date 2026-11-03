@@ -9,6 +9,7 @@
 - Added Desktop-specific Node SDK builds with a reduced extension import surface while retaining independent generic SDK builds.
 - Added native capability inspection and actionable disabled-feature errors before downloads or native construction; caller-owned SDP live signaling remains available without native WebRTC.
 - Added Node SDK plugin-management commands and Desktop provider-helper imports without requiring an OMP executable or bundled Bun runtime.
+- Added runtime plugin startup checks and `omp plugin check --fix` to persistently disable failing plugins while preserving healthy plugins, scope, settings, and feature selection.
 - Added `createAgentSession({ proxyPolicy })`, `session.setProxyPolicy()` / `getProxyPolicy()`, and RPC `set_proxy_policy` for isolated live conversation routing inherited by nested sessions.
 - Added queueable compaction: `/compact` sent with the follow-up key (Ctrl+Q) while the agent works now runs when it yields instead of interrupting it ([#17397](https://github.com/can1357/oh-my-pi/pull/17397) by [@H4vC](https://github.com/H4vC))
 
