@@ -966,10 +966,11 @@ export class StdioTransport implements MCPTransport {
 
 			// 1. Cooperative EOF first: a well-behaved server sees stdin close
 			// and can exit on its own before any signal is sent. Guarded — the
-			// sink can throw if the pipe is already closed/dead (e.g. the child
-			// already exited and the read loop got there first).
+			// sink can throw or reject if the pipe is already closed/dead. Observe
+			// rejections without waiting: blocked input must not delay termination.
 			try {
-				proc.stdin.end();
+				const ended = proc.stdin.end();
+				if (isThenable(ended)) ended.then(undefined, () => {});
 			} catch {
 				// Already closed/dead.
 			}

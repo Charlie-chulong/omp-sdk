@@ -844,6 +844,42 @@ describe("StdioTransport.close", () => {
 		expect(closeCount).toBe(1);
 	});
 
+	for (const outcome of ["rejects", "never settles"] as const) {
+		it(`terminates the subprocess without leaking a stdin end promise that ${outcome}`, async () => {
+			// Real subprocess I/O drives termination; fake timers cannot drive its keepalive or exit.
+			const child = Bun.spawn([process.execPath, "-e", "setInterval(() => {}, 60_000)"], {
+				stdin: "pipe",
+				stdout: "pipe",
+				stderr: "pipe",
+				detached: process.platform !== "darwin" && process.platform !== "win32",
+			});
+			const spawn = vi.spyOn(Bun, "spawn").mockReturnValueOnce(child);
+			const ending = Promise.withResolvers<number>();
+			const end = vi.spyOn(child.stdin, "end").mockImplementationOnce(() => ending.promise);
+			const tracker = trackUnhandled();
+			try {
+				transport = new StdioTransport({ type: "stdio", command: process.execPath });
+				await transport.connect();
+				spawn.mockRestore();
+				const closing = transport.close();
+				if (outcome === "rejects") {
+					ending.reject(Object.assign(new Error("Subprocess stdin closed"), { code: "ERR_STREAM_DESTROYED" }));
+				}
+				await closing;
+				expect(await child.exited).not.toBe(0);
+				expect(transport.connected).toBe(false);
+				expect(tracker.capture()).toEqual([]);
+			} finally {
+				ending.resolve(0);
+				end.mockRestore();
+				spawn.mockRestore();
+				if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+				await child.exited;
+				tracker.release();
+			}
+		});
+	}
+
 	it("is idempotent — repeat close() calls fire onClose exactly once", async () => {
 		transport = new StdioTransport({
 			type: "stdio",

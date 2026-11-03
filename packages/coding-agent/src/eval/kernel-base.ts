@@ -2,6 +2,7 @@ import type { EvalStatusEvent, EvalView } from "@oh-my-pi/pi-tui/tools/eval";
 import { isRecord, logger, readLines, Snowflake } from "@oh-my-pi/pi-utils";
 import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { Subprocess } from "bun";
+import { isThenable } from "../utils/ipc";
 import type { ShadowBarrier, ShadowControlNode, ShadowOperation } from "./speculation/types";
 import { type EvalDisplayOutput, evalImageMetadata } from "./types";
 
@@ -505,7 +506,8 @@ export abstract class BaseKernel<TExecuteOptions extends KernelExecuteOptions = 
 		}
 
 		try {
-			this.#stdin?.end();
+			const ended = this.#stdin?.end();
+			if (isThenable(ended)) ended.then(undefined, () => {});
 		} catch {
 			/* ignore */
 		}

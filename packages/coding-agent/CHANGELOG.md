@@ -22,6 +22,8 @@
 
 ### Fixed
 
+- Fixed asynchronous subprocess stdin-close rejections during MCP cleanup and Python kernel shutdown terminating session RPC processes; teardown observes failures without waiting for stalled input.
+- Fixed pipe-backed daemon sends leaking backpressure write rejections instead of returning the failure to the caller.
 - Fixed embedded Node SDK browser opens skipping Relay auto-start and the shared Node host rejecting `browser-relay`; relays now use the existing global broker and embedded runtime without requiring an OMP executable on PATH.
 - Fixed RPC login-provider status counting configuration placeholders and environment keys as signed-in accounts; status now tracks stored credentials, including shared login aliases, and clears after logout.
 - Fixed Node SDK builds requiring a generic native addon when packaging an isolated Desktop addon.

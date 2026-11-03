@@ -5,6 +5,7 @@ import {
 	killProcessGroup,
 	waitForKernelProcessGroupExit,
 } from "../../src/eval/kernel-base";
+import { trackUnhandled } from "../helpers/rejection";
 
 class TestKernel extends BaseKernel {
 	constructor() {
@@ -79,6 +80,51 @@ test.skipIf(!POSIX)("does not acknowledge an inaccessible group at the shutdown 
 });
 
 describe("BaseKernel stdin failures", () => {
+	for (const outcome of ["rejects", "never settles"] as const) {
+		test(`confirms shutdown without leaking a stdin end promise that ${outcome}`, async () => {
+			const exited = Promise.withResolvers<number>();
+			const ending = Promise.withResolvers<number>();
+			const endStarted = Promise.withResolvers<void>();
+			const proc = {
+				pid: undefined,
+				stdin: {
+					write: () => 0,
+					flush: () => 0,
+					end: () => {
+						endStarted.resolve();
+						return ending.promise;
+					},
+				},
+				stdout: new ReadableStream<Uint8Array>(),
+				stderr: new ReadableStream<Uint8Array>(),
+				exited: exited.promise,
+				kill: () => exited.resolve(1),
+			};
+			const kernel = new TestKernel();
+			kernel.setProcess(proc as unknown as Parameters<TestKernel["setProcess"]>[0]);
+			const tracker = trackUnhandled();
+			vi.useFakeTimers();
+			try {
+				const shutdown = kernel.shutdown();
+				await endStarted.promise;
+				if (outcome === "rejects") {
+					ending.reject(Object.assign(new Error("Subprocess stdin closed"), { code: "ERR_STREAM_DESTROYED" }));
+				}
+				vi.advanceTimersByTime(25);
+				expect((await shutdown).confirmed).toBe(true);
+				expect(kernel.isAlive()).toBe(false);
+				expect(await exited.promise).toBe(1);
+				expect(tracker.capture()).toEqual([]);
+			} finally {
+				ending.resolve(0);
+				exited.resolve(1);
+				await kernel.shutdown();
+				tracker.release();
+				vi.useRealTimers();
+			}
+		});
+	}
+
 	test("settles an execution with a TransportError and retires the kernel when the stdin write rejects", async () => {
 		const exited = Promise.withResolvers<number>();
 		const proc = {

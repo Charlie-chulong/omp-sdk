@@ -1254,7 +1254,9 @@ class DaemonBroker {
 			if (record.pty) record.pty.write(operation.data);
 			else if (record.input) {
 				// PTYs interpret Enter as CR; pipe-backed shells require LF to end a line.
-				record.input.write(operation.data.endsWith("\r") ? `${operation.data.slice(0, -1)}\n` : operation.data);
+				await record.input.write(
+					operation.data.endsWith("\r") ? `${operation.data.slice(0, -1)}\n` : operation.data,
+				);
 				await record.input.flush();
 			} else throw new Error(`Daemon ${operation.name} stdin is unavailable`);
 		}
