@@ -7,6 +7,8 @@
  *
  * `OMP_NATIVE_CARGO_PROFILE` selects the cargo profile (default `local`:
  * incremental, unstripped). Image builds set `ci` for a stripped addon.
+ * Desktop builds use `--desktop` for release output in native/desktop, or
+ * `--desktop --development` for the fixed local profile in native/desktop/local.
  *
  * `OMP_NATIVE_FEATURES` passes extra cargo features to `napi build --features`
  * (e.g. `wayland-pipewire`). Cargo path only; Bazel builds ignore it.
@@ -23,6 +25,10 @@ import { stampNativeVersion } from "../../../scripts/stamp-native-version";
 import { generateEnumExports } from "./gen-enums";
 
 const desktopBuild = process.argv.includes("--desktop");
+const developmentBuild = process.argv.includes("--development");
+if (developmentBuild && !desktopBuild) {
+	throw new Error("--development is only supported with --desktop.");
+}
 const baselineBuild = process.argv.includes("--baseline");
 if (baselineBuild && (!desktopBuild || process.arch !== "x64")) {
 	throw new Error("--baseline is only supported for Desktop x64 addon builds.");
@@ -67,7 +73,12 @@ if (!desktopBuild && process.platform === "win32" && (!Bun.which("cmake") || !Bu
 
 const repoRoot = path.join(import.meta.dir, "../../..");
 const rustDir = path.join(repoRoot, "crates/pi-natives");
-const nativeDir = path.join(import.meta.dir, "../native", desktopBuild ? "desktop" : "");
+const nativeDir = path.join(
+	import.meta.dir,
+	"../native",
+	desktopBuild ? "desktop" : "",
+	developmentBuild ? "local" : "",
+);
 const packageJsonPath = path.join(import.meta.dir, "../package.json");
 
 const localAddon = resolveLocalHostAddon({
@@ -81,9 +92,10 @@ const variantSuffix = effectiveVariant ? `-${effectiveVariant}` : "";
 // An explicit shipping baseline must not inherit a modern/native ISA from the
 // invoking shell. Cargo's encoded flags otherwise take priority over RUSTFLAGS.
 if (baselineBuild) {
-	Bun.env.RUSTFLAGS = process.platform === "win32"
-		? "-C target-feature=+crt-static -C target-cpu=x86-64-v2"
-		: "-C target-cpu=x86-64-v2";
+	Bun.env.RUSTFLAGS =
+		process.platform === "win32"
+			? "-C target-feature=+crt-static -C target-cpu=x86-64-v2"
+			: "-C target-cpu=x86-64-v2";
 	delete Bun.env.CARGO_ENCODED_RUSTFLAGS;
 }
 
@@ -198,7 +210,7 @@ const canonicalAddonFilename = localAddon.filename;
 const canonicalAddonPath = path.join(nativeDir, canonicalAddonFilename);
 
 console.log(
-	`Building pi-natives bindings for ${process.platform}-${process.arch}${variantSuffix} (${desktopBuild ? "desktop" : "local"})…`,
+	`Building pi-natives bindings for ${process.platform}-${process.arch}${variantSuffix} (${desktopBuild ? `desktop ${developmentBuild ? "local" : "release"}` : "local"})…`,
 );
 
 await fs.mkdir(nativeDir, { recursive: true });
@@ -231,9 +243,13 @@ if (!napiBinEntry) {
 }
 const napiBin = path.join(path.dirname(napiManifestPath), napiBinEntry);
 
-// Desktop shipping artifacts are always release builds; generic local builds
+// Desktop modes have fixed profiles and isolated outputs; generic local builds
 // retain their existing configurable iteration profile.
-const cargoProfile = desktopBuild ? "release" : Bun.env.OMP_NATIVE_CARGO_PROFILE?.trim() || "local";
+const cargoProfile = desktopBuild
+	? developmentBuild
+		? "local"
+		: "release"
+	: Bun.env.OMP_NATIVE_CARGO_PROFILE?.trim() || "local";
 
 const napiArgs = [
 	"build",

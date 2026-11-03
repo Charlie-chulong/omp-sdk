@@ -165,6 +165,7 @@ async function writeRuntimeDependencies(
 	outDir: string,
 	result: Bun.BuildOutput,
 	buildTarget: NodeSdkBuildTarget,
+	virtualRoot: string,
 ): Promise<void> {
 	if (!result.metafile) throw new Error("Node SDK build did not emit dependency metadata");
 	const inputs = new Set(Object.keys(result.metafile.inputs).map(file => path.resolve(file)));
@@ -329,6 +330,28 @@ async function writeRuntimeDependencies(
 		path.join(outDir, "runtime-dependencies.json"),
 		JSON.stringify({ version: 1, buildTarget, packages, optionalCapabilities }, null, 2),
 	);
+	// Build-only dependency watches stay outside the shipped SDK directory.
+	const buildInputs = [
+		...new Set([...inputs, ...[...sourcePackages.keys()].map(directory => path.join(directory, "package.json"))]),
+	]
+		.filter(file => !file.startsWith(virtualRoot + path.sep))
+		.sort();
+	const existingInputs = await Promise.all(
+		buildInputs.map(async file =>
+			(
+				await fs.stat(file).catch(error => {
+					if (isEnoent(error)) return undefined;
+					throw error;
+				})
+			)?.isFile()
+				? file
+				: undefined,
+		),
+	);
+	await Bun.write(
+		path.join(repoRoot, "target", "node-sdk-build-inputs", `${buildTarget}.json`),
+		JSON.stringify({ version: 1, buildTarget, files: existingInputs.filter(file => file !== undefined) }),
+	);
 }
 
 /** Build a Node SDK plus one shared worker host; Bun is needed only by the build toolchain. */
@@ -424,7 +447,7 @@ export async function bundleNodeSdk(outDir?: string, buildTarget: NodeSdkBuildTa
 			throw new Error(`Node SDK bundle failed:\n${errors.join("\n")}`);
 		}
 		await Bun.write(path.join(outDir, "modules.json"), JSON.stringify({ version: 1, buildTarget, modules }));
-		await writeRuntimeDependencies(outDir, result, buildTarget);
+		await writeRuntimeDependencies(outDir, result, buildTarget, virtualRoot);
 		process.stdout.write(
 			`Bundled ${buildTarget} Node SDK and shared worker host to ${outDir} (${registry.length} host modules)\n`,
 		);

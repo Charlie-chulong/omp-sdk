@@ -18,6 +18,7 @@
 - Reduced standalone binary size by disabling bundled bytecode, trading faster startup for smaller executables.
 - Reduced the packaged Node SDK footprint while retaining browser, code-parsing, and ordinary image capabilities.
 - Desktop packaging now validates an isolated native addon and excludes full-native platform leaf packages, while generic SDK and Bun CLI defaults retain full native features.
+- Source SDK builds now reuse unchanged artifacts and dependency file lists, with uncompressed development staging kept separate from validated release archives.
 - Node SDK plugins, custom tools/commands, and eval now execute JavaScript only, removing the runtime TypeScript compiler dependency; TS/TSX/JSX extensions must be precompiled. Bun CLI TypeScript support and source-file read/write/edit remain unchanged.
 
 ### Fixed

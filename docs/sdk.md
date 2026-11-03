@@ -111,6 +111,20 @@ AST operations remain available. Browser PDF screenshots/printing are independen
 of native PDF extraction; remote TTS/transcription data APIs remain independent
 of local capture/playback.
 
+For incremental Desktop source development, use:
+
+```bash
+bun --cwd=packages/natives run build:desktop --development --baseline
+```
+
+Omit `--baseline` on non-x64 hosts. This fixes the Cargo profile to `local`
+(thin LTO, 16 codegen units, incremental), retains the same disabled features,
+and isolates the addon/sidecar in `native/desktop/local/`. Cargo uses a separate
+profile directory under `target/desktop`; its first build must populate that
+cache. Default `build:desktop` remains release-only, and `--development` without
+`--desktop` is rejected. Development staging must explicitly select
+`buildMode: "development"`; release staging never borrows the local addon.
+
 With `buildTarget: "desktop"`, staging requires this isolated artifact,
 checks its sidecar and raw binary capabilities, package version, and SHA-256,
 and excludes optional full-native platform leaf packages so they cannot
@@ -160,18 +174,36 @@ const staged = await stageNodeSdk(absoluteCodingAgentPackageRoot, outputDirector
   arch: process.arch,
   buildTarget: "desktop",
   profile: "core",
+  buildMode: "release",
+  // Optional: persistent npm file-list cache root; defaults to an OS-temp cache.
+  // cacheDir: absoluteCacheDirectory,
 });
 ```
 
 The source is an absolute package root with built SDK artifacts and installed
-production dependencies, not `dist/node` or an entry file. All four options have
-the defaults shown above. `generic`/`full` remain available explicitly. Staging
-returns the existing manifest fields plus `archive` (`omp-sdk.tgz`) and
-`directory` (the staged SDK package). It never reads Desktop environment
-configuration or mutates the source checkout. Native staging is host-only: a
-macOS arm64 installation cannot generate a Linux or x64 native dependency closure.
-The complete modules, worker host, chunks, runtime resources and licenses are
-preserved; staging verifies the final npm archive rather than just the build tree.
+production dependencies, not `dist/node` or an entry file. The target, capability
+profile, and build-mode options have the defaults shown above. `generic`/`full`
+remain available explicitly. Release staging returns the manifest fields plus
+`archive` (`omp-sdk.tgz`) and `directory` (the staged SDK package). It verifies
+the final npm archive rather than just the build tree.
+
+`buildMode: "development"` instead validates and copies the complete runnable
+directory without the final npm pack/compression step and returns `archive: null`.
+The manifest and installed package record the build mode. Desktop development
+requires the isolated `local` addon and checks the same version, SHA-256 and
+capabilities as release staging. Production consumers reject this mode.
+
+Staging persistently caches npm's package file selections, keyed by actual
+package/workspace contents, lock/configuration/build inputs, host target, and
+Node/npm versions. It still copies current bytes and validates runtime paths;
+changing a package without changing its version cannot silently reuse its old
+file selection. `cacheDir` changes only the cache location. Build-only dependency
+resolution edges are returned as `dependencyInputs`, not shipped in the manifest.
+
+Staging never reads Desktop environment configuration or modifies source inputs.
+Native staging is host-only: a macOS arm64 installation cannot generate a Linux
+or x64 native dependency closure. Complete modules, worker host, chunks, runtime
+resources, licenses, and selected native sidecars are retained in both modes.
 
 The pinned release contract is `sdk/node-release.json`:
 `iris-cat-dev/omp-sdk`, tag `sdk-v18.14.0-desktop-core.1`, Desktop/core, and

@@ -6,6 +6,7 @@
 
 - Added default-on native Cargo features and isolated Desktop builds; generic SDK and Bun CLI defaults retain the full native feature set.
 - Added binary capability reporting so integrations can distinguish disabled native features from the full default build.
+- Added isolated incremental Desktop development builds using the local Cargo profile without changing release capabilities or CPU baselines.
 
 ### Fixed
 
