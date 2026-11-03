@@ -268,6 +268,13 @@ The bundled TypeScript `RpcClient.getMessages()` and Python `RpcClient.get_messa
 - `{ id?, type: "get_logout_accounts", providerId: string }` → `data: { accounts: LogoutAccount[] }`
 - `{ id?, type: "logout", providerId: string, credentialId: number }` → `data: { remainingSource?: string }`
 
+`get_login_providers` reloads the credential store and reports `authenticated: true`
+only for providers with active stored credentials (OAuth or API keys). Login aliases
+share the credential provider named by `storeCredentialsAs`. Runtime/config keys,
+extension placeholders, and environment variables can make models usable without
+creating a signed-in account; they do not set `authenticated` and cannot be removed
+by `logout`.
+
 Login forwards ordinary OAuth input prompts only after the provider emits an
 authorization URL. Prompts marked `secret: true` are always rejected with a
 failed `login` response directing the user to the terminal UI; no ordinary

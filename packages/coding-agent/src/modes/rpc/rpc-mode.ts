@@ -2769,13 +2769,14 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 			// =================================================================
 
 			case "get_login_providers": {
+				const authStorage = session.modelRegistry.authStorage;
+				await authStorage.credentials.reload();
 				const providers = getOAuthProviders().map(provider => ({
 					id: provider.id,
 					name: provider.name,
 					available: provider.available,
-					authenticated:
-						session.modelRegistry.authStorage.keys.source(provider.storeCredentialsAs ?? provider.id) !==
-						undefined,
+					// Login state describes stored accounts that logout can remove, not request-key availability.
+					authenticated: authStorage.credentials.has(provider.storeCredentialsAs ?? provider.id),
 				}));
 				return success(id, "get_login_providers", { providers });
 			}

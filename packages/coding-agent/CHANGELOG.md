@@ -22,6 +22,7 @@
 
 ### Fixed
 
+- Fixed RPC login-provider status counting configuration placeholders and environment keys as signed-in accounts; status now tracks stored credentials, including shared login aliases, and clears after logout.
 - Fixed Node SDK builds requiring a generic native addon when packaging an isolated Desktop addon.
 - Fixed Windows Node SDK MCP, clipboard, and dependency-installation helpers opening terminal windows in GUI hosts while preserving real console inheritance.
 - Fixed concurrent Node plugin imports/reloads invalidating CommonJS cache entries while another module graph is evaluating.

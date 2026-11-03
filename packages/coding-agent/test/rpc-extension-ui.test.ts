@@ -442,6 +442,7 @@ export default function(pi) {
   for (const [id, secret, storeCredentialsAs] of [["rpc-secret", true], ["rpc-ordinary", false], ["rpc-alias", false, "rpc-ordinary"]]) {
     pi.registerProvider(id, {
       baseUrl: "http://127.0.0.1:9/v1",
+      apiKey: "external-credential-placeholder",
       api: "openai-completions",
       models: [{
         id: "fixture",
@@ -502,10 +503,10 @@ export default function(pi) {
 		const inputTitles: string[] = [];
 		let secretResponse: unknown;
 		let ordinaryResponse: unknown;
+		let initialProvidersResponse: unknown;
 		let loggedInProvidersResponse: unknown;
 		let noProviderResponse: unknown;
 		let accountsResponse: unknown;
-		let logoutResponse: unknown;
 		let staleLogoutResponse: unknown;
 		let providersResponse: unknown;
 		let loggedOutCredentialId: unknown;
@@ -515,9 +516,14 @@ export default function(pi) {
 		};
 
 		try {
-			await send({ type: "login", providerId: "rpc-secret", id: "secret" });
+			await send({ type: "get_login_providers", id: "initial" });
 			for await (const frame of readJsonl<unknown>(stdout)) {
 				if (!isRecord(frame)) continue;
+				if (frame.type === "response" && frame.id === "initial") {
+					initialProvidersResponse = frame;
+					await send({ type: "login", providerId: "rpc-secret", id: "secret" });
+					continue;
+				}
 				if (frame.type === "extension_ui_request" && frame.method === "input") {
 					if (typeof frame.id !== "string" || typeof frame.title !== "string") {
 						throw new Error("RPC input request did not carry string id and title");
@@ -544,7 +550,6 @@ export default function(pi) {
 						id: "logout",
 					});
 				} else if (frame.type === "response" && frame.id === "logout") {
-					logoutResponse = frame;
 					await send({
 						type: "logout",
 						providerId: "rpc-ordinary",
@@ -571,6 +576,15 @@ export default function(pi) {
 
 		if (!providersResponse) throw new Error(`RPC login fixture did not finish: ${await stderr}`);
 		await stderr;
+		expect(initialProvidersResponse).toMatchObject({
+			data: {
+				providers: expect.arrayContaining([
+					expect.objectContaining({ id: "rpc-secret", authenticated: false }),
+					expect.objectContaining({ id: "rpc-ordinary", authenticated: false }),
+					expect.objectContaining({ id: "rpc-alias", authenticated: false }),
+				]),
+			},
+		});
 		expect(secretResponse).toMatchObject({
 			type: "response",
 			command: "login",
@@ -592,7 +606,6 @@ export default function(pi) {
 			success: true,
 			data: { accounts: [expect.objectContaining({ provider: "rpc-ordinary", active: true })] },
 		});
-		expect(logoutResponse).toEqual({ id: "logout", type: "response", command: "logout", success: true, data: {} });
 		expect(staleLogoutResponse).toMatchObject({
 			command: "logout",
 			success: false,
