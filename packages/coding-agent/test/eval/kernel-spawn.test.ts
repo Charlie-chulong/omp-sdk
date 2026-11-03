@@ -85,3 +85,35 @@ describe("consoleAttached", () => {
 		).toBe(false);
 	});
 });
+
+const node = process.platform === "win32" ? Bun.which("node") : null;
+const nodeVersion = node
+	? Bun.spawnSync([node, "--version"], {
+			stdin: "ignore",
+			stdout: "pipe",
+			stderr: "pipe",
+			windowsHide: true,
+		}).stdout.toString()
+	: "";
+
+it.skipIf(!node || Number(/^v(\d+)/.exec(nodeVersion)?.[1] ?? 0) < 24)(
+	"does not invent an inheritable console for a hidden Node host",
+	() => {
+		const entry = new URL("../../src/eval/py/spawn-options.ts", import.meta.url).href;
+		const result = Bun.spawnSync(
+			[
+				node!,
+				"--input-type=module",
+				"-e",
+				`import { hostHasInheritableConsole } from ${JSON.stringify(entry)};
+console.log(JSON.stringify({
+  inheritedConsole: hostHasInheritableConsole(),
+  tty: !!process.stdin.isTTY || !!process.stdout.isTTY || !!process.stderr.isTTY
+}));`,
+			],
+			{ stdin: "ignore", stdout: "pipe", stderr: "pipe", windowsHide: true },
+		);
+		expect(result.exitCode).toBe(0);
+		expect(JSON.parse(result.stdout.toString())).toEqual({ inheritedConsole: false, tty: false });
+	},
+);

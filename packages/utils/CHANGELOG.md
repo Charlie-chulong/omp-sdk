@@ -14,6 +14,7 @@
 
 - Node RPC processes retain exclusive stdin ownership without hanging on shutdown while input is idle.
 - Fixed binary Base64 encoding and decoding on Node.js 24 hosts without TypedArray Base64 APIs.
+- Fixed background runtime dependency installation opening terminal windows on Windows.
 
 ## [18.14.0] - 2026-10-29
 

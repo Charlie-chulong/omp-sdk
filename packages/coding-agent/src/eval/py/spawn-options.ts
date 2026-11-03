@@ -8,6 +8,7 @@
  */
 import { createRequire } from "node:module";
 import type * as BunFfi from "bun:ffi";
+import type * as Koffi from "koffi";
 
 /**
  * Decide whether the long-lived Python kernel subprocess should be spawned
@@ -91,20 +92,28 @@ let cachedWindowsConsoleProbe: { value: ConsoleProbeResult } | undefined;
 
 function probeWindowsConsoleWindow(): ConsoleProbeResult {
 	if (cachedWindowsConsoleProbe) return cachedWindowsConsoleProbe.value;
-	if (typeof Bun === "undefined") return null;
 	let value: ConsoleProbeResult = null;
 	try {
-		const { dlopen, FFIType } = createRequire(import.meta.url)("bun:ffi") as typeof BunFfi;
-		const lib = dlopen("kernel32.dll", {
-			GetConsoleWindow: { args: [], returns: FFIType.ptr },
-		});
-		try {
-			const hwnd = lib.symbols.GetConsoleWindow();
-			// FFIType.ptr returns `Pointer | null`; a 0 pointer should also be
-			// treated as NULL defensively in case Bun ever returns 0n / 0.
-			value = hwnd !== null && hwnd !== 0;
-		} finally {
-			lib.close();
+		if (typeof Bun !== "undefined") {
+			const { dlopen, FFIType } = createRequire(import.meta.url)("bun:ffi") as typeof BunFfi;
+			const lib = dlopen("kernel32.dll", {
+				GetConsoleWindow: { args: [], returns: FFIType.ptr },
+			});
+			try {
+				const hwnd = lib.symbols.GetConsoleWindow();
+				value = hwnd !== null && hwnd !== 0;
+			} finally {
+				lib.close();
+			}
+		} else {
+			const koffi = createRequire(import.meta.url)("koffi") as typeof Koffi;
+			const lib = koffi.load("kernel32.dll");
+			try {
+				const hwnd: unknown = lib.func("void * __stdcall GetConsoleWindow(void)")();
+				value = hwnd !== null && hwnd !== 0 && hwnd !== 0n;
+			} finally {
+				lib.unload();
+			}
 		}
 	} catch {
 		value = null;
@@ -128,8 +137,7 @@ export function __resetWindowsConsoleProbeCache(): void {
  */
 export function hostHasInheritableConsole(): boolean {
 	const nativeConsole = process.platform === "win32" ? probeWindowsConsoleWindow() : null;
-	// Node hosts cannot use Bun FFI to prove a redirected Win32 console is absent.
-	// Conservatively preserve inheritance instead of detaching a real console.
+	// If native probing is unavailable, preserve a potentially redirected console.
 	if (process.platform === "win32" && typeof Bun === "undefined" && nativeConsole === null) return true;
 	return consoleAttached({
 		nativeConsole,

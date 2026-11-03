@@ -1,6 +1,7 @@
 use std::{
 	collections::HashSet,
 	env,
+	os::windows::process::CommandExt,
 	path::{Path, PathBuf},
 	process::Command,
 };
@@ -149,7 +150,11 @@ fn query_git_install_path_from_registry() -> Option<String> {
 }
 
 fn query_git_install_path_from_where() -> Option<String> {
-	let output = Command::new("where").arg("git").output().ok()?;
+	let output = Command::new("where")
+		.creation_flags(0x0800_0000) // CREATE_NO_WINDOW: non-interactive discovery.
+		.arg("git")
+		.output()
+		.ok()?;
 	if !output.status.success() {
 		return None;
 	}

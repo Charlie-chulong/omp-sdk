@@ -436,6 +436,7 @@ async function runRuntimeInstall(runtimeDir: string): Promise<void> {
 		env: { ...process.env, ...(runtime.capabilities.bun ? { BUN_BE_BUN: "1" } : {}) },
 		stdout: "pipe",
 		stderr: "pipe",
+		windowsHide: true,
 	});
 	const [stdout, stderr, exitCode] = await Promise.all([
 		readPipe(proc.stdout as ReadableStream<Uint8Array> | null),

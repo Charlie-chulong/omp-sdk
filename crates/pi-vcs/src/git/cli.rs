@@ -14,6 +14,8 @@
 //! disabled for writes, ambient `GIT_DIR`-family vars stripped, bounded output
 //! capture, and deadline + SIGTERM→SIGKILL termination via tokio.
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::{ffi::OsStr, path::Path, process::Stdio, time::Duration};
 
 use tokio::io::AsyncReadExt;
@@ -38,6 +40,8 @@ pub const OUTPUT_LIMIT_BYTES: usize = 8 * 1024 * 1024;
 
 const TERMINATE_GRACE: Duration = Duration::from_secs(5);
 const TRUNCATION_MARKER: &str = "\n[git subprocess output truncated at the capture limit]\n";
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// Captured result of a completed git invocation.
 #[derive(Debug, Clone)]
@@ -199,6 +203,8 @@ pub(crate) async fn run(cwd: &Path, args: &[String], options: &RunOptions) -> Re
 		.stdout(Stdio::piped())
 		.stderr(Stdio::piped())
 		.kill_on_drop(true);
+	#[cfg(windows)]
+	cmd.creation_flags(CREATE_NO_WINDOW);
 	apply_env(&mut cmd);
 	let mut child = cmd.spawn().map_err(|err| spawn_error(cwd, err))?;
 
@@ -356,6 +362,8 @@ fn run_sync_impl(
 		})
 		.stdout(Stdio::piped())
 		.stderr(Stdio::piped());
+	#[cfg(windows)]
+	cmd.creation_flags(CREATE_NO_WINDOW);
 	apply_env(&mut cmd);
 	if let Some(write) = write {
 		for (key, value) in write.env {

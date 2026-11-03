@@ -8,6 +8,7 @@ import { resolveExecutablePath } from "../../subprocess/worker-client";
 import { normalizePackageRequirements } from "../package-requirements";
 import type { StdioSpawnCommand } from "../../mcp/transports/stdio";
 import { resolveStdioSpawnCommand } from "../../mcp/transports/stdio";
+import { hostHasInheritableConsole } from "../py/spawn-options";
 
 /** Filesystem target used for explicit JavaScript eval dependencies. */
 export type JsPackageEnvironmentMode = "managed" | "project";
@@ -162,7 +163,7 @@ export async function installJsPackages(options: InstallJsPackagesOptions): Prom
 								cwd: environment.root,
 								env: process.env,
 								platform: process.platform,
-								hostHasInheritableConsole: true,
+								hostHasInheritableConsole: hostHasInheritableConsole(),
 							},
 						)
 					: { cmd: command, detached: process.platform !== "darwin" && process.platform !== "win32" };
