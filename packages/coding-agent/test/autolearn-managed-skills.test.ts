@@ -10,6 +10,7 @@ import {
 	toSkillFrontmatter,
 	writeManagedSkill,
 } from "@oh-my-pi/pi-coding-agent/autolearn/managed-skills";
+import { ManageSkillTool } from "@oh-my-pi/pi-coding-agent/tools/manage-skill";
 import { parseFrontmatter, removeWithRetries } from "@oh-my-pi/pi-utils";
 import { getAgentDir, setAgentDir } from "@oh-my-pi/pi-utils/dirs";
 
@@ -277,6 +278,96 @@ describe("managed-skills primitives", () => {
 			} finally {
 				await removeWithRetries(outside);
 			}
+		});
+	});
+
+	describe("manage_skill persisted outcomes", () => {
+		it("does not create, update, or delete files when execution is already cancelled", async () => {
+			await writeManagedSkill({ action: "create", name: "keep", description: "d", body: "original" });
+			const controller = new AbortController();
+			controller.abort(new Error("stopped before execution"));
+			const tool = new ManageSkillTool();
+			await expect(
+				tool.execute(
+					"create",
+					{ action: "create", name: "absent", description: "d", body: "new" },
+					controller.signal,
+				),
+			).rejects.toThrow();
+			await expect(
+				tool.execute(
+					"update",
+					{ action: "update", name: "keep", description: "d", body: "changed" },
+					controller.signal,
+				),
+			).rejects.toThrow();
+			await expect(tool.execute("delete", { action: "delete", name: "keep" }, controller.signal)).rejects.toThrow();
+			expect(await Bun.file(skillFile("absent")).exists()).toBe(false);
+			expect(await Bun.file(skillFile("keep")).text()).toContain("original");
+		});
+
+		it("returns the persisted update and cancelled refresh without rewriting or waiting for late work", async () => {
+			await writeManagedSkill({ action: "create", name: "saved", description: "d", body: "original" });
+			const entered = Promise.withResolvers<void>();
+			const release = Promise.withResolvers<void>();
+			const controller = new AbortController();
+			const tool = new ManageSkillTool(async () => {
+				entered.resolve();
+				await release.promise;
+			});
+			const execution = tool.execute(
+				"update",
+				{ action: "update", name: "saved", description: "d", body: "persisted" },
+				controller.signal,
+			);
+			try {
+				await entered.promise;
+				controller.abort(new Error("user stopped"));
+				const result = await execution;
+				expect(result.isError).toBe(true);
+				expect(result.details).toMatchObject({ action: "update", persisted: true, refresh: "cancelled" });
+				expect(await Bun.file(skillFile("saved")).text()).toContain("persisted");
+			} finally {
+				release.resolve();
+				await execution;
+			}
+		});
+
+		it("reports a refresh failure without discarding the already updated file", async () => {
+			await writeManagedSkill({ action: "create", name: "refresh-failed", description: "d", body: "original" });
+			const tool = new ManageSkillTool(async () => {
+				throw new Error("prompt preparation failed");
+			});
+			const result = await tool.execute("update", {
+				action: "update",
+				name: "refresh-failed",
+				description: "d",
+				body: "persisted after failure",
+			});
+			expect(result.isError).toBe(true);
+			expect(result.details).toMatchObject({
+				action: "update",
+				persisted: true,
+				refresh: "failed",
+				refreshError: "prompt preparation failed",
+			});
+			expect(await Bun.file(skillFile("refresh-failed")).text()).toContain("persisted after failure");
+		});
+
+		it("reports a failed refresh separately from a successful deletion", async () => {
+			await writeManagedSkill({ action: "create", name: "deleted", description: "d", body: "original" });
+			const tool = new ManageSkillTool(async () => {
+				throw new Error("discovery failed");
+			});
+			const result = await tool.execute("delete", { action: "delete", name: "deleted" });
+			expect(result.isError).toBe(true);
+			expect(result.details).toMatchObject({
+				action: "delete",
+				persisted: true,
+				refresh: "failed",
+				refreshError: "discovery failed",
+			});
+			expect(await Bun.file(skillFile("deleted")).exists()).toBe(false);
 		});
 	});
 });

@@ -18,9 +18,9 @@ import {
 	type UserAgentOverride,
 } from "./launch";
 import { reapOrphanSharedTargets } from "./orphan-registry";
-import { ensureRelayDaemon, isLoopbackRelayUrl, restartRelayDaemon } from "./relay/daemon";
+import { ensureRelayDaemon, isLoopbackRelayUrl } from "./relay/daemon";
 import type { RelayKind } from "./relay/kind";
-import { UPDATE_RELAY_EXTENSION, waitForRelayExtension } from "./relay/probe";
+import { browserRelayCommand, UPDATE_RELAY_EXTENSION, waitForRelayExtension } from "./relay/probe";
 import { ensureSharedBrowser } from "./shared-daemon";
 import type { TernKind } from "./tern/kind";
 import { TernSocketClient } from "./tern/wire";
@@ -277,22 +277,19 @@ async function openBrowserHandle(kind: BrowserKind, opts: AcquireBrowserOptions)
 		// The relay answers /json/version with 503 until its extension dials in;
 		// the wait fails fast when nothing serves the port or the server has
 		// already outlived the window an installed extension needs to connect.
-		let outcome = await waitForRelayExtension(cdpUrl, opts.signal);
-		// A broker-owned relay outlives omp upgrades; replace an incompatible one
-		// with this version's once, and a compatible older one only while no CDP
-		// client uses it. A manually started relay is left to its owner.
-		if (outcome === "outdated-relay" && autoStart && (await restartRelayDaemon({ cdpUrl, signal: opts.signal }))) {
-			outcome = await waitForRelayExtension(cdpUrl, opts.signal);
-		} else if (outcome === "idle-older-relay" && autoStart) {
-			// Probe again even when it was kept: another omp may have replaced it since.
-			await restartRelayDaemon({ cdpUrl, signal: opts.signal, idleOnly: true });
-			outcome = await waitForRelayExtension(cdpUrl, opts.signal);
-		}
+		// Existing relays belong to their current owner. Never replace one on an
+		// upgrade, even if a snapshot reports it idle: another client can attach.
+		const outcome = await waitForRelayExtension(cdpUrl, opts.signal);
 		if (outcome === "unreachable") {
 			throw new ToolError(
 				autoStart
-					? `omp browser relay could not be started at ${cdpUrl}. Check the backend logs and whether the port is occupied by another application.`
-					: `omp browser relay is not reachable at ${cdpUrl}. Start the relay on that host (or check the endpoint), and make sure the OMP Browser Relay extension is loaded in Chrome.`,
+					? `OMP browser relay could not be started at ${cdpUrl}. Check the backend logs, or run \`${browserRelayCommand()} status\` and \`${browserRelayCommand()} serve\`.`
+					: `OMP browser relay is not reachable at ${cdpUrl}. Start it on that host with \`${browserRelayCommand()} serve\` (or check the endpoint).`,
+			);
+		}
+		if (outcome === "not-relay") {
+			throw new ToolError(
+				`The listener at ${cdpUrl} is not an OMP Browser Relay. Free the configured relay port or choose another one; inspect it with \`${browserRelayCommand()} status\`. No existing service was stopped.`,
 			);
 		}
 		if (outcome === "no-extension") {
@@ -307,7 +304,7 @@ async function openBrowserHandle(kind: BrowserKind, opts: AcquireBrowserOptions)
 		}
 		if (outcome === "outdated-relay") {
 			throw new ToolError(
-				`The browser relay at ${cdpUrl} is out of date. Restart the relay under this OMP version, then retry.`,
+				`The browser relay at ${cdpUrl} has an incompatible protocol. Its owner must restart it under this OMP version with \`${browserRelayCommand()} serve\`; active sessions and manually started services are left alone.`,
 			);
 		}
 		if (outcome === "outdated-extension") {

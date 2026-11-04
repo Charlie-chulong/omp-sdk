@@ -48,7 +48,7 @@ import type { JobWidgetView } from "@oh-my-pi/pi-tui/tools/job-widget";
 import type { ToolSession } from "../tools";
 import type { XdevState } from "../tools/xdev";
 import type { CodexAutoRedeemCoordinator } from "./codex-auto-reset";
-import type { SettingsGatedToolDelta } from "./session-tools";
+import type { SettingsGatedToolDelta, SystemPromptRebuildOptions, SystemPromptRebuildResult } from "./session-tools";
 import type { CostGate } from "./cost-gate";
 import type { SessionManager } from "./session-manager";
 
@@ -337,7 +337,8 @@ export interface AgentSessionConfig {
 	rebuildSystemPrompt?: (
 		toolNames: string[],
 		tools: Map<string, AgentTool>,
-	) => Promise<{ systemPrompt: string[]; xdevCatalogNames?: readonly string[] }>;
+		options?: SystemPromptRebuildOptions,
+	) => Promise<SystemPromptRebuildResult>;
 	/** Tools mounted under `xd://`, for `/tools` display. */
 	getXdevToolEntries?: () => Array<{ name: string; summary: string }>;
 	/** `xd://` presentation state backed by the canonical tool map. */

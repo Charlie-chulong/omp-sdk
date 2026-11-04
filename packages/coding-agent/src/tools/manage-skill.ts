@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import { type } from "@oh-my-pi/omptype";
 import type { AgentTool, AgentToolResult } from "@oh-my-pi/pi-agent-core";
+import { untilAborted } from "@oh-my-pi/pi-utils";
 import {
 	deleteManagedSkill,
 	getManagedSkillsDir,
@@ -47,21 +48,18 @@ export class ManageSkillTool implements AgentTool<typeof manageSkillSchema> {
 	readonly loadMode = "essential" as const;
 	readonly summary = "Create, update, or delete an isolated managed skill";
 
-	constructor(private readonly refreshSkills?: () => Promise<void>) {}
+	constructor(private readonly refreshSkills?: (signal?: AbortSignal) => Promise<void>) {}
 
 	static createIf(session: ToolSession): ManageSkillTool | null {
 		if (!cfgAutolearnEnabled.get(session.settings)) return null;
 		return new ManageSkillTool(session.refreshSkills);
 	}
 
-	async execute(_id: string, params: ManageSkillParams): Promise<AgentToolResult> {
+	async execute(_id: string, params: ManageSkillParams, signal?: AbortSignal): Promise<AgentToolResult> {
+		signal?.throwIfAborted();
 		if (params.action === "delete") {
-			await deleteManagedSkill(params.name);
-			await this.refreshSkills?.();
-			return {
-				content: [{ type: "text", text: `Deleted managed skill "${params.name}".` }],
-				details: { action: "delete", name: params.name },
-			};
+			await deleteManagedSkill(params.name, signal);
+			return this.#persistedResult(params, `Deleted managed skill "${params.name}".`, signal);
 		}
 
 		// Defensive narrowing: the schema refine already rejects create/update
@@ -87,18 +85,54 @@ export class ManageSkillTool implements AgentTool<typeof manageSkillSchema> {
 				details: { action: "create", name: params.name, shadowed: true },
 			};
 		}
-		const { path: skillPath } = await writeManagedSkill({
-			action: params.action,
-			name: params.name,
-			description: params.description,
-			body: params.body,
-		});
-		await this.refreshSkills?.();
+		const { path: skillPath } = await writeManagedSkill(
+			{
+				action: params.action,
+				name: params.name,
+				description: params.description,
+				body: params.body,
+			},
+			signal,
+		);
 		const relativePath = path.relative(getManagedSkillsDir(), skillPath);
 		const verb = params.action === "create" ? "Created" : "Updated";
-		return {
-			content: [{ type: "text", text: `${verb} managed skill "${params.name}" (managed-skills/${relativePath}).` }],
-			details: { action: params.action, name: params.name },
-		};
+		return this.#persistedResult(
+			params,
+			`${verb} managed skill "${params.name}" (managed-skills/${relativePath}).`,
+			signal,
+		);
+	}
+
+	async #persistedResult(
+		params: ManageSkillParams,
+		persistedText: string,
+		signal?: AbortSignal,
+	): Promise<AgentToolResult> {
+		try {
+			signal?.throwIfAborted();
+			await untilAborted(signal, () => this.refreshSkills?.(signal) ?? Promise.resolve());
+			return {
+				content: [{ type: "text", text: persistedText }],
+				details: {
+					action: params.action,
+					name: params.name,
+					persisted: true,
+					refresh: this.refreshSkills ? "completed" : "not_configured",
+				},
+			};
+		} catch (error) {
+			const refresh = signal?.aborted ? "cancelled" : "failed";
+			const reason = error instanceof Error ? error.message : String(error);
+			return {
+				content: [
+					{
+						type: "text",
+						text: `${persistedText} The file change is persisted. Session skill refresh ${refresh}: ${reason}. Do not repeat the file operation; refresh skills separately when ready.`,
+					},
+				],
+				isError: true,
+				details: { action: params.action, name: params.name, persisted: true, refresh, refreshError: reason },
+			};
+		}
 	}
 }

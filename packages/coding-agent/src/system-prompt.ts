@@ -18,6 +18,7 @@ import {
 	isInteractiveHost,
 	logger,
 	prompt,
+	untilAborted,
 } from "@oh-my-pi/pi-utils";
 import { contextFileCapability } from "./capability/context-file";
 import { systemPromptCapability } from "./capability/system-prompt";
@@ -505,6 +506,8 @@ export function projectSystemPromptToolMetadata(
 }
 
 export interface BuildSystemPromptOptions {
+	/** Cancels prompt preparation; aborted candidates never become session state. */
+	signal?: AbortSignal;
 	/** Custom system prompt (replaces default). */
 	customPrompt?: string;
 	/** Already-loaded custom system prompt text; bypasses path resolution. */
@@ -651,6 +654,7 @@ export function composeAppendPrompt(appendParts: readonly string[], appendSystem
 
 /** Build the system prompt with tools, guidelines, and context */
 export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}): Promise<BuildSystemPromptResult> {
+	options.signal?.throwIfAborted();
 	if ($env.NULL_PROMPT === "true") {
 		return { systemPrompt: [] };
 	}
@@ -712,7 +716,7 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		throw new Error("systemPromptTemplate cannot be combined with a literal custom system prompt");
 	}
 	if (resolvedSystemPromptTemplate === undefined && !hasExplicitCustomPrompt) {
-		const override = await discoverSystemPromptOverride(resolvedCwd);
+		const override = await untilAborted(options.signal, () => discoverSystemPromptOverride(resolvedCwd));
 		if (override?.kind === "template" && override.content !== undefined) {
 			resolvedSystemPromptTemplate = override.content;
 		} else if (override?.content !== undefined) {
@@ -759,7 +763,7 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		const tagged = work
 			.then(value => ({ kind: "ok" as const, value }))
 			.catch(error => ({ kind: "err" as const, error }));
-		const result = await Promise.race([tagged, deadline]);
+		const result = await untilAborted(options.signal, Promise.race([tagged, deadline]));
 		if (result === "__timeout__") {
 			timedOut.push(name);
 			// Let the work continue in the background so its caches still warm; just log on completion.
@@ -827,7 +831,7 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		providedSkills !== undefined
 			? Promise.resolve(providedSkills)
 			: skillsSettings?.enabled !== false
-				? loadSkills({ ...skillsSettings, cwd: resolvedCwd }).then(result => result.skills)
+				? loadSkills({ ...skillsSettings, cwd: resolvedCwd, signal: options.signal }).then(result => result.skills)
 				: Promise.resolve([]);
 	const activeRepoContextPromise =
 		providedActiveRepoContext !== undefined
@@ -874,8 +878,8 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		withDeadline("buildWorkspaceTree", workspaceTreePromise, prepDefaults.workspaceTree),
 		withDeadline("resolveActiveRepoContext", activeRepoContextPromise, prepDefaults.activeRepoContext),
 		withDeadline("loadPersonalityOverride", personalityPromise, bundledPersonality),
-	]);
-	clearTimeout(deadlineTimer);
+	]).finally(() => clearTimeout(deadlineTimer));
+	options.signal?.throwIfAborted();
 	const agentsMdFiles = noContextFiles
 		? []
 		: Array.from(new Set(workspaceTree.agentsMdFiles)).sort().slice(0, AGENTS_MD_LIMIT);

@@ -2433,6 +2433,7 @@ export class AgentSession implements SettingsScope {
 			agentKind: () => this.#agentKind,
 			isDisposed: () => this.#isDisposed,
 			isStreaming: () => this.isStreaming,
+			sessionGeneration: () => this.#sessionGeneration,
 			steeringArrivalSignal: () => this.#steeringArrivalSignal(),
 			steeringArrivalSeq: () => this.#steeringArrivalSeq(),
 			steeringArrivalAdmitted: since => this.#steeringArrivalAdmitted(since),
@@ -6865,7 +6866,9 @@ export class AgentSession implements SettingsScope {
 	prewarmModelConnection(): void {
 		const model = this.model;
 		if (!model || this.#isDisposed || this.isStreaming) return;
-		void withProxyPolicy(this.proxyController, () => withProxyProvider(model.provider, () => prewarmModelConnection(model)));
+		void withProxyPolicy(this.proxyController, () =>
+			withProxyProvider(model.provider, () => prewarmModelConnection(model)),
+		);
 	}
 
 	get isAborting(): boolean {
@@ -7122,8 +7125,8 @@ export class AgentSession implements SettingsScope {
 	}
 
 	/** Rediscovers reloadable skills and refreshes prompt metadata. */
-	refreshSkills(): Promise<void> {
-		return this.#tools.refreshSkills();
+	refreshSkills(signal?: AbortSignal): Promise<void> {
+		return this.#tools.refreshSkills(signal);
 	}
 
 	/**
@@ -7175,6 +7178,11 @@ export class AgentSession implements SettingsScope {
 	/** Selects enabled tools, ignoring names absent from the registry. */
 	setActiveToolsByName(toolNames: string[]): Promise<void> {
 		return this.#tools.setActiveToolsByName(toolNames);
+	}
+
+	/** Changes a single enabled tool without replacing the current registry selection. */
+	setToolEnabled(toolName: string, enabled: boolean): Promise<void> {
+		return this.#tools.setToolEnabled(toolName, enabled);
 	}
 
 	/** Restores an exact top-level versus `xd://` tool partition. */
@@ -14350,20 +14358,22 @@ export class AgentSession implements SettingsScope {
 	async fetchUsageReports(signal?: AbortSignal): Promise<UsageReport[] | null> {
 		const authStorage = this.#modelRegistry.authStorage;
 		if (!authStorage.usage.reports) return null;
-		const reports = await this.#inLogContext(() => authStorage.usage.reports!({
-			baseUrlResolver: provider => {
-				if (provider === "google-antigravity") {
-					const mode = cfgProvidersAntigravityEndpoint.get(this.settings);
-					if (mode === "sandbox") {
-						return "https://daily-cloudcode-pa.sandbox.googleapis.com";
-					} else if (mode === "production") {
-						return "https://daily-cloudcode-pa.googleapis.com";
+		const reports = await this.#inLogContext(() =>
+			authStorage.usage.reports!({
+				baseUrlResolver: provider => {
+					if (provider === "google-antigravity") {
+						const mode = cfgProvidersAntigravityEndpoint.get(this.settings);
+						if (mode === "sandbox") {
+							return "https://daily-cloudcode-pa.sandbox.googleapis.com";
+						} else if (mode === "production") {
+							return "https://daily-cloudcode-pa.googleapis.com";
+						}
 					}
-				}
-				return this.#modelRegistry.getProviderBaseUrl?.(provider);
-			},
-			signal,
-		}));
+					return this.#modelRegistry.getProviderBaseUrl?.(provider);
+				},
+				signal,
+			}),
+		);
 		// Every fresh usage snapshot doubles as the salvage-sweep heartbeat: the
 		// status line calls this every 5 minutes while the TUI is open.
 		if (reports) {
@@ -14425,11 +14435,13 @@ export class AgentSession implements SettingsScope {
 	 * credential. Never throws for business outcomes — inspect `code`.
 	 */
 	async redeemResetCredit(target: ResetCreditTarget, signal?: AbortSignal): Promise<ResetCreditRedeemOutcome> {
-		return this.#inLogContext(() => this.#modelRegistry.authStorage.resets.redeem({
-			target,
-			baseUrlResolver: provider => this.#modelRegistry.getProviderBaseUrl?.(provider),
-			signal,
-		}));
+		return this.#inLogContext(() =>
+			this.#modelRegistry.authStorage.resets.redeem({
+				target,
+				baseUrlResolver: provider => this.#modelRegistry.getProviderBaseUrl?.(provider),
+				signal,
+			}),
+		);
 	}
 
 	/**
@@ -14445,10 +14457,12 @@ export class AgentSession implements SettingsScope {
 		if (provider) {
 			return this.#inLogContext(() => this.#modelRegistry.authStorage.resets.list({ ...options, provider }));
 		}
-		const [codex, claude] = await this.#inLogContext(() => Promise.all([
-			this.#modelRegistry.authStorage.resets.list({ ...options, provider: "openai-codex" }),
-			this.#modelRegistry.authStorage.resets.list({ ...options, provider: "anthropic" }),
-		]));
+		const [codex, claude] = await this.#inLogContext(() =>
+			Promise.all([
+				this.#modelRegistry.authStorage.resets.list({ ...options, provider: "openai-codex" }),
+				this.#modelRegistry.authStorage.resets.list({ ...options, provider: "anthropic" }),
+			]),
+		);
 		return [...codex, ...claude];
 	}
 	/**

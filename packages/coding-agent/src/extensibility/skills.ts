@@ -8,6 +8,7 @@ import {
 	parseFrontmatter,
 	prompt,
 	relativePathWithinNormalizedRoot,
+	untilAborted,
 } from "@oh-my-pi/pi-utils";
 import {
 	isValidManagedSkillName,
@@ -296,6 +297,8 @@ export interface LoadSkillsOptions extends SkillsSettings {
 	 * extensions all survive outside the construction-time invocation scope.
 	 */
 	extensionRoots?: EffectiveExtensionRoots;
+	/** Cancels this discovery's wait without publishing any session state. */
+	signal?: AbortSignal;
 }
 
 /**
@@ -319,6 +322,8 @@ export async function loadSkills(options: LoadSkillsOptions = {}): Promise<LoadS
 		disabledExtensions = [],
 		extensionRoots,
 	} = options;
+	const signal = options.signal;
+	signal?.throwIfAborted();
 
 	// Early return if skills are disabled
 	if (!enabled) {
@@ -349,11 +354,13 @@ export async function loadSkills(options: LoadSkillsOptions = {}): Promise<LoadS
 	}
 
 	// Use capability API to load all skills
-	const result = await loadCapability<CapabilitySkill>(skillCapability.id, {
-		cwd,
-		disabledExtensions,
-		extensionRoots,
-	});
+	const result = await untilAborted(signal, () =>
+		loadCapability<CapabilitySkill>(skillCapability.id, {
+			cwd,
+			disabledExtensions,
+			extensionRoots,
+		}),
+	);
 
 	const skillMap = new Map<string, Skill>();
 	const realPathSet = new Set<string>();
@@ -449,15 +456,18 @@ export async function loadSkills(options: LoadSkillsOptions = {}): Promise<LoadS
 	}
 
 	// Batch resolve all real paths in parallel
-	const realPaths = await Promise.all(
-		filteredSkills.map(async capSkill => {
-			try {
-				return await fs.realpath(capSkill.path);
-			} catch {
-				return capSkill.path;
-			}
-		}),
+	const realPaths = await untilAborted(signal, () =>
+		Promise.all(
+			filteredSkills.map(async capSkill => {
+				try {
+					return await fs.realpath(capSkill.path);
+				} catch {
+					return capSkill.path;
+				}
+			}),
+		),
 	);
+	signal?.throwIfAborted();
 
 	// Process skills with resolved paths
 	for (let i = 0; i < filteredSkills.length; i++) {
@@ -483,20 +493,24 @@ export async function loadSkills(options: LoadSkillsOptions = {}): Promise<LoadS
 			realPathSet.add(resolvedPath);
 	}
 
-	const customDirectoryResults = await Promise.all(
-		customDirectories.map(async dir => {
-			const expandedDir = expandTilde(dir);
-			const scanResult = await scanSkillsFromDir(
-				{ cwd, home: os.homedir(), repoRoot: null },
-				{
-					dir: expandedDir,
-					providerId: CUSTOM_DIR_PROVIDER_ID,
-					level: "user",
-					requireDescription: true,
-				},
-			);
-			return { expandedDir, scanResult };
-		}),
+	const customDirectoryResults = await untilAborted(signal, () =>
+		Promise.all(
+			customDirectories.map(async dir => {
+				signal?.throwIfAborted();
+				const expandedDir = expandTilde(dir);
+				const scanResult = await scanSkillsFromDir(
+					{ cwd, home: os.homedir(), repoRoot: null },
+					{
+						dir: expandedDir,
+						providerId: CUSTOM_DIR_PROVIDER_ID,
+						level: "user",
+						requireDescription: true,
+					},
+				);
+				signal?.throwIfAborted();
+				return { expandedDir, scanResult };
+			}),
+		),
 	);
 
 	const allCustomSkills: Array<{
@@ -531,15 +545,18 @@ export async function loadSkills(options: LoadSkillsOptions = {}): Promise<LoadS
 		collisionWarnings.push(...(scanResult.warnings ?? []).map(message => ({ skillPath: expandedDir, message })));
 	}
 
-	const customRealPaths = await Promise.all(
-		allCustomSkills.map(async ({ path }) => {
-			try {
-				return await fs.realpath(path);
-			} catch {
-				return path;
-			}
-		}),
+	const customRealPaths = await untilAborted(signal, () =>
+		Promise.all(
+			allCustomSkills.map(async ({ path }) => {
+				try {
+					return await fs.realpath(path);
+				} catch {
+					return path;
+				}
+			}),
+		),
 	);
+	signal?.throwIfAborted();
 
 	for (let i = 0; i < allCustomSkills.length; i++) {
 		const { skill, body, frontmatter, namespace } = allCustomSkills[i];
@@ -573,15 +590,18 @@ export async function loadSkills(options: LoadSkillsOptions = {}): Promise<LoadS
 			)
 			.map(capSkill => capSkill.name),
 	);
-	const managedRealPaths = await Promise.all(
-		managedCandidates.map(async capSkill => {
-			try {
-				return await fs.realpath(capSkill.path);
-			} catch {
-				return capSkill.path;
-			}
-		}),
+	const managedRealPaths = await untilAborted(signal, () =>
+		Promise.all(
+			managedCandidates.map(async capSkill => {
+				try {
+					return await fs.realpath(capSkill.path);
+				} catch {
+					return capSkill.path;
+				}
+			}),
+		),
 	);
+	signal?.throwIfAborted();
 	for (let i = 0; i < managedCandidates.length; i++) {
 		const capSkill = managedCandidates[i];
 		const resolvedPath = managedRealPaths[i];

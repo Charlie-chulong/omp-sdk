@@ -9,7 +9,6 @@ import * as vm from "node:vm";
 
 // Subpath imports only: the computer worker's readiness graph includes this runtime and must not
 // load pi_natives (verified under `--no-addons`); the `@oh-my-pi/pi-utils` barrel loads it eagerly.
-import * as logger from "@oh-my-pi/pi-utils/logger";
 import { isRecord } from "@oh-my-pi/pi-utils/type-guards";
 
 import type { EvalTableColumn } from "@oh-my-pi/pi-tui/tools/eval";
@@ -395,7 +394,7 @@ export class JsRuntime {
 			cwd: () => this.#activeCwd(),
 			env: this.#env,
 			localRoots: () => this.#als.getStore()?.localRoots ?? this.#localRoots,
-			emitStatus: event => this.#activeHooks("emitStatus")?.onDisplay({ type: "status", event }),
+			emitStatus: event => this.#activeHooks("emitStatus").onDisplay({ type: "status", event }),
 		});
 		this.#initialGlobalKeys = new Set(Object.getOwnPropertyNames(globalThis));
 		this.#install(opts.extraGlobals);
@@ -520,7 +519,11 @@ export class JsRuntime {
 			callOccurrences: new Map(),
 		};
 		try {
-			return await this.#als.run(context, callback);
+			return await this.#als.run(context, async () => {
+				const result = await callback();
+				this.#activeContext("callback result");
+				return result;
+			});
 		} finally {
 			this.#recordGlobals();
 			leaveRun();
@@ -550,6 +553,7 @@ export class JsRuntime {
 		try {
 			return await this.#als.run(context, async () => {
 				const wrapped = await wrapCode(code);
+				this.#activeContext("evaluate");
 				let value: unknown;
 				hooks.onEvaluate?.();
 				try {
@@ -596,12 +600,18 @@ export class JsRuntime {
 		return filename && path.isAbsolute(filename) ? filename : undefined;
 	}
 
-	#activeHooks(action: string): RuntimeHooks | undefined {
-		const hooks = this.#als.getStore()?.hooks;
-		if (!hooks) {
-			logger.warn("js runtime helper called outside an active run", { action });
+	#activeContext(action: string): RunContext {
+		const context = this.#als.getStore();
+		if (!context) {
+			throw new Error(
+				`JS Eval async context is unavailable during ${action}; output and tool calls cannot be routed safely. Code may already have run; check side effects before retrying.`,
+			);
 		}
-		return hooks;
+		return context;
+	}
+
+	#activeHooks(action: string): RuntimeHooks {
+		return this.#activeContext(action).hooks;
 	}
 
 	#activeRequire(moduleUrlOrPath?: string): NodeJS.Require {
@@ -645,20 +655,17 @@ export class JsRuntime {
 			__omp_session__: this.#session,
 			__omp_helpers__: this.helpers,
 			__omp_with_call_site__: <T>(siteId: string, action: () => T): T => {
-				const context = this.#als.getStore();
-				if (!context) return action();
+				const context = this.#activeContext("tool call identity");
 				const occurrence = context.callOccurrences.get(siteId) ?? 0;
 				context.callOccurrences.set(siteId, occurrence + 1);
 				return this.#callSiteAls.run({ siteId, occurrence }, action);
 			},
 			__omp_call_tool__: async (name: string, args: unknown) => {
 				const hooks = this.#activeHooks("tool");
-				if (!hooks) return undefined;
 				return surfaceBridgedToolImages(await hooks.callTool(name, args, this.#callSiteAls.getStore()), hooks);
 			},
 			__omp_prelude__: async (name: string, parameters: unknown) => {
 				const hooks = this.#activeHooks("prelude");
-				if (!hooks) return undefined;
 				const payload = { name, parameters };
 				return surfaceBridgedToolImages(await hooks.callTool("__prelude__", payload), hooks);
 			},
@@ -681,15 +688,14 @@ export class JsRuntime {
 			__omp_get_dirname__: (moduleUrl?: string) => this.#moduleDirname(moduleUrl),
 			__omp_emit_status__: (op: string, data: Record<string, unknown> = {}) => {
 				const event: JsStatusEvent = { op, ...data };
-				this.#activeHooks("emitStatus")?.onDisplay({ type: "status", event });
+				this.#activeHooks("emitStatus").onDisplay({ type: "status", event });
 			},
 			__omp_log__: (level: string, ...args: unknown[]) => {
 				const hooks = this.#activeHooks("log");
-				if (hooks) logConsoleArgs(level, args, hooks);
+				logConsoleArgs(level, args, hooks);
 			},
 			__omp_table__: (...args: unknown[]) => {
 				const hooks = this.#activeHooks("table");
-				if (!hooks) return;
 				let buffer = "";
 				const stream = new Writable({
 					write(chunk, _enc, cb) {
@@ -707,11 +713,7 @@ export class JsRuntime {
 				if (table) hooks.onDisplay({ type: "view", text: buffer, view: table });
 			},
 			__omp_set_final_expr__: (value: unknown) => {
-				const context = this.#als.getStore();
-				if (!context) {
-					logger.warn("js runtime final expression set outside an active run");
-					return;
-				}
+				const context = this.#activeContext("final expression");
 				context.finalExpressionSet = true;
 				context.finalExpressionValue = value;
 			},

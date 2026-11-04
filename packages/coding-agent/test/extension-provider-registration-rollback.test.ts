@@ -161,6 +161,7 @@ describe("extension provider registration rollback", () => {
 					getActiveTools: () => [],
 					getAllTools: () => [],
 					setActiveTools: async () => {},
+					setToolEnabled: async () => {},
 					getCommands: () => [],
 					setModel: async () => false,
 					getThinkingLevel: () => undefined,

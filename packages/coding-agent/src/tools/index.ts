@@ -260,7 +260,7 @@ export interface ToolSession {
 	 */
 	skillHintVisible?: boolean;
 	/** Rediscover live session skills after a tool mutates their backing files. */
-	refreshSkills?: () => Promise<void>;
+	refreshSkills?: (signal?: AbortSignal) => Promise<void>;
 	/** The session as the holder `skill://` rediscovers through when a skill's files are gone. */
 	skillRediscoveryHost?: () => SkillRediscoveryHost;
 	/** Pre-loaded prompt templates */

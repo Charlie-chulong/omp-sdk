@@ -32,17 +32,17 @@ const POLL_INTERVAL_MS = 150;
 export type RelayWaitOutcome =
 	/** `/json/version` has the required relay and extension capabilities. */
 	| "ready"
-	/** Nothing (or something that is not a relay) is serving the endpoint. */
+	/** Nothing is serving the endpoint. */
 	| "unreachable"
+	/** An HTTP listener is present but does not identify itself as an OMP relay. */
+	| "not-relay"
 	/** The relay is serving but no extension connected within the dial window. */
 	| "no-extension"
 	/** An extension connected earlier but has stayed away past the redial window (e.g. Chrome quit). */
 	| "extension-gone"
-	/** An older relay server is still running. */
+	/** The identified relay does not provide the required protocol or discovery metadata. */
 	| "outdated-relay"
-	/** A compatible relay from an older OMP is ready and reports no CDP client connected to it. */
-	| "idle-older-relay"
-	/** The relay extension is older than the running server. */
+	/** The extension does not provide the required protocol. */
 	| "outdated-extension";
 
 /** The OMP version a parsed `/json/version` body (ready or waiting) reports; empty when it reports none. */
@@ -57,7 +57,59 @@ export function relayCdpClientsOf(parsed: object): number | null {
 		: null;
 }
 
-function parseUnavailableInfo(body: string): Omit<RelayUnavailableInfo, "ompRelayCdpClients"> | null {
+export interface RelayStatus {
+	outcome: RelayWaitOutcome;
+	version: string;
+	relayProtocol: string | null;
+	extensionProtocol: string | null;
+	cdpClients: number | null;
+}
+
+/** Inspect identity and capabilities without waiting for an extension or acquiring a broker lease. */
+export async function probeRelayStatus(cdpUrl: string, signal?: AbortSignal): Promise<RelayStatus> {
+	const response = await probeCdpResponse(`${cdpUrl}/json/version`, { timeoutMs: PROBE_TIMEOUT_MS, signal });
+	throwIfAborted(signal);
+	const status: RelayStatus = {
+		outcome: response ? "not-relay" : "unreachable",
+		version: "",
+		relayProtocol: null,
+		extensionProtocol: null,
+		cdpClients: null,
+	};
+	if (!response) return status;
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(response.body);
+	} catch {
+		return status;
+	}
+	if (typeof parsed !== "object" || parsed === null || !relayVersionOf(parsed)) return status;
+	status.version = relayVersionOf(parsed);
+	status.cdpClients = relayCdpClientsOf(parsed);
+	status.relayProtocol =
+		"ompRelayDiscardedTabsProtocol" in parsed && typeof parsed.ompRelayDiscardedTabsProtocol === "string"
+			? parsed.ompRelayDiscardedTabsProtocol
+			: null;
+	status.extensionProtocol =
+		"ompExtensionDiscardedTabsProtocol" in parsed && typeof parsed.ompExtensionDiscardedTabsProtocol === "string"
+			? parsed.ompExtensionDiscardedTabsProtocol
+			: null;
+	if (status.relayProtocol !== String(DISCARDED_TABS_PROTOCOL_VERSION)) {
+		status.outcome = "outdated-relay";
+	} else if (response.status === 503) {
+		const info = parseUnavailableInfo(response.body);
+		status.outcome = info ? (info.extensionSeen ? "extension-gone" : "no-extension") : "outdated-relay";
+	} else if (response.status >= 200 && response.status < 300) {
+		status.outcome = readyOutcome(response.body);
+	} else {
+		status.outcome = "outdated-relay";
+	}
+	return status;
+}
+
+function parseUnavailableInfo(
+	body: string,
+): Pick<RelayUnavailableInfo, "error" | "extensionSeen" | "uptimeMs" | "ompRelayVersion" | "disconnectedMs"> | null {
 	try {
 		const parsed: unknown = JSON.parse(body);
 		if (
@@ -99,12 +151,8 @@ function readyOutcome(body: string): RelayWaitOutcome {
 			!("ompExtensionDiscardedTabsProtocol" in parsed) ||
 			parsed.ompExtensionDiscardedTabsProtocol !== String(DISCARDED_TABS_PROTOCOL_VERSION)
 		) {
-			// A relay from another OMP version is the likelier culprit than the extension.
-			if (relayVersionOf(parsed) !== VERSION) return "outdated-relay";
 			return "outdated-extension";
 		}
-		if (isOlderOmpVersion(relayVersionOf(parsed), VERSION) && relayCdpClientsOf(parsed) === 0)
-			return "idle-older-relay";
 		return "ready";
 	} catch {
 		return "outdated-relay";
@@ -121,33 +169,47 @@ function readyOutcome(body: string): RelayWaitOutcome {
 export async function waitForRelayExtension(cdpUrl: string, signal?: AbortSignal): Promise<RelayWaitOutcome> {
 	const probeUrl = `${cdpUrl}/json/version`;
 	let deadline = Date.now() + EXTENSION_DIAL_WINDOW_MS;
-	let staleRelay = false;
 	for (;;) {
 		throwIfAborted(signal);
 		const response = await probeCdpResponse(probeUrl, { timeoutMs: PROBE_TIMEOUT_MS, signal });
 		throwIfAborted(signal);
 		if (response === null) return "unreachable";
+		try {
+			const parsed: unknown = JSON.parse(response.body);
+			if (typeof parsed !== "object" || parsed === null || !relayVersionOf(parsed)) return "not-relay";
+			if (
+				response.status === 503 &&
+				(!("ompRelayDiscardedTabsProtocol" in parsed) ||
+					parsed.ompRelayDiscardedTabsProtocol !== String(DISCARDED_TABS_PROTOCOL_VERSION))
+			)
+				return "outdated-relay";
+		} catch {
+			return "not-relay";
+		}
 		if (response.status >= 200 && response.status < 300) return readyOutcome(response.body);
-		if (response.status !== 503) return "unreachable";
+		if (response.status !== 503) return "outdated-relay";
 		const info = parseUnavailableInfo(response.body);
-		// Past the dial window a relay from another version reads as outdated even
-		// with CDP clients connected: no extension, so no browser, is behind them.
-		staleRelay = info !== null && info.ompRelayVersion !== VERSION;
+		if (!info) return "outdated-relay";
 		if (info && !info.extensionSeen) {
 			// Never connected: the window is measured from server start, not from now.
 			deadline = Math.min(deadline, Date.now() - info.uptimeMs + EXTENSION_DIAL_WINDOW_MS);
 		} else if (info?.disconnectedMs !== undefined) {
 			// Seen, then gone: the redial window is measured from the disconnect.
 			deadline = Math.min(deadline, Date.now() - info.disconnectedMs + EXTENSION_DIAL_WINDOW_MS);
-			if (Date.now() >= deadline) return staleRelay ? "outdated-relay" : "extension-gone";
+			if (Date.now() >= deadline) return "extension-gone";
 		}
-		if (Date.now() >= deadline) return staleRelay ? "outdated-relay" : "no-extension";
+		if (Date.now() >= deadline) return "no-extension";
 		await runtime.sleep(POLL_INTERVAL_MS);
 	}
 }
 
 /** The steps that replace an out-of-date relay extension. */
-export const UPDATE_RELAY_EXTENSION = "Run `omp browser-relay install` and reload the extension in Chrome.";
+export const UPDATE_RELAY_EXTENSION = `Run \`${browserRelayCommand()} install\` and reload the extension in Chrome.`;
+
+/** Node SDK hosts are shipped by Desktop rather than the standalone omp CLI. */
+export function browserRelayCommand(): string {
+	return typeof Bun === "undefined" ? "omp-desktop browser-relay" : "omp browser-relay";
+}
 
 /**
  * Notice for an open through a ready relay where a connected extension was

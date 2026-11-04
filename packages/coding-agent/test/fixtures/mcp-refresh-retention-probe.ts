@@ -50,6 +50,7 @@ const host: SessionToolsHost = {
 	agentKind: () => "main",
 	isDisposed: () => false,
 	isStreaming: () => false,
+	sessionGeneration: () => 0,
 	steeringArrivalSignal: () => new AbortController().signal,
 	steeringArrivalSeq: () => 0,
 	steeringArrivalAdmitted: () => undefined,

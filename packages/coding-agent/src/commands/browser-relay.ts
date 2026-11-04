@@ -8,6 +8,7 @@ import {
 	DEFAULT_RELAY_PORT,
 	runBrowserRelayCommand,
 } from "../cli/browser-relay-cli";
+import { browserRelayCommand } from "../tools/browser/relay/probe";
 
 export default class BrowserRelay extends Command {
 	static description = "Run the local CDP relay that lets the browser prelude drive your own Chrome tabs";
@@ -31,12 +32,14 @@ export default class BrowserRelay extends Command {
 			default: false,
 		}),
 		verbose: Flags.boolean({ char: "v", description: "Log relay traffic summaries to stderr", default: false }),
+		json: Flags.boolean({ description: "Output status as JSON", default: false }),
 	};
 
 	static examples = [
-		"omp browser-relay install    # write the Chrome extension to disk + setup steps",
-		"omp browser-relay            # serve the relay on the default port",
-		"omp browser-relay -p 9333 --token s3cret",
+		`${browserRelayCommand()} install    # write the Chrome extension to disk + setup steps`,
+		`${browserRelayCommand()} serve      # serve the relay on the default loopback port`,
+		`${browserRelayCommand()} status     # inspect extension and protocol metadata`,
+		`${browserRelayCommand()} serve -p 9333 --token s3cret`,
 	];
 
 	async run(): Promise<void> {
@@ -48,6 +51,7 @@ export default class BrowserRelay extends Command {
 			dir: flags.dir,
 			group: !flags["no-group"],
 			verbose: flags.verbose,
+			json: flags.json,
 		});
 	}
 }

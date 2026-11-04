@@ -92,6 +92,7 @@ export interface SessionToolsHost {
 	agentKind(): "main" | "sub";
 	isDisposed(): boolean;
 	isStreaming(): boolean;
+	sessionGeneration(): number;
 	/**
 	 * Aborts once per user steering-message arrival; the ACP permission gate
 	 * races it against its elicit so a steer supersedes an open dialog.
@@ -150,6 +151,18 @@ export interface SettingsGatedToolDelta {
 	readonly xdev: XdevState | undefined;
 }
 
+export interface SystemPromptRebuildOptions {
+	skills?: readonly Skill[];
+	signal?: AbortSignal;
+}
+
+export interface SystemPromptRebuildResult {
+	systemPrompt: string[];
+	xdevCatalogNames?: readonly string[];
+	/** Publishes SDK metadata only after the owning prompt candidate wins. */
+	commit?: () => void;
+}
+
 interface SessionToolsOptions {
 	toolRegistry?: Map<string, AgentTool>;
 	createVibeTools?: () => AgentTool[];
@@ -173,7 +186,8 @@ interface SessionToolsOptions {
 	rebuildSystemPrompt?: (
 		toolNames: string[],
 		tools: Map<string, AgentTool>,
-	) => Promise<{ systemPrompt: string[]; xdevCatalogNames?: readonly string[] }>;
+		options?: SystemPromptRebuildOptions,
+	) => Promise<SystemPromptRebuildResult>;
 	getMcpServerInstructions?: () => Map<string, string> | undefined;
 	xdev?: XdevState;
 	setActiveToolNames?: (names: Iterable<string>) => void;
@@ -655,9 +669,9 @@ export class SessionTools {
 	}
 
 	/** Derives the candidate surface from live state without publishing it. */
-	#derivePromptSurface(): PromptSurface {
+	#derivePromptSurface(skills: readonly Skill[] = this.#skills): PromptSurface {
 		return {
-			skillHintVisible: cfgSkillful.get(this.#host.settings) === true && (this.#skills?.length ?? 0) > 0,
+			skillHintVisible: cfgSkillful.get(this.#host.settings) === true && skills.length > 0,
 			evalPreludes: this.#host.evalPreludes(),
 			sessionAgents: this.#host.sessionAgents(),
 		};
@@ -1386,6 +1400,7 @@ export class SessionTools {
 		let implicitRebuildSignature: string | undefined;
 		let rebuiltXdevCatalogNames: readonly string[] | undefined;
 		let candidateSurface: PromptSurface | undefined;
+		let commitRebuiltMetadata: (() => void) | undefined;
 		try {
 			if (restrictDeviceOnlyWrite) this.#setDeviceOnlyWrite?.(true);
 			if (upgradeDeviceOnlyWrite) this.#setPendingFullWriteDescription?.(true);
@@ -1426,10 +1441,11 @@ export class SessionTools {
 					const built = await untilAborted(
 						signal,
 						this.#promptSurfaceScope.run(candidate, () =>
-							rebuildSystemPrompt(validToolNames, this.#toolRegistry),
+							rebuildSystemPrompt(validToolNames, this.#toolRegistry, { signal }),
 						),
 					);
 					rebuiltSystemPrompt = built.systemPrompt;
+					commitRebuiltMetadata = built.commit;
 					if (!forcePromptRefresh) implicitRebuildSignature = triggerSignature;
 					rebuiltSignature = signature;
 					rebuiltXdevCatalogNames = built.xdevCatalogNames;
@@ -1477,6 +1493,7 @@ export class SessionTools {
 				}
 			}
 			if (rebuiltSystemPrompt && rebuiltSignature) {
+				commitRebuiltMetadata?.();
 				// The restored transcript was sent with this prompt under the inherited cache key.
 				if (this.#lastAppliedToolSignature !== undefined && !restoresTranscriptPrompt) {
 					this.#host.clearInheritedProviderPromptCacheKey();
@@ -2031,28 +2048,48 @@ export class SessionTools {
 	}
 
 	/** Rediscovers reloadable skills and refreshes prompt metadata. */
-	refreshSkills(): Promise<void> {
-		return this.runToolRegistryMutation(async () => {
-			resetCapabilities();
-			if (this.#skillsReloadable) {
-				const skillsSettings = cfgSkills.get(this.#host.settings);
-				const discovered = await loadSkills({
-					...skillsSettings,
-					cwd: this.#host.sessionManager.getCwd(),
-					disabledExtensions: cfgDisabledExtensions.get(this.#host.settings),
-					extensionRoots: this.#host.effectiveExtensionRoots(),
-				});
-				this.#skills = discovered.skills;
-				this.#skillWarnings = discovered.warnings;
-				this.#skillsSettings = skillsSettings;
+	refreshSkills(signal?: AbortSignal): Promise<void> {
+		const generation = this.#host.sessionGeneration();
+		const cwd = this.#host.sessionManager.getCwd();
+		return this.runToolRegistryMutation(() => this.#refreshSkills(signal, generation, cwd), signal);
+	}
 
-				if (this.#host.agentKind() === "main") {
-					setActiveSkills(this.#skills);
-				}
-			}
-			await this.refreshBaseSystemPrompt();
-			this.#host.notifyCommandMetadataChanged();
+	async #refreshSkills(signal: AbortSignal | undefined, generation: number, cwd: string): Promise<void> {
+		const isCurrent = () =>
+			!signal?.aborted &&
+			!this.#host.isDisposed() &&
+			this.#host.sessionGeneration() === generation &&
+			this.#host.sessionManager.getCwd() === cwd;
+		signal?.throwIfAborted();
+		if (!isCurrent()) throw new Error("Session changed before skill refresh.");
+		resetCapabilities();
+		const skillsSettings = this.#skillsReloadable ? cfgSkills.get(this.#host.settings) : this.#skillsSettings;
+		const discovered = this.#skillsReloadable
+			? await untilAborted(signal, () =>
+					loadSkills({
+						...skillsSettings,
+						cwd,
+						disabledExtensions: cfgDisabledExtensions.get(this.#host.settings),
+						extensionRoots: this.#host.effectiveExtensionRoots(),
+						signal,
+					}),
+				)
+			: { skills: this.#skills, warnings: this.#skillWarnings };
+		signal?.throwIfAborted();
+		if (!isCurrent()) throw new Error("Session changed during skill discovery.");
+		// Prepare against explicit candidate skills: no live list, warnings, active
+		// catalog, or prompt is published until every cancellable await has finished.
+		const prepared = await this.#prepareBaseSystemPrompt(isCurrent, {
+			skills: discovered.skills,
+			signal,
 		});
+		signal?.throwIfAborted();
+		if (!isCurrent() || prepared?.commit?.() === false) throw new Error("Session changed during skill refresh.");
+		this.#skills = discovered.skills;
+		this.#skillWarnings = discovered.warnings;
+		this.#skillsSettings = skillsSettings;
+		if (this.#host.agentKind() === "main") setActiveSkills(this.#skills);
+		this.#host.notifyCommandMetadataChanged();
 	}
 
 	/** Selects enabled tools, ignoring names absent from the registry. */
@@ -2063,6 +2100,23 @@ export class SessionTools {
 			// selection change should not demote `write` unless it is already active.
 			await this.#applyToolPresentation(
 				normalized,
+				this.#xdev?.mountedNames ?? new Set(),
+				this.getActiveToolNames().includes("write"),
+			);
+		});
+	}
+
+	/** Changes one live selection, retaining every unrelated tool and its presentation. */
+	setToolEnabled(toolName: string, enabled: boolean): Promise<void> {
+		return this.runToolRegistryMutation(async () => {
+			const name = normalizeToolNames([toolName])[0];
+			if (!name || !this.#toolRegistry.has(name)) return;
+			const names = new Set(this.getEnabledToolNames());
+			if (names.has(name) === enabled) return;
+			if (enabled) names.add(name);
+			else names.delete(name);
+			await this.#applyToolPresentation(
+				[...names],
 				this.#xdev?.mountedNames ?? new Set(),
 				this.getActiveToolNames().includes("write"),
 			);
@@ -2269,7 +2323,10 @@ export class SessionTools {
 		});
 	}
 
-	async #prepareBaseSystemPrompt(isCurrent?: () => boolean): Promise<SystemPromptPreparation | undefined> {
+	async #prepareBaseSystemPrompt(
+		isCurrent?: () => boolean,
+		options?: SystemPromptRebuildOptions,
+	): Promise<SystemPromptPreparation | undefined> {
 		if (this.#host.isDisposed() || !this.#rebuildSystemPrompt || isCurrent?.() === false) return;
 		// Local alias: closures below cannot observe the field narrowing.
 		const rebuildSystemPrompt = this.#rebuildSystemPrompt;
@@ -2283,10 +2340,13 @@ export class SessionTools {
 		// throwing preparation leaves the committed snapshot untouched, and the
 		// scope frame (not a rollback write) guarantees no clobbering of a newer
 		// winner.
-		const candidate = this.#derivePromptSurface();
-		const built = await this.#promptSurfaceScope.run(candidate, () =>
-			rebuildSystemPrompt(activeToolNames, this.#toolRegistry),
+		const candidate = this.#derivePromptSurface(options?.skills);
+		const built = await untilAborted(options?.signal, () =>
+			this.#promptSurfaceScope.run(candidate, () =>
+				rebuildSystemPrompt(activeToolNames, this.#toolRegistry, options),
+			),
 		);
+		options?.signal?.throwIfAborted();
 		const promptTools = activeToolNames
 			.map(name => this.#toolRegistry.get(name))
 			.filter((tool): tool is AgentTool => tool != null);
@@ -2306,7 +2366,8 @@ export class SessionTools {
 				// A handler may have rebuilt policy while this preparation was
 				// awaiting its final commit: its own lifecycle published its own
 				// snapshot, so only carry the prompt forward.
-				if (this.#baseSystemPrompt !== previousBaseSystemPrompt) return true;
+				if (this.#baseSystemPrompt !== previousBaseSystemPrompt) return options?.skills === undefined;
+				built.commit?.();
 				this.#baseSystemPrompt = built.systemPrompt;
 				this.#promptSurface = candidate;
 				this.#setBasePromptXdevNames(built.xdevCatalogNames);

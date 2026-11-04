@@ -11,6 +11,7 @@
 - Added Node SDK plugin-management commands and Desktop provider-helper imports without requiring an OMP executable or bundled Bun runtime.
 - Added runtime plugin startup checks and `omp plugin check --fix` to persistently disable failing plugins while preserving healthy plugins, scope, settings, and feature selection.
 - Added `createAgentSession({ proxyPolicy })`, `session.setProxyPolicy()` / `getProxyPolicy()`, and RPC `set_proxy_policy` for isolated live conversation routing inherited by nested sessions.
+- Added `setToolEnabled(name, enabled)` for queued single-tool selection changes that retain concurrently registered tools and unrelated presentation ([#122](https://github.com/iris-cat-dev/omp/issues/122)).
 - Added queueable compaction: `/compact` sent with the follow-up key (Ctrl+Q) while the agent works now runs when it yields instead of interrupting it ([#17397](https://github.com/can1357/oh-my-pi/pull/17397) by [@H4vC](https://github.com/H4vC))
 
 ### Changed
@@ -20,12 +21,16 @@
 - Desktop packaging now validates an isolated native addon and excludes full-native platform leaf packages, while generic SDK and Bun CLI defaults retain full native features.
 - Source SDK builds now reuse unchanged artifacts and dependency file lists, with uncompressed development staging kept separate from validated release archives.
 - Node SDK plugins, custom tools/commands, and eval now execute JavaScript only, removing the runtime TypeScript compiler dependency; TS/TSX/JSX extensions must be precompiled. Bun CLI TypeScript support and source-file read/write/edit remain unchanged.
+- Browser Relay no longer automatically replaces existing services; compatible older relays are reused and incompatible services remain under their owner's control ([#120](https://github.com/iris-cat-dev/omp/issues/120)).
 
 ### Fixed
 
 - Fixed asynchronous subprocess stdin-close rejections during MCP cleanup and Python kernel shutdown terminating session RPC processes; teardown observes failures without waiting for stalled input.
 - Fixed pipe-backed daemon sends leaking backpressure write rejections instead of returning the failure to the caller.
 - Fixed embedded Node SDK browser opens skipping Relay auto-start and the shared Node host rejecting `browser-relay`; relays now use the existing global broker and embedded runtime without requiring an OMP executable on PATH.
+- Fixed Relay probes accepting unrelated HTTP listeners and conflating missing services, extension connectivity, and protocol incompatibility ([#120](https://github.com/iris-cat-dev/omp/issues/120)).
+- Fixed managed skill updates hanging during refresh; cancellation preserves an explicit persisted-file outcome and abandoned refreshes cannot overwrite newer skills or prompts ([#121](https://github.com/iris-cat-dev/omp/issues/121)).
+- Fixed JavaScript Eval silently succeeding without output when its async run context is missing, and extension tool selection racing pending dynamic registrations ([#122](https://github.com/iris-cat-dev/omp/issues/122)).
 - Fixed RPC login-provider status counting configuration placeholders and environment keys as signed-in accounts; status now tracks stored credentials, including shared login aliases, and clears after logout.
 - Fixed Node SDK builds requiring a generic native addon when packaging an isolated Desktop addon.
 - Fixed Windows Node SDK MCP, clipboard, and dependency-installation helpers opening terminal windows in GUI hosts while preserving real console inheritance.
