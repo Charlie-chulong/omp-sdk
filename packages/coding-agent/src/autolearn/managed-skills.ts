@@ -10,7 +10,7 @@
 import { constants as fsConstants, type Stats } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { getAgentDir, isEnoent } from "@oh-my-pi/pi-utils";
+import { getAgentDir, isEnoent, untilAborted } from "@oh-my-pi/pi-utils";
 import { YAML } from "@oh-my-pi/pi-utils/runtime";
 
 /** Provider id stamped on discovered managed skills (distinguishes them from authored). */
@@ -97,10 +97,21 @@ export interface WriteManagedSkillInput {
  * races are out of scope.
  */
 const skillMutationChains = new Map<string, Promise<unknown>>();
-function serializeSkillMutation<T>(name: string, op: () => Promise<T>): Promise<T> {
+function serializeSkillMutation<T>(name: string, op: () => Promise<T>, signal?: AbortSignal): Promise<T> {
 	const prev = skillMutationChains.get(name) ?? Promise.resolve();
-	const run = prev.then(op, op);
-	const guarded = run.catch(() => {});
+	const run = untilAborted(signal, prev).then(() => {
+		signal?.throwIfAborted();
+		return op();
+	});
+	// A cancelled waiter must not release the per-name queue ahead of its predecessor.
+	const guarded = run.then(
+		() => undefined,
+		() =>
+			prev.then(
+				() => undefined,
+				() => undefined,
+			),
+	);
 	skillMutationChains.set(name, guarded);
 	void guarded.finally(() => {
 		if (skillMutationChains.get(name) === guarded) skillMutationChains.delete(name);
@@ -160,7 +171,11 @@ async function openManagedSkillFileForUpdate(name: string, file: string) {
 }
 
 /** Create or update a managed `SKILL.md`. Returns the resolved file path. */
-export async function writeManagedSkill(input: WriteManagedSkillInput): Promise<{ path: string }> {
+export async function writeManagedSkill(
+	input: WriteManagedSkillInput,
+	signal?: AbortSignal,
+): Promise<{ path: string }> {
+	signal?.throwIfAborted();
 	const name = sanitizeSkillName(input.name);
 	const description = sanitizeManagedDescription(input.description);
 	const body = input.body.trim();
@@ -182,85 +197,100 @@ export async function writeManagedSkill(input: WriteManagedSkillInput): Promise<
 			`Managed skill is ${bytes} bytes; the limit is ${MAX_MANAGED_SKILL_BYTES}. Trim the body or description.`,
 		);
 	}
-	return serializeSkillMutation(name, async () => {
-		await assertManagedRootSafe();
-		const dir = path.join(getManagedSkillsDir(), name);
-		const file = path.join(dir, "SKILL.md");
-		// Reject a symlinked skill directory: an intermediate symlink would let the
-		// write escape the isolated managed root. lstat does not follow the final
-		// component, so a symlinked `dir` is caught here.
-		const dirStat = await fs.lstat(dir).catch(err => {
-			if (isEnoent(err)) return null;
-			throw err;
-		});
-		if (dirStat?.isSymbolicLink()) {
-			throw new Error(
-				`Managed skill "${name}" resolves through a symlink; refusing to write outside the managed directory.`,
-			);
-		}
-		if (input.action === "create") {
-			await fs.mkdir(dir, { recursive: true });
-			// O_CREAT|O_EXCL ("wx"): atomic create that fails if the file already
-			// exists (closing the check-then-write race) and refuses a symlinked SKILL.md.
-			try {
-				await fs.writeFile(file, content, { flag: "wx" });
-			} catch (err) {
-				if ((err as { code?: string }).code === "EEXIST") {
-					throw new Error(`Managed skill "${name}" already exists. Use action "update" to change it.`);
-				}
+	return serializeSkillMutation(
+		name,
+		async () => {
+			await assertManagedRootSafe();
+			const dir = path.join(getManagedSkillsDir(), name);
+			const file = path.join(dir, "SKILL.md");
+			// Reject a symlinked skill directory: an intermediate symlink would let the
+			// write escape the isolated managed root. lstat does not follow the final
+			// component, so a symlinked `dir` is caught here.
+			const dirStat = await fs.lstat(dir).catch(err => {
+				if (isEnoent(err)) return null;
 				throw err;
+			});
+			if (dirStat?.isSymbolicLink()) {
+				throw new Error(
+					`Managed skill "${name}" resolves through a symlink; refusing to write outside the managed directory.`,
+				);
+			}
+			if (input.action === "create") {
+				signal?.throwIfAborted();
+				await fs.mkdir(dir, { recursive: true });
+				// O_CREAT|O_EXCL ("wx"): atomic create that fails if the file already
+				// exists (closing the check-then-write race) and refuses a symlinked SKILL.md.
+				try {
+					signal?.throwIfAborted();
+					await fs.writeFile(file, content, { flag: "wx" });
+				} catch (err) {
+					if ((err as { code?: string }).code === "EEXIST") {
+						throw new Error(`Managed skill "${name}" already exists. Use action "update" to change it.`);
+					}
+					throw err;
+				}
+				return { path: file };
+			}
+			// update: the file must already exist, be a plain managed file, and must
+			// not share an inode with a user-authored file via hard link. Open the
+			// checked file handle before truncating so a path swap after lstat cannot
+			// redirect the write into a symlink or newly hard-linked target.
+			const fileStat = await fs.lstat(file).catch(err => {
+				if (isEnoent(err)) return null;
+				throw err;
+			});
+			if (fileStat === null) {
+				throw new Error(`Managed skill "${name}" does not exist. Use action "create" to add it.`);
+			}
+			if (fileStat.isSymbolicLink()) {
+				throw new Error(`Managed skill "${name}" SKILL.md is a symlink; refusing to overwrite it.`);
+			}
+			assertManagedSkillFileSafeForUpdate(name, fileStat);
+			const handle = await openManagedSkillFileForUpdate(name, file);
+			try {
+				const openStat = await handle.stat();
+				assertManagedSkillFileSafeForUpdate(name, openStat);
+				// Once truncation starts, finish and report the persisted write even if
+				// cancellation arrives during I/O; never abandon a half-written skill.
+				signal?.throwIfAborted();
+				await handle.truncate(0);
+				await handle.writeFile(content);
+			} finally {
+				await handle.close();
 			}
 			return { path: file };
-		}
-		// update: the file must already exist, be a plain managed file, and must
-		// not share an inode with a user-authored file via hard link. Open the
-		// checked file handle before truncating so a path swap after lstat cannot
-		// redirect the write into a symlink or newly hard-linked target.
-		const fileStat = await fs.lstat(file).catch(err => {
-			if (isEnoent(err)) return null;
-			throw err;
-		});
-		if (fileStat === null) {
-			throw new Error(`Managed skill "${name}" does not exist. Use action "create" to add it.`);
-		}
-		if (fileStat.isSymbolicLink()) {
-			throw new Error(`Managed skill "${name}" SKILL.md is a symlink; refusing to overwrite it.`);
-		}
-		assertManagedSkillFileSafeForUpdate(name, fileStat);
-		const handle = await openManagedSkillFileForUpdate(name, file);
-		try {
-			const openStat = await handle.stat();
-			assertManagedSkillFileSafeForUpdate(name, openStat);
-			await handle.truncate(0);
-			await handle.writeFile(content);
-		} finally {
-			await handle.close();
-		}
-		return { path: file };
-	});
+		},
+		signal,
+	);
 }
 
 /** Delete a managed skill directory. Throws when it does not exist. */
-export async function deleteManagedSkill(name: string): Promise<void> {
+export async function deleteManagedSkill(name: string, signal?: AbortSignal): Promise<void> {
+	signal?.throwIfAborted();
 	const safe = sanitizeSkillName(name);
-	await serializeSkillMutation(safe, async () => {
-		await assertManagedRootSafe();
-		const dir = path.join(getManagedSkillsDir(), safe);
-		// Refuse to follow a symlinked skill directory (rm would delete the target).
-		const dirStat = await fs.lstat(dir).catch(err => {
-			if (isEnoent(err)) return null;
-			throw err;
-		});
-		if (dirStat?.isSymbolicLink()) {
-			throw new Error(`Managed skill "${safe}" is a symlink; refusing to delete outside the managed directory.`);
-		}
-		try {
-			await fs.rm(dir, { recursive: true });
-		} catch (err) {
-			if (isEnoent(err)) {
-				throw new Error(`Managed skill "${safe}" does not exist.`);
+	await serializeSkillMutation(
+		safe,
+		async () => {
+			await assertManagedRootSafe();
+			const dir = path.join(getManagedSkillsDir(), safe);
+			// Refuse to follow a symlinked skill directory (rm would delete the target).
+			const dirStat = await fs.lstat(dir).catch(err => {
+				if (isEnoent(err)) return null;
+				throw err;
+			});
+			if (dirStat?.isSymbolicLink()) {
+				throw new Error(`Managed skill "${safe}" is a symlink; refusing to delete outside the managed directory.`);
 			}
-			throw err;
-		}
-	});
+			try {
+				signal?.throwIfAborted();
+				await fs.rm(dir, { recursive: true });
+			} catch (err) {
+				if (isEnoent(err)) {
+					throw new Error(`Managed skill "${safe}" does not exist.`);
+				}
+				throw err;
+			}
+		},
+		signal,
+	);
 }

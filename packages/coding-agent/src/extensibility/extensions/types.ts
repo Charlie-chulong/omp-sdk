@@ -980,7 +980,7 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	/** If true, tool is excluded unless explicitly listed in --tools or agent's tools field */
 	hidden?: boolean;
 	/** If true, tool is registered but not auto-included in the initial active set.
-	 *  The registering extension is responsible for activating/deactivating it via setActiveTools(). */
+	 *  The registering extension is responsible for activating/deactivating it via setToolEnabled(). */
 	defaultInactive?: boolean;
 	/** How this tool is presented when enabled. See {@link ToolLoadMode}. Extension tools default to `"discoverable"`; set `"essential"` to stay top-level. */
 	loadMode?: ToolLoadMode;
@@ -2073,8 +2073,11 @@ export interface ExtensionAPI {
 	/** Get all configured tools (built-in + extension tools) with schema and source metadata. */
 	getAllTools(): ToolInfo[];
 
-	/** Set the active tools by name. */
+	/** Replace the complete enabled selection. Use setToolEnabled() for single-tool changes. */
 	setActiveTools(toolNames: string[]): Promise<void>;
+
+	/** Enable or disable one tool after pending registrations, preserving all unrelated selections and presentation. */
+	setToolEnabled(toolName: string, enabled: boolean): Promise<void>;
 
 	/** Get available slash commands in the current session. */
 	getCommands(): SlashCommandInfo[];
@@ -2311,6 +2314,8 @@ export type GetCommandsHandler = () => SlashCommandInfo[];
 
 export type SetActiveToolsHandler = (toolNames: string[]) => Promise<void>;
 
+export type SetToolEnabledHandler = (toolName: string, enabled: boolean) => Promise<void>;
+
 export type SetModelHandler = (model: Model) => Promise<boolean>;
 
 export type GetThinkingLevelHandler = () => ThinkingLevel | undefined;
@@ -2341,6 +2346,7 @@ export interface ExtensionActions {
 	getActiveTools: GetActiveToolsHandler;
 	getAllTools: GetAllToolsHandler;
 	setActiveTools: SetActiveToolsHandler;
+	setToolEnabled: SetToolEnabledHandler;
 	getCommands: GetCommandsHandler;
 	setModel: SetModelHandler;
 	getThinkingLevel: GetThinkingLevelHandler;

@@ -158,6 +158,10 @@ export class ExtensionRuntime implements IExtensionRuntime {
 		throw new ExtensionRuntimeNotInitializedError();
 	}
 
+	setToolEnabled(): Promise<void> {
+		throw new ExtensionRuntimeNotInitializedError();
+	}
+
 	getCommands(): never {
 		throw new ExtensionRuntimeNotInitializedError();
 	}
@@ -368,6 +372,10 @@ class ConcreteExtensionAPI implements ExtensionAPI, IExtensionRuntime {
 
 	setActiveTools(toolNames: string[]): Promise<void> {
 		return this.runtime.setActiveTools(toolNames);
+	}
+
+	setToolEnabled(toolName: string, enabled: boolean): Promise<void> {
+		return this.runtime.setToolEnabled(toolName, enabled);
 	}
 
 	getCommands() {

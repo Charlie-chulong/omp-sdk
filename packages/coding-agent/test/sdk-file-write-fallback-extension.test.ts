@@ -52,6 +52,7 @@ function initializeRunnerForTest(runner: ExtensionRunner | undefined): void {
 		getActiveTools: () => [],
 		getAllTools: () => [],
 		setActiveTools: async () => {},
+		setToolEnabled: async () => {},
 		getCommands: () => [],
 		setModel: async () => false,
 		getThinkingLevel: () => undefined,

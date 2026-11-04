@@ -1,10 +1,13 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "bun:test";
+import { AsyncLocalStorage } from "node:async_hooks";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { writeManagedSkill } from "@oh-my-pi/pi-coding-agent/autolearn/managed-skills";
 import { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { getActiveSkills } from "@oh-my-pi/pi-coding-agent/extensibility/skills";
+import { resolveMemoryBackend } from "@oh-my-pi/pi-coding-agent/memory-backend/resolve";
 import type { Skill } from "@oh-my-pi/pi-coding-agent/sdk";
 import { createAgentSession } from "@oh-my-pi/pi-coding-agent/sdk";
 import type { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
@@ -106,7 +109,11 @@ description: Skill loaded through a symlink.
 Loaded via symbolic link.
 `,
 		);
-		fs.symlinkSync(externalSkillDir, path.join(path.dirname(skillsDir), "symlinked-skill-link"), "dir");
+		fs.symlinkSync(
+			externalSkillDir,
+			path.join(path.dirname(skillsDir), "symlinked-skill-link"),
+			process.platform === "win32" ? "junction" : "dir",
+		);
 	});
 
 	// Every session binds process state (discovery toggles, effects, the shared-LSP mode) until disposed.
@@ -124,6 +131,27 @@ Loaded via symbolic link.
 		}
 		removeTempHome();
 	});
+
+	const createRefreshSession = async (): Promise<AgentSession> => {
+		const settings = createIsolatedSkillsSettings();
+		cfgAutolearnEnabled.override(settings, true);
+		const { session } = await createSession({
+			cwd: tempDir,
+			agentDir: path.join(tempHomeDir, ".omp", "agent"),
+			sessionManager: SessionManager.inMemory(tempDir),
+			modelRegistry: sharedModelRegistry,
+			settings,
+			enableMCP: false,
+			enableLsp: false,
+			disableExtensionDiscovery: true,
+			contextFiles: [],
+			rules: [],
+			promptTemplates: [],
+			slashCommands: [],
+			workspaceTree: { rootPath: tempDir, rendered: "", truncated: false, totalLines: 0, agentsMdFiles: [] },
+		});
+		return session;
+	};
 
 	it("should discover skills by default and expose them on session.skills", async () => {
 		const { session } = await createSession({
@@ -328,6 +356,19 @@ This skill is added after session creation.
 				readResult.content.some(part => part.type === "text" && part.text.includes("# Runtime Managed Skill")),
 			).toBe(true);
 
+			const updated = await manageSkill!.execute("manage-skill-update", {
+				action: "update",
+				name: "runtime-managed-skill",
+				description: "Updated and immediately available.",
+				body: "# Updated Managed Skill\n\nUse the replacement instructions.",
+			});
+			expect(updated.details).toMatchObject({ persisted: true, refresh: "completed" });
+			expect(session.skills.find(skill => skill.name === "runtime-managed-skill")?.description).toBe(
+				"Updated and immediately available.",
+			);
+			expect(session.agent.state.systemPrompt.join("\n")).toContain("Updated and immediately available.");
+			expect(commandMetadataChanges).toBe(2);
+
 			await manageSkill!.execute("manage-skill-delete", {
 				action: "delete",
 				name: "runtime-managed-skill",
@@ -335,7 +376,7 @@ This skill is added after session creation.
 			expect(session.skills.some(skill => skill.name === "runtime-managed-skill")).toBe(false);
 			expect(getActiveSkills().some(skill => skill.name === "runtime-managed-skill")).toBe(false);
 			expect(session.agent.state.systemPrompt.join("\n")).not.toContain("runtime-managed-skill");
-			expect(commandMetadataChanges).toBe(2);
+			expect(commandMetadataChanges).toBe(3);
 			await expect(
 				readSkill!.execute("read-deleted-managed-skill", { path: "skill://runtime-managed-skill" }),
 			).rejects.toThrow(/Unknown skill/);
@@ -343,6 +384,136 @@ This skill is added after session creation.
 			await session.dispose();
 			unsubscribeCommandMetadata();
 			setAgentDir(originalAgentDir);
+		}
+	});
+
+	it("refreshes skill prompts without depending on a nested registry ALS scope", async () => {
+		const session = await createRefreshSession();
+		fs.writeFileSync(
+			path.join(skillsDir, "SKILL.md"),
+			"---\nname: test-skill\ndescription: Refreshed without ALS queue reentry.\n---\nbody\n",
+		);
+		const missingScope = vi.spyOn(AsyncLocalStorage.prototype, "getStore").mockReturnValue(undefined);
+		try {
+			await session.refreshSkills();
+			expect(session.skills.find(skill => skill.name === "test-skill")?.description).toBe(
+				"Refreshed without ALS queue reentry.",
+			);
+			expect(session.agent.state.systemPrompt.join("\n")).toContain("Refreshed without ALS queue reentry.");
+		} finally {
+			missingScope.mockRestore();
+		}
+	});
+
+	it("settles cancellation queued after a persisted update without applying its stale refresh", async () => {
+		const previousAgentDir = getAgentDir();
+		setAgentDir(path.join(tempHomeDir, ".omp", "agent"));
+		const release = Promise.withResolvers<void>();
+		const entered = Promise.withResolvers<void>();
+		let blocked: Promise<void> | undefined;
+		let restoreRefresh: (() => void) | undefined;
+		try {
+			await writeManagedSkill({
+				action: "create",
+				name: "queued-update",
+				description: "Original catalog.",
+				body: "old",
+			});
+			const session = await createRefreshSession();
+			const oldPrompt = session.agent.state.systemPrompt;
+			blocked = session.runToolRegistryMutation(async () => {
+				entered.resolve();
+				await release.promise;
+			});
+			await entered.promise;
+			const controller = new AbortController();
+			const queued = Promise.withResolvers<void>();
+			const refresh = session.refreshSkills.bind(session);
+			const refreshSpy = vi.spyOn(session, "refreshSkills").mockImplementation(signal => {
+				expect(signal).toBe(controller.signal);
+				queued.resolve();
+				return refresh(signal);
+			});
+			restoreRefresh = () => refreshSpy.mockRestore();
+			const tool = session.getToolByName("manage_skill")!;
+			const execution = tool.execute(
+				"queued-update",
+				{ action: "update", name: "queued-update", description: "Persisted catalog.", body: "saved" },
+				controller.signal,
+			);
+			await queued.promise;
+			controller.abort(new Error("cancel queued refresh"));
+			const result = await execution;
+			expect(result.details).toMatchObject({ persisted: true, refresh: "cancelled" });
+			expect(
+				await Bun.file(path.join(getAgentDir(), "managed-skills", "queued-update", "SKILL.md")).text(),
+			).toContain("saved");
+			expect(session.skills.find(skill => skill.name === "queued-update")?.description).toBe("Original catalog.");
+			expect(session.agent.state.systemPrompt).toBe(oldPrompt);
+			release.resolve();
+			await blocked;
+			await session.runToolRegistryMutation(async () => {});
+			expect(session.skills.find(skill => skill.name === "queued-update")?.description).toBe("Original catalog.");
+		} finally {
+			release.resolve();
+			await blocked;
+			restoreRefresh?.();
+			setAgentDir(previousAgentDir);
+		}
+	});
+
+	it("never lets a cancelled prompt candidate overwrite a newer skills and prompt commit", async () => {
+		const session = await createRefreshSession();
+		const originalSkills = session.skills;
+		const originalWarnings = session.skillWarnings;
+		const originalPrompt = session.agent.state.systemPrompt;
+		const backend = await resolveMemoryBackend(session.settings);
+		const entered = Promise.withResolvers<void>();
+		const release = Promise.withResolvers<string | undefined>();
+		const instructions = vi.spyOn(backend, "buildDeveloperInstructions").mockImplementationOnce(() => {
+			entered.resolve();
+			return release.promise;
+		});
+		const controller = new AbortController();
+		fs.writeFileSync(
+			path.join(skillsDir, "SKILL.md"),
+			"---\nname: test-skill\ndescription: Abandoned candidate.\n---\nold candidate\n",
+		);
+		const refresh = session.refreshSkills(controller.signal);
+		const outcome = refresh.then(
+			() => undefined,
+			error => error,
+		);
+		try {
+			await entered.promise;
+			expect(session.skills).toBe(originalSkills);
+			expect(session.skillWarnings).toBe(originalWarnings);
+			expect(session.agent.state.systemPrompt).toBe(originalPrompt);
+			controller.abort(new Error("candidate cancelled"));
+			expect(await outcome).toBeInstanceOf(Error);
+			fs.writeFileSync(
+				path.join(skillsDir, "SKILL.md"),
+				"---\nname: test-skill\ndescription: Newest committed candidate.\n---\nnew body\n",
+			);
+			await session.refreshSkills();
+			const winningPrompt = session.agent.state.systemPrompt;
+			expect(winningPrompt.join("\n")).toContain("Newest committed candidate.");
+			release.resolve("stale developer instructions");
+			await release.promise;
+			await session.runToolRegistryMutation(async () => {});
+			expect(session.skills.find(skill => skill.name === "test-skill")?.description).toBe(
+				"Newest committed candidate.",
+			);
+			expect(getActiveSkills().find(skill => skill.name === "test-skill")?.description).toBe(
+				"Newest committed candidate.",
+			);
+			expect(session.agent.state.systemPrompt).toBe(winningPrompt);
+			expect(winningPrompt.join("\n")).not.toContain("stale developer instructions");
+		} finally {
+			controller.abort();
+			release.resolve(undefined);
+			await outcome;
+			instructions.mockRestore();
 		}
 	});
 

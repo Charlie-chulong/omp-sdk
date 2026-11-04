@@ -43,6 +43,7 @@ import {
 export type { ProxyPolicy, ProxyRoute } from "@oh-my-pi/pi-ai/utils/proxy";
 import { FALLBACK_DIALECT, preferredDialect } from "@oh-my-pi/pi-catalog/identity";
 import type { Component } from "@oh-my-pi/pi-tui";
+import { untilAborted } from "@oh-my-pi/pi-utils";
 import { $env } from "@oh-my-pi/pi-utils/env";
 import { getAgentDir, getModelDbPath, getProjectDir } from "@oh-my-pi/pi-utils/dirs";
 import * as logger from "@oh-my-pi/pi-utils/logger";
@@ -154,6 +155,7 @@ import {
 	type SkillWarning,
 	setActiveSkills,
 } from "./extensibility/skills";
+import { TtsrManager } from "./export/ttsr";
 import { type FileSlashCommand, loadSlashCommands as loadSlashCommandsInternal } from "./extensibility/slash-commands";
 import type { HindsightSessionState } from "./hindsight/state";
 import { LocalProtocolHandler, type LocalProtocolOptions, outRepliesActive } from "./internal-urls";
@@ -239,6 +241,8 @@ import {
 	collectMountedMCPToolRoutes,
 	projectMountedMCPXdevGuidance,
 	type SettingsGatedToolDelta,
+	type SystemPromptRebuildOptions,
+	type SystemPromptRebuildResult,
 } from "./session/session-tools";
 import { anthropicSlowModeHasNoSiblingHeadroom } from "./session/anthropic-slow-mode";
 import { CacheWarmer } from "./session/cache-warmer";
@@ -2270,7 +2274,6 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 
 	// Discover rules and bucket them in one pass to avoid repeated scans over large rule sets.
 	const discovered = await logger.time("discoverTtsrRules", async () => {
-		const { TtsrManager } = await import("./export/ttsr");
 		const ttsrSettings = cfgTtsr.get(settings);
 		// Live source: enable/repeat/interrupt/context changes apply on the next check.
 		const ttsrManager = new TtsrManager(() => cfgTtsr.get(settings));
@@ -2485,7 +2488,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			get skills() {
 				return session?.skills ?? skills;
 			},
-			refreshSkills: () => session.refreshSkills(),
+			refreshSkills: signal => session.refreshSkills(signal),
 			skillRediscoveryHost: () => session.skillRediscoveryHost(),
 			rules: allRules,
 			activeRules: [...rulebookRules, ...alwaysApplyRules, ...ttsrManager.getRules()],
@@ -4057,9 +4060,17 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		const rebuildSystemPrompt = async (
 			toolNames: string[],
 			tools: Map<string, AgentTool>,
-		): Promise<BuildSystemPromptResult> => {
+			preparation?: SystemPromptRebuildOptions,
+		): Promise<SystemPromptRebuildResult> => {
+			const signal = preparation?.signal;
+			signal?.throwIfAborted();
 			const promptCwd = sessionManager.getCwd();
 			let activeRepoContext = initialActiveRepoContext;
+			let nextContextFiles = contextFiles;
+			let nextRuleItems: Rule[] | undefined;
+			let nextRulebookRules = rulebookRules;
+			let nextAlwaysApplyRules = alwaysApplyRules;
+			const ttsrSettings = cfgTtsr.get(settings);
 			// Re-discover rules and context files from disk on every session-scoped
 			// rebuild. The rule buckets are otherwise frozen at
 			// session creation, so a `RULES.md` (or any rule) created or edited while omp
@@ -4073,64 +4084,80 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				// These reads share only the cwd and discovery scope. Start them together:
 				// a slow repository lookup must not delay context files or rules, including
 				// the first refresh after session_start hooks have edited those files.
-				const [repoContext, refreshedContextFiles, ruleItems] = await Promise.all([
-					logger.time("resolveActiveRepoContext", resolveRepoContext, promptCwd),
-					pinnedContextFiles === undefined
-						? logger.time("discoverContextFiles", discoverContextFiles, promptCwd, agentDir, [
-								...cfgDisabledExtensions.get(settings),
-							])
-						: undefined,
-					options.rules ??
-						logger
-							.time("rediscoverRules", () =>
-								loadCapability<Rule>(ruleCapability.id, { cwd: promptCwd, agentDir }),
-							)
-							.then(result => result.items),
-				]);
+				const [repoContext, refreshedContextFiles, ruleItems] = await untilAborted(signal, () =>
+					Promise.all([
+						logger.time("resolveActiveRepoContext", resolveRepoContext, promptCwd),
+						pinnedContextFiles === undefined
+							? logger.time("discoverContextFiles", discoverContextFiles, promptCwd, agentDir, [
+									...cfgDisabledExtensions.get(settings),
+								])
+							: undefined,
+						options.rules ??
+							logger
+								.time("rediscoverRules", () =>
+									loadCapability<Rule>(ruleCapability.id, { cwd: promptCwd, agentDir }),
+								)
+								.then(result => result.items),
+					]),
+				);
+				signal?.throwIfAborted();
 				activeRepoContext = repoContext;
-				if (refreshedContextFiles !== undefined) {
-					contextFiles = contextFileFilter(refreshedContextFiles);
-					toolSession.contextFiles = contextFiles;
-					session.setAdvisorContextPrompt(formatAdvisorContextPrompt(contextFiles));
-				}
-				const ttsrSettings = cfgTtsr.get(settings);
-				const buckets = bucketRules(ruleItems, ttsrManager, {
+				if (refreshedContextFiles !== undefined) nextContextFiles = contextFileFilter(refreshedContextFiles);
+				nextRuleItems = ruleItems;
+				// Bucketing registers TTSR rules, so prepare against an isolated manager.
+				// The live manager's injection history changes only with the commit.
+				const candidateTtsrManager = new TtsrManager(() => cfgTtsr.get(settings));
+				const buckets = bucketRules(ruleItems, candidateTtsrManager, {
 					builtinRules: ttsrSettings.builtinRules,
 					disabledRules: ttsrSettings.disabledRules,
 					agentName: resolvedAgentName,
 					replaceTtsrRules: true,
 				});
-				rulebookRules = buckets.rulebookRules;
-				alwaysApplyRules = buckets.alwaysApplyRules;
-				const nextActiveRules = [...rulebookRules, ...alwaysApplyRules, ...ttsrManager.getRules()];
-				// Refresh the session-local snapshots too: `rule://` resolution reads
-				// `toolSession.activeRules` and spawned subagents inherit `toolSession.rules`,
-				// so leaving the construction-time arrays would advertise a new `rule://<name>`
-				// the read tool rejects and hand children the stale set.
-				toolSession.rules = ruleItems;
-				toolSession.activeRules = nextActiveRules;
-				if (!options.parentTaskPrefix) {
-					setActiveRules(nextActiveRules);
-				}
+				nextRulebookRules = buckets.rulebookRules;
+				nextAlwaysApplyRules = buckets.alwaysApplyRules;
 			}
-			const memoryBackend = restrictToolNames ? undefined : await resolveMemoryBackend(settings);
+			const memoryBackend = restrictToolNames
+				? undefined
+				: await untilAborted(signal, () => resolveMemoryBackend(settings));
 			const memoryInstructions = memoryBackend
-				? await memoryBackend.buildDeveloperInstructions(agentDir, sessionManager.getCwd(), settings, session)
+				? await untilAborted(signal, () =>
+						memoryBackend.buildDeveloperInstructions(agentDir, promptCwd, settings, session),
+					)
 				: undefined;
-			// Advisors get the same memory block (sharpshooter decisions, mnemopi/
-			// hindsight instructions) wrapped as shared background knowledge; the
-			// tool-availability caveat lives in the wrapper template.
-			advisorMemoryPrompt = formatAdvisorMemoryPrompt(memoryInstructions);
-			if (hasSession) session.setAdvisorMemoryPrompt(advisorMemoryPrompt);
+			signal?.throwIfAborted();
+			const nextAdvisorMemoryPrompt = formatAdvisorMemoryPrompt(memoryInstructions);
 			const inlineToolDescriptors = resolveInlineToolDescriptors();
-			// Unset only during the initial build; the agent is constructed with it.
-			if (agent) agent.pruneToolDescriptions = inlineToolDescriptors;
+			const commit = () => {
+				signal?.throwIfAborted();
+				contextFiles = nextContextFiles;
+				toolSession.contextFiles = nextContextFiles;
+				advisorMemoryPrompt = nextAdvisorMemoryPrompt;
+				if (hasSession) {
+					session.setAdvisorContextPrompt(formatAdvisorContextPrompt(nextContextFiles));
+					session.setAdvisorMemoryPrompt(nextAdvisorMemoryPrompt);
+					if (nextRuleItems) {
+						bucketRules(nextRuleItems, ttsrManager, {
+							builtinRules: ttsrSettings.builtinRules,
+							disabledRules: ttsrSettings.disabledRules,
+							agentName: resolvedAgentName,
+							replaceTtsrRules: true,
+						});
+						rulebookRules = nextRulebookRules;
+						alwaysApplyRules = nextAlwaysApplyRules;
+						toolSession.rules = nextRuleItems;
+						toolSession.activeRules = [...nextRulebookRules, ...nextAlwaysApplyRules, ...ttsrManager.getRules()];
+						if (!options.parentTaskPrefix) setActiveRules(toolSession.activeRules);
+					}
+				}
+				if (agent) agent.pruneToolDescriptions = inlineToolDescriptors;
+			};
 			// A fixed string or array in systemPrompt replaces all generated blocks.
 			// Preserve the bookkeeping above, but skip discovering or rendering a
 			// template whose output would be discarded.
 			if (options.systemPrompt !== undefined && typeof options.systemPrompt !== "function") {
 				return {
 					systemPrompt: typeof options.systemPrompt === "string" ? [options.systemPrompt] : options.systemPrompt,
+					commit,
 				};
 			}
 
@@ -4227,62 +4254,67 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 					? { mode: "compact", toolNames: [...toolNames, ...mountedPromptToolNames] }
 					: { mode: "full" },
 			);
-			const defaultPrompt = await buildSystemPromptInternal({
-				cwd: promptCwd,
-				additionalWorkspaceRoots: sessionManager.getAdditionalDirectories(),
-				noContextFiles: options.noContextFiles,
-				excludeAgentsMd,
-				xdevTools: toolSession.xdev ? xdevEntries(toolSession.xdev) : [],
-				xdevDocs: xdevPromptDocs ? renderXdevPromptDocs(xdevPromptDocs, routedCatalogNames) : "",
-				resolvedCustomPrompt: options.customSystemPrompt,
-				systemPromptTemplate: options.systemPromptTemplate,
-				skills: cfgSkillful.get(settings) ? (session?.skills ?? skills) : [],
-				skillDescriptions,
-				contextFiles,
-				tools: promptTools,
-				toolNames,
-				rules: rulebookRules,
-				alwaysApplyRules,
-				resolvedAppendSystemPrompt: appendPrompt,
-				skillsSettings: cfgSkills.get(settings),
-				inlineToolDescriptors,
-				nativeTools,
-				intentField: cfgToolsIntentTracing.get(settings) ? INTENT_FIELD : undefined,
-				eagerTasks: cfgTaskEager.get(settings) !== "default",
-				eagerTasksAlways: cfgTaskEager.get(settings) === "always",
-				taskBatch: cfgTaskBatch.get(settings),
-				taskMaxConcurrency: cfgTaskMaxConcurrency.get(settings),
-				scoutAvailable: isScoutSpawnable(cfgTaskDisabledAgents.get(settings), options.spawns ?? "*"),
-				delegationBias: sessionDelegationBias(toolSession),
-				taskIrcEnabled: !restrictToolNames && isIrcEnabled(settings, options.taskDepth ?? 0),
-				autoQaEnabled: !restrictToolNames && isAutoQaEnabled(settings),
-				writeTransportOnly:
-					toolSession.deviceOnlyWrite === true && toolSession.pendingFullWriteDescription !== true,
-				secretsEnabled: obfuscator?.obfuscates() === true,
-				workspaceTree: workspaceTreePromise ?? emptyWorkspaceTree,
-				includeWorkspaceTree,
-				memoryBackend: memoryBackend?.id,
-				securityEnabled: cfgSecurityEnabled.get(settings),
-				settingsApproval: toolSession.settingsApproval === true,
-				outReplies: outRepliesActive(settings, tuiTranscript),
-				evalPreludes: toolSession.getAdvertisedEvalPreludes?.(),
-				model: getActiveModelString(),
-				includeModelInPrompt: cfgIncludeModelInPrompt.get(settings),
-				personality: agentKind === "sub" ? "none" : cfgPersonality.get(settings),
-				subagent: agentKind === "sub",
-				renderMermaid: tuiTranscript && cfgTuiRenderMermaid.get(settings),
-				renderSvg: tuiTranscript && cfgTuiRenderSvg.get(settings),
-				autoGraph: tuiTranscript && cfgTuiAutoGraph.get(settings) !== "off",
-				reactions: agentKind === "main" && options.hasUI === true && cfgTuiReactions.get(settings),
-				activeRepoContext,
-			});
+			const defaultPrompt = await untilAborted(signal, () =>
+				buildSystemPromptInternal({
+					signal,
+					cwd: promptCwd,
+					additionalWorkspaceRoots: sessionManager.getAdditionalDirectories(),
+					noContextFiles: options.noContextFiles,
+					excludeAgentsMd,
+					xdevTools: toolSession.xdev ? xdevEntries(toolSession.xdev) : [],
+					xdevDocs: xdevPromptDocs ? renderXdevPromptDocs(xdevPromptDocs, routedCatalogNames) : "",
+					resolvedCustomPrompt: options.customSystemPrompt,
+					systemPromptTemplate: options.systemPromptTemplate,
+					skills: cfgSkillful.get(settings) ? (preparation?.skills ?? session?.skills ?? skills) : [],
+					skillDescriptions,
+					contextFiles: nextContextFiles,
+					tools: promptTools,
+					toolNames,
+					rules: nextRulebookRules,
+					alwaysApplyRules: nextAlwaysApplyRules,
+					resolvedAppendSystemPrompt: appendPrompt,
+					skillsSettings: cfgSkills.get(settings),
+					inlineToolDescriptors,
+					nativeTools,
+					intentField: cfgToolsIntentTracing.get(settings) ? INTENT_FIELD : undefined,
+					eagerTasks: cfgTaskEager.get(settings) !== "default",
+					eagerTasksAlways: cfgTaskEager.get(settings) === "always",
+					taskBatch: cfgTaskBatch.get(settings),
+					taskMaxConcurrency: cfgTaskMaxConcurrency.get(settings),
+					scoutAvailable: isScoutSpawnable(cfgTaskDisabledAgents.get(settings), options.spawns ?? "*"),
+					delegationBias: sessionDelegationBias(toolSession),
+					taskIrcEnabled: !restrictToolNames && isIrcEnabled(settings, options.taskDepth ?? 0),
+					autoQaEnabled: !restrictToolNames && isAutoQaEnabled(settings),
+					writeTransportOnly:
+						toolSession.deviceOnlyWrite === true && toolSession.pendingFullWriteDescription !== true,
+					secretsEnabled: obfuscator?.obfuscates() === true,
+					workspaceTree: workspaceTreePromise ?? emptyWorkspaceTree,
+					includeWorkspaceTree,
+					memoryBackend: memoryBackend?.id,
+					securityEnabled: cfgSecurityEnabled.get(settings),
+					settingsApproval: toolSession.settingsApproval === true,
+					outReplies: outRepliesActive(settings, tuiTranscript),
+					evalPreludes: toolSession.getAdvertisedEvalPreludes?.(),
+					model: getActiveModelString(),
+					includeModelInPrompt: cfgIncludeModelInPrompt.get(settings),
+					personality: agentKind === "sub" ? "none" : cfgPersonality.get(settings),
+					subagent: agentKind === "sub",
+					renderMermaid: tuiTranscript && cfgTuiRenderMermaid.get(settings),
+					renderSvg: tuiTranscript && cfgTuiRenderSvg.get(settings),
+					autoGraph: tuiTranscript && cfgTuiAutoGraph.get(settings) !== "off",
+					reactions: agentKind === "main" && options.hasUI === true && cfgTuiReactions.get(settings),
+					activeRepoContext,
+				}),
+			);
+			signal?.throwIfAborted();
 
 			if (typeof options.systemPrompt !== "function") {
-				return defaultPrompt;
+				return { ...defaultPrompt, commit };
 			}
 			const customPrompt = options.systemPrompt(defaultPrompt.systemPrompt);
 			return {
 				systemPrompt: typeof customPrompt === "string" ? [customPrompt] : customPrompt,
+				commit,
 			};
 		};
 
@@ -4435,12 +4467,13 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		}
 
 		setSessionActiveToolNames(initialToolNames);
-		const { systemPrompt } = await logger.time(
+		const { systemPrompt, commit: commitInitialPrompt } = await logger.time(
 			"buildSystemPrompt",
 			rebuildSystemPrompt,
 			initialToolNames,
 			toolRegistry,
 		);
+		commitInitialPrompt?.();
 
 		const promptTemplates = await promptTemplatesPromise;
 		toolSession.promptTemplates = promptTemplates;

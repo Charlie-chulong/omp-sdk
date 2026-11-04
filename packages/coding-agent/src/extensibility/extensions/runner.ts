@@ -829,9 +829,12 @@ export class ExtensionRunner {
 		this.runtime.getActiveTools = actions.getActiveTools;
 		this.runtime.getAllTools = actions.getAllTools;
 		this.runtime.setActiveTools = async toolNames => {
-			const registrationBarrier = this.#toolRegistrationBarrier;
-			if (registrationBarrier) await registrationBarrier;
+			await this.#waitForToolRegistrations();
 			await actions.setActiveTools(toolNames);
+		};
+		this.runtime.setToolEnabled = async (toolName, enabled) => {
+			await this.#waitForToolRegistrations();
+			await actions.setToolEnabled(toolName, enabled);
 		};
 		this.runtime.getCommands = actions.getCommands;
 		this.runtime.setModel = actions.setModel;
@@ -1234,6 +1237,12 @@ export class ExtensionRunner {
 		return undefined;
 	}
 
+	async #waitForToolRegistrations(): Promise<void> {
+		// A registration can append another listener while this barrier settles.
+		// Drain the live aggregate rather than sampling only the latest promise.
+		while (this.#toolRegistrationBarrier) await this.#toolRegistrationBarrier;
+	}
+
 	/**
 	 * Observe tools registered after extension factories have loaded. Listener
 	 * promises are drained before the lifecycle handler that registered them
@@ -1243,10 +1252,14 @@ export class ExtensionRunner {
 		const subscriptions: Array<{ extension: Extension; listener: ToolRegistrationListener }> = [];
 		const attach = (extension: Extension): ToolRegistrationListener => {
 			const trackRegistration = (pending: Promise<void>): void => {
-				const registrationBarrier = pending.then(
+				// Every listener participates, including registrations made after an
+				// await on runtimes where the lifecycle's ALS scope is unavailable.
+				const settled = pending.then(
 					() => undefined,
 					() => undefined,
 				);
+				const previous = this.#toolRegistrationBarrier;
+				const registrationBarrier = previous ? Promise.all([previous, settled]).then(() => undefined) : settled;
 				this.#toolRegistrationBarrier = registrationBarrier;
 				void registrationBarrier.then(() => {
 					if (this.#toolRegistrationBarrier === registrationBarrier) this.#toolRegistrationBarrier = undefined;

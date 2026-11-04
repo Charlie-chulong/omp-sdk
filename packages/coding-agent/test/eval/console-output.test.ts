@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { AsyncResource } from "node:async_hooks";
 import type { ImageContent } from "@oh-my-pi/pi-ai";
 import { JsRuntime, type RuntimeHooks } from "@oh-my-pi/pi-coding-agent/eval/js/shared/runtime";
 import type { EvalDisplayOutput } from "@oh-my-pi/pi-coding-agent/eval/types";
@@ -94,6 +95,63 @@ describe("JS console output", () => {
 		runtime.echo(undefined, nothing.hooks);
 		expect(nothing.texts).toEqual([]);
 		expect(nothing.displays).toEqual([]);
+	});
+
+	it("routes overlapping async cells to their own output and final values", async () => {
+		const firstGate = Promise.withResolvers<void>();
+		const secondGate = Promise.withResolvers<void>();
+		const firstReady = Promise.withResolvers<void>();
+		const secondReady = Promise.withResolvers<void>();
+		const first = collect();
+		const second = collect();
+		const concurrent = new JsRuntime({
+			initialCwd: process.cwd(),
+			sessionId: "console-async-context",
+			extraGlobals: { firstGate: firstGate.promise, secondGate: secondGate.promise },
+		});
+		try {
+			first.hooks.onEvaluate = () => firstReady.resolve();
+			second.hooks.onEvaluate = () => secondReady.resolve();
+			const a = concurrent.run("await firstGate; print('first'); ({ cell: 'first' })", undefined, first.hooks);
+			const b = concurrent.run(
+				"await secondGate; console.log('second'); ({ cell: 'second' })",
+				undefined,
+				second.hooks,
+			);
+			await Promise.all([firstReady.promise, secondReady.promise]);
+			secondGate.resolve();
+			expect(await b).toEqual({ cell: "second" });
+			expect(second.texts).toEqual(["second\n"]);
+			expect(first.texts).toEqual([]);
+			firstGate.resolve();
+			expect(await a).toEqual({ cell: "first" });
+			expect(first.texts).toEqual(["first\n"]);
+		} finally {
+			firstGate.resolve();
+			secondGate.resolve();
+			concurrent.dispose();
+		}
+	});
+
+	it("rejects output from a detached async context instead of silently succeeding", async () => {
+		const detached = new AsyncResource("detached-eval-output");
+		const isolated = new JsRuntime({
+			initialCwd: process.cwd(),
+			sessionId: "console-missing-context",
+			extraGlobals: { detachedOutput: (callback: () => unknown) => detached.runInAsyncScope(callback) },
+		});
+		const { hooks, texts } = collect();
+		try {
+			await expect(isolated.run("detachedOutput(() => print('lost'))", undefined, hooks)).rejects.toThrow(
+				"JS Eval async context is unavailable",
+			);
+			expect(texts).toEqual([]);
+			await isolated.run("await Promise.resolve(); print('recovered');", undefined, hooks);
+			expect(texts).toEqual(["recovered\n"]);
+		} finally {
+			detached.emitDestroy();
+			isolated.dispose();
+		}
 	});
 
 	it("prints an image record as a placeholder and emits the image with its metadata", async () => {

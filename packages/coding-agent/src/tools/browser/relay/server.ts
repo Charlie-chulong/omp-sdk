@@ -22,7 +22,7 @@ import {
 	unpackedExtensionId,
 	writeRelayExtension,
 } from "./extension-files";
-import { isOlderOmpVersion } from "./protocol";
+import { DISCARDED_TABS_PROTOCOL_VERSION, isOlderOmpVersion } from "./protocol";
 
 /** Options for {@link startRelayServer}. */
 export interface RelayServerOptions {
@@ -67,6 +67,8 @@ const EXTENSION_ORIGIN = /^chrome-extension:\/\/([a-p]{32})$/;
 export interface RelayUnavailableInfo {
 	/** Version of the OMP binary serving this relay. */
 	ompRelayVersion: string;
+	ompRelayDiscardedTabsProtocol: string;
+	ompExtensionDiscardedTabsProtocol: string;
 	error: string;
 	/** An extension completed the hello handshake at least once in this server's lifetime. */
 	extensionSeen: boolean;
@@ -159,6 +161,8 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
 					const disconnectedMs = bridge.extensionGoneForMs;
 					const info: RelayUnavailableInfo = {
 						ompRelayVersion: VERSION,
+						ompRelayDiscardedTabsProtocol: String(DISCARDED_TABS_PROTOCOL_VERSION),
+						ompExtensionDiscardedTabsProtocol: "0",
 						error: "relay extension is not connected",
 						extensionSeen: bridge.extensionSeen,
 						uptimeMs: Date.now() - startedAt,

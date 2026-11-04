@@ -2146,6 +2146,7 @@ describe("AgentSession TTSR resume gate", () => {
 				getActiveTools: () => [],
 				getAllTools: () => [],
 				setActiveTools: async () => {},
+				setToolEnabled: async () => {},
 				getCommands: () => [],
 				setModel: async () => false,
 				getThinkingLevel: () => undefined,

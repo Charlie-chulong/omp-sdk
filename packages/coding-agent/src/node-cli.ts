@@ -13,7 +13,7 @@ declareWorkerHostEntry();
 const selector = process.argv[2];
 if (selector === "browser-relay") {
 	await run({
-		bin: "omp",
+		bin: "omp-desktop",
 		version: VERSION,
 		argv: process.argv.slice(2),
 		commands: [{ name: "browser-relay", load: async () => BrowserRelay }],

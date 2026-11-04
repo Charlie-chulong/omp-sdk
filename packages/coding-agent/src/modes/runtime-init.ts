@@ -126,6 +126,11 @@ export async function initializeExtensions(session: AgentSession, options: Initi
 			getAllTools: () => session.getAllToolInfos(),
 			setActiveTools: (toolNames: string[]) =>
 				session.setActiveToolsByName(filterActiveTools ? filterActiveTools(toolNames) : toolNames),
+			setToolEnabled: (toolName, enabled) =>
+				session.setToolEnabled(
+					toolName,
+					enabled && (!filterActiveTools || filterActiveTools([toolName]).includes(toolName)),
+				),
 			getCommands: () => getSessionSlashCommands(session),
 			setModel: model => runExtensionSetModel(session, model),
 			getThinkingLevel: () => session.thinkingLevel,

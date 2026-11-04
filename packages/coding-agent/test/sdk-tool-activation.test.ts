@@ -481,6 +481,81 @@ describe("createAgentSession defaultInactive tool activation", () => {
 		}
 	});
 
+	it("waits for every detached registration before toggling only generate_image and retaining tool presentation", async () => {
+		const tempDir = makeTempDir();
+		let registerLateTools: (() => Promise<void>) | undefined;
+		let toggleImage: ((enabled: boolean) => Promise<void>) | undefined;
+		const batchExtension: ExtensionFactory = pi => {
+			pi.registerTool({
+				name: "generate_image",
+				label: "Image toggle fixture",
+				description: "An essential image tool whose selection changes independently.",
+				parameters: type({}),
+				loadMode: "essential",
+				async execute() {
+					return { content: [{ type: "text", text: "image" }] };
+				},
+			});
+			registerLateTools = async () => {
+				await Promise.resolve();
+				for (const name of ["late_one", "late_two"]) {
+					pi.registerTool({
+						name,
+						label: name,
+						description: "A discoverable tool registered during the image preference change.",
+						parameters: type({}),
+						async execute() {
+							return { content: [{ type: "text", text: name }] };
+						},
+					});
+				}
+			};
+			toggleImage = enabled => pi.setToolEnabled("generate_image", enabled);
+		};
+		const { session } = await createAgentSession({
+			...baseOptions(tempDir),
+			extensions: [toolActivationExtension, batchExtension],
+		});
+		const firstListener = Promise.withResolvers<void>();
+		let disable: Promise<void> | undefined;
+		try {
+			await initializeExtensions(session, { reportSendError: vi.fn(), reportRuntimeError: vi.fn() });
+			const runner = session.extensionRunner!;
+			const unsubscribe = runner.onToolRegistered(tool =>
+				tool.definition.name === "late_one" ? firstListener.promise : undefined,
+			);
+			const initialEnabled = session.getEnabledToolNames();
+			const initialTopLevel = session.getActiveToolNames();
+			const initialMounted = session.getMountedXdevToolNames();
+			expect(initialTopLevel).toContain("generate_image");
+			expect(initialMounted).toContain("default_active_tool");
+			const applyToggle = vi.spyOn(session, "setToolEnabled");
+			await registerLateTools!();
+			disable = toggleImage!(false);
+			// All registry work can finish while an independent earlier listener is
+			// still pending. Waiting only the last registration would admit the action.
+			await session.runToolRegistryMutation(async () => {});
+			expect(applyToggle).not.toHaveBeenCalled();
+			firstListener.resolve();
+			await disable;
+			expect(session.getEnabledToolNames().sort()).toEqual(
+				[...initialEnabled.filter(name => name !== "generate_image"), "late_one", "late_two"].sort(),
+			);
+			expect(session.getActiveToolNames().sort()).toEqual(
+				initialTopLevel.filter(name => name !== "generate_image").sort(),
+			);
+			expect(session.getMountedXdevToolNames().sort()).toEqual([...initialMounted, "late_one", "late_two"].sort());
+			await toggleImage!(true);
+			expect(session.getActiveToolNames().sort()).toEqual(initialTopLevel.sort());
+			expect(session.getMountedXdevToolNames().sort()).toEqual([...initialMounted, "late_one", "late_two"].sort());
+			unsubscribe();
+		} finally {
+			firstListener.resolve();
+			await disable;
+			await session.dispose();
+		}
+	});
+
 	it("mounts late extension tools through a dormant read-only transport", async () => {
 		const tempDir = makeTempDir();
 		const lateDeviceExtension: ExtensionFactory = pi => {

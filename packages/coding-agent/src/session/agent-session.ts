@@ -2454,6 +2454,7 @@ export class AgentSession implements SettingsScope {
 			agentKind: () => this.#agentKind,
 			isDisposed: () => this.#isDisposed,
 			isStreaming: () => this.isStreaming,
+			sessionGeneration: () => this.#sessionGeneration,
 			steeringArrivalSignal: () => this.#steeringArrivalSignal(),
 			steeringArrivalSeq: () => this.#steeringArrivalSeq(),
 			steeringArrivalAdmitted: since => this.#steeringArrivalAdmitted(since),
@@ -7149,8 +7150,8 @@ export class AgentSession implements SettingsScope {
 	}
 
 	/** Rediscovers reloadable skills and refreshes prompt metadata. */
-	refreshSkills(): Promise<void> {
-		return this.#tools.refreshSkills();
+	refreshSkills(signal?: AbortSignal): Promise<void> {
+		return this.#tools.refreshSkills(signal);
 	}
 
 	/**
@@ -7202,6 +7203,11 @@ export class AgentSession implements SettingsScope {
 	/** Selects enabled tools, ignoring names absent from the registry. */
 	setActiveToolsByName(toolNames: string[]): Promise<void> {
 		return this.#tools.setActiveToolsByName(toolNames);
+	}
+
+	/** Changes a single enabled tool without replacing the current registry selection. */
+	setToolEnabled(toolName: string, enabled: boolean): Promise<void> {
+		return this.#tools.setToolEnabled(toolName, enabled);
 	}
 
 	/** Restores an exact top-level versus `xd://` tool partition. */
