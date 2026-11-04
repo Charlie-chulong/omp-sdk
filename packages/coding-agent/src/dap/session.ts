@@ -1379,7 +1379,7 @@ export class DapSessionManager {
 				cwd: path.resolve(session.cwd, args.cwd ?? "."),
 				stdin: "pipe",
 				env: {
-					...Bun.env,
+					...process.env,
 					...NON_INTERACTIVE_ENV,
 					...env,
 				},
