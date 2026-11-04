@@ -28,9 +28,40 @@ With this backend enabled, the coding agent:
 
 Recalled memory is background context, not instructions. Current user messages and tool output take precedence when they conflict.
 
+## Desktop/core SDK compatibility
+
+Mnemopi also requires **SQLite FTS5 in the runtime itself**, including when embeddings and memory inference are disabled. The observed Windows mini-electron `0.1.34` distribution lacks this compiled SQLite module and needs a rebuilt runtime with `SQLITE_ENABLE_FTS5`. Selecting a remote embedding/LLM provider cannot add FTS5 or fix that prerequisite. Startup remains unavailable and reports the missing capability without deleting existing databases.
+
+The Desktop/core SDK does not include local embedding or small-model inference runtimes. Selecting only `memory.backend: mnemopi` keeps the existing defaults but is **unavailable** in this profile: both local embeddings and `llmMode: smol` need an explicit choice. Startup reports the blockers through a memory warning and the structured memory status API. Until initialization succeeds, `retain`, `recall`, `reflect`, `memory_edit`, and `learn` are not advertised, and no available-memory instructions are injected. The settings page reports configuration compatibility, not a guarantee that a session opened its database or reached a service.
+
+An explicit local-only, manual configuration is:
+
+```yaml
+memory:
+   backend: mnemopi
+mnemopi:
+   noEmbeddings: true
+   llmMode: none
+   autoRetain: false
+```
+
+This stores explicit `retain`/`learn` text in the existing SQLite banks and recalls by full-text/keyword matching. It does not offer semantic vector recall or memory LLM extraction/synthesis; `reflect` returns recalled context. `autoRecall` can remain enabled; choose `autoRetain: true` separately if you want completed conversation transcripts retained too. These memory operations do not need an embedding service, memory model, remote credentials, or model download. Normal chat requests still use the chat model you selected.
+
+Alternatively, explicitly configure `mnemopi.embeddingApiUrl` plus the service's embedding model/key for vectors, and/or `llmMode: remote` with `llmBaseUrl`, `llmModel`, and any required key. Remote endpoints receive memory text and may incur charges even though the database remains local. No remote service, current chat model, or keyword-only fallback is selected automatically. Use the full SDK if you need its local embedding/inference runtimes instead.
+
+For OpenRouter, choose an API embedding model such as `openai/text-embedding-3-small`; the default BAAI local model does not become an API model merely because the URL is set. The existing explicit `MNEMOPI_EMBEDDINGS_VIA_API` routing override is also honored. Core rejects configurations that would still route to a missing local embedding runtime.
+
+`MNEMOPI_EMBEDDING_API_URL`, `MNEMOPI_EMBEDDING_MODEL`, `MNEMOPI_EMBEDDING_API_KEY`, `MNEMOPI_LLM_BASE_URL`, `MNEMOPI_LLM_MODEL`, and `MNEMOPI_LLM_API_KEY` supply unset/blank settings; explicit nonblank configuration wins. Setting `noEmbeddings: true` and `llmMode: none` disables the corresponding providers even if service environment variables are present.
+
+Changing settings does not delete databases, change banks/scoping, or erase existing vectors. SDK live setting changes rebuild memory state/tools/instructions; after editing Desktop host settings, start a new session as indicated in the UI. A failed configuration remains unavailable until a supported configuration initializes successfully. Do not use `/memory clear` to fix configuration failures: it deletes memory data.
+
+SDK startup and live reconfiguration share the same lifecycle queue. If the selected backend's configuration, working directory, session identity, or disposal changes while initialization awaits a provider, that retired initialization cannot install memory state, publish tools/instructions, or overwrite the current startup error. Editing an inactive backend does not cancel initialization of the selected backend.
+
+Readiness changes also synchronize existing advisors' memory tools without restarting their conversations or widening their grants: default advisors receive recall, while write tools require explicit advisor permission. Subagents retain their authorized tool plan; inheriting initialized memory does not implicitly grant `learn` or skill-writing access.
+
 ## Agent tools
 
-Selecting Mnemopi makes these discoverable tools available:
+Successfully initialized Mnemopi sessions make these discoverable tools available:
 
 - `recall` — search scoped memories. Results are previews and include memory IDs.
 - `retain` — store durable facts explicitly.

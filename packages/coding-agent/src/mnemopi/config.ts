@@ -1,11 +1,12 @@
 import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
+import { hostMatchesUrl } from "@oh-my-pi/pi-catalog/hosts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { MnemopiOptions } from "@oh-my-pi/pi-mnemopi";
-import { getMemoriesDir, logger, withLoopPhase } from "@oh-my-pi/pi-utils";
+import { $flag, getMemoriesDir, logger, withLoopPhase } from "@oh-my-pi/pi-utils";
 import type { Settings } from "../config/settings";
-import { assertLocalRuntimeAvailable, isCoreSdk } from "../sdk-profile";
+import { isCoreSdk } from "../sdk-profile";
 
 import {
 	cfgMnemopiAutoRecall,
@@ -79,17 +80,53 @@ export function loadMnemopiConfig(settings: Settings, agentDir: string): Mnemopi
 	const recallBanks =
 		scoping === "global" ? scope.recallBanks : extendRecallWithLegacyBanks(scope.recallBanks, dbPath, cwd);
 	const llmMode = cfgMnemopiLlmMode.get(settings);
+	const noEmbeddings = cfgMnemopiNoEmbeddings.get(settings);
+	const embeddingApiUrl = cfgMnemopiEmbeddingApiUrl.get(settings)?.trim() || undefined;
+	const embeddingOverride = cfgMnemopiEmbeddingModel.get(settings)?.trim() || undefined;
+	const problems: string[] = [];
 	if (isCoreSdk()) {
-		if (!cfgMnemopiNoEmbeddings.get(settings) && !cfgMnemopiEmbeddingApiUrl.get(settings)?.trim()) {
-			assertLocalRuntimeAvailable(
-				"Local memory embeddings (set mnemopi.embeddingApiUrl to a remote endpoint or mnemopi.noEmbeddings to true)",
+		if (!noEmbeddings && !embeddingApiUrl) {
+			problems.push(
+				"Local embeddings are unavailable in the core SDK: explicitly configure mnemopi.embeddingApiUrl, or choose mnemopi.noEmbeddings=true for keyword-only recall.",
+			);
+		}
+		if (
+			!noEmbeddings &&
+			embeddingApiUrl &&
+			hostMatchesUrl(embeddingApiUrl, "openrouter") &&
+			!embeddingOverride?.startsWith("openai/") &&
+			!embeddingOverride?.includes("text-embedding") &&
+			!$flag("MNEMOPI_EMBEDDINGS_VIA_API")
+		) {
+			problems.push(
+				"The OpenRouter embedding endpoint requires an API embedding model (mnemopi.embeddingModel, e.g. openai/text-embedding-3-small); the default BAAI model requires the full SDK.",
 			);
 		}
 		if (llmMode === "smol") {
-			assertLocalRuntimeAvailable("Local memory inference (set mnemopi.llmMode to remote or none)");
+			problems.push(
+				"The small-model memory mode is unavailable in the core SDK: explicitly choose mnemopi.llmMode=none for no memory LLM, or remote with your own endpoint and model.",
+			);
 		}
 	}
-	const embeddingOverride = cfgMnemopiEmbeddingModel.get(settings);
+	if (llmMode === "remote") {
+		if (!cfgMnemopiLlmBaseUrl.get(settings)?.trim())
+			problems.push("Remote memory inference requires mnemopi.llmBaseUrl (or MNEMOPI_LLM_BASE_URL).");
+		if (!cfgMnemopiLlmModel.get(settings)?.trim())
+			problems.push("Remote memory inference requires mnemopi.llmModel (or MNEMOPI_LLM_MODEL).");
+	}
+	for (const [name, value] of [
+		["mnemopi.embeddingApiUrl", noEmbeddings ? undefined : embeddingApiUrl],
+		["mnemopi.llmBaseUrl", llmMode === "remote" ? cfgMnemopiLlmBaseUrl.get(settings) : undefined],
+	]) {
+		if (!value) continue;
+		try {
+			const url = new URL(value);
+			if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("unsupported protocol");
+		} catch {
+			problems.push(`${name} must be an HTTP(S) endpoint.`);
+		}
+	}
+	if (problems.length > 0) throw new Error(problems.join(" "));
 	const embeddingVariant = cfgMnemopiEmbeddingVariant.get(settings);
 	// Map the variant explicitly rather than indexing an object with the raw config
 	// value (which could resolve an inherited property like `__proto__`); any value
@@ -117,10 +154,10 @@ export function loadMnemopiConfig(settings: Settings, agentDir: string): Mnemopi
 		injectionTokenLimit: Math.max(256, Math.floor(cfgMnemopiInjectionTokenLimit.get(settings))),
 		debug: cfgMnemopiDebug.get(settings),
 		providerOptions: {
-			noEmbeddings: cfgMnemopiNoEmbeddings.get(settings),
+			noEmbeddings,
 			debug: cfgMnemopiDebug.get(settings),
 			embeddingModel,
-			embeddingApiUrl: cfgMnemopiEmbeddingApiUrl.get(settings),
+			embeddingApiUrl,
 			embeddingApiKey: cfgMnemopiEmbeddingApiKey.get(settings),
 			llm:
 				llmMode === "remote"

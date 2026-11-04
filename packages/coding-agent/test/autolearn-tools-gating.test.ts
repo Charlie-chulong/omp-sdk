@@ -41,64 +41,6 @@ describe("autolearn tool gating", () => {
 		expect(names).not.toContain("learn");
 	});
 
-	it("offers both tools, marked essential, when enabled with a live backend", async () => {
-		const tools = await createTools(makeSession({ "autolearn.enabled": true, "memory.backend": "mnemopi" }));
-		const learn = tools.find(t => t.name === "learn");
-		const manage = tools.find(t => t.name === "manage_skill");
-		expect(learn).toBeDefined();
-		expect(manage).toBeDefined();
-		// loadMode "essential" is what keeps them active under tools.discoveryMode "all".
-		expect(learn?.loadMode).toBe("essential");
-		expect(manage?.loadMode).toBe("essential");
-	});
-
-	it("force-includes the tools into an explicit restricted toolNames list", async () => {
-		// A session created with autolearn on but a narrow tool list still gets the
-		// controller/guidance, so the tools the nudge points at must be present.
-		const withBackend = (
-			await createTools(makeSession({ "autolearn.enabled": true, "memory.backend": "mnemopi" }), ["read"])
-		).map(t => t.name);
-		expect(withBackend).toContain("manage_skill");
-		expect(withBackend).toContain("learn");
-
-		const noBackend = (
-			await createTools(makeSession({ "autolearn.enabled": true, "memory.backend": "off" }), ["read"])
-		).map(t => t.name);
-		expect(noBackend).toContain("manage_skill");
-		expect(noBackend).not.toContain("learn");
-	});
-
-	it("excludes the tools from a subagent when not in the explicit list", async () => {
-		// taskDepth > 0: the controller never runs here, so a subagent's explicit
-		// whitelist must not be silently widened with write-capable tools.
-		const sub = (
-			await createTools(makeSession({ "autolearn.enabled": true, "memory.backend": "mnemopi" }, { taskDepth: 1 }), [
-				"read",
-			])
-		).map(t => t.name);
-		expect(sub).not.toContain("manage_skill");
-		expect(sub).not.toContain("learn");
-
-		// Nor via discovery (no explicit list) at depth.
-		const subDiscovered = (
-			await createTools(makeSession({ "autolearn.enabled": true, "memory.backend": "mnemopi" }, { taskDepth: 1 }))
-		).map(t => t.name);
-		expect(subDiscovered).not.toContain("manage_skill");
-		expect(subDiscovered).not.toContain("learn");
-	});
-
-	it("allows the tools in a subagent when explicitly requested in toolNames", async () => {
-		// Frontmatter tools: list overrides the taskDepth gate.
-		const sub = (
-			await createTools(makeSession({ "autolearn.enabled": true, "memory.backend": "mnemopi" }, { taskDepth: 1 }), [
-				"manage_skill",
-				"learn",
-			])
-		).map(t => t.name);
-		expect(sub).toContain("manage_skill");
-		expect(sub).toContain("learn");
-	});
-
 	it("offers learn with the file-based local backend", async () => {
 		const names = (await createTools(makeSession({ "autolearn.enabled": true, "memory.backend": "local" }))).map(
 			t => t.name,

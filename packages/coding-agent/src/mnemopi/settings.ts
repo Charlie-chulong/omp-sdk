@@ -200,6 +200,7 @@ export const cfgMnemopiEmbeddingApiUrl = register({
 	id: "mnemopi.embeddingApiUrl",
 	type: "string",
 	default: undefined,
+	env: { name: "MNEMOPI_EMBEDDING_API_URL", fallback: "blank" },
 	ui: {
 		tab: "memory",
 		group: "Mnemopi",
@@ -214,6 +215,7 @@ export const cfgMnemopiEmbeddingApiKey = register({
 	type: "string",
 	credential: true,
 	default: undefined,
+	env: { name: "MNEMOPI_EMBEDDING_API_KEY", fallback: "blank" },
 	ui: {
 		tab: "memory",
 		group: "Mnemopi",
@@ -251,6 +253,7 @@ export const cfgMnemopiLlmBaseUrl = register({
 	id: "mnemopi.llmBaseUrl",
 	type: "string",
 	default: undefined,
+	env: { name: "MNEMOPI_LLM_BASE_URL", fallback: "blank" },
 	ui: {
 		tab: "memory",
 		group: "Mnemopi",
@@ -265,6 +268,7 @@ export const cfgMnemopiLlmApiKey = register({
 	type: "string",
 	credential: true,
 	default: undefined,
+	env: { name: "MNEMOPI_LLM_API_KEY", fallback: "blank" },
 	ui: {
 		tab: "memory",
 		group: "Mnemopi",
@@ -278,6 +282,7 @@ export const cfgMnemopiLlmModel = register({
 	id: "mnemopi.llmModel",
 	type: "string",
 	default: undefined,
+	env: { name: "MNEMOPI_LLM_MODEL", fallback: "blank" },
 	ui: {
 		tab: "memory",
 		group: "Mnemopi",

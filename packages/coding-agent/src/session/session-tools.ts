@@ -2218,8 +2218,9 @@ export class SessionTools {
 	}
 
 	/** Replaces memory-backend tools while preserving unrelated selections. */
-	replaceMemoryTools(tools: AgentTool[]): Promise<void> {
+	replaceMemoryTools(tools: AgentTool[], commitIf?: () => boolean): Promise<void> {
 		return this.runToolRegistryMutation(async () => {
+			if (commitIf && !commitIf()) return;
 			const removed = new Set<string>(MEMORY_BACKEND_TOOL_NAMES.filter(name => this.#builtInToolNames.has(name)));
 			const nextActive = this.getEnabledToolNames().filter(name => !removed.has(name));
 			for (const name of removed) {

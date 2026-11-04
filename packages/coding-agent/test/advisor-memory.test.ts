@@ -5,6 +5,7 @@ import { getBundledModel } from "@oh-my-pi/pi-catalog/models";
 import { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { getMemoryRoot } from "@oh-my-pi/pi-coding-agent/memories";
+import { cfgMnemopiDbPath } from "@oh-my-pi/pi-coding-agent/mnemopi/settings";
 import { AgentRegistry } from "@oh-my-pi/pi-coding-agent/registry/agent-registry";
 import { createAgentSession } from "@oh-my-pi/pi-coding-agent/sdk";
 import type { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
@@ -46,6 +47,7 @@ describe("advisor memory context", () => {
 	async function createAdvisedSession(
 		backend: string,
 		sessionManager = SessionManager.create(tempDir.path(), tempDir.path()),
+		overrides: Record<string, unknown> = {},
 	): Promise<AgentSession> {
 		const settings = Settings.isolated({
 			"async.enabled": false,
@@ -56,6 +58,7 @@ describe("advisor memory context", () => {
 			"mnemopi.llmMode": "none",
 			"mnemopi.autoRecall": false,
 			"mnemopi.autoRetain": false,
+			...overrides,
 		});
 		settings.setModelRole("advisor", `${model.provider}/${model.id}`);
 		await settings.reloadForCwd(tempDir.path());
@@ -121,6 +124,64 @@ describe("advisor memory context", () => {
 		expect(names).toContain("read");
 		expect(names).not.toContain("retain");
 		expect(names).not.toContain("edit");
+	});
+
+	it.each([
+		{ grant: "default", tools: undefined, recall: true, retain: false },
+		{ grant: "read-only explicit", tools: ["read"], recall: false, retain: false },
+		{ grant: "explicit memory writes", tools: ["recall", "retain"], recall: true, retain: true },
+	])("keeps $grant advisor memory grants usable across initialization failure and recovery", async grant => {
+		tempDir = TempDir.createSync("@pi-advisor-memory-readiness-");
+		if (grant.tools) {
+			await Bun.write(
+				tempDir.join("WATCHDOG.yml"),
+				`advisors:\n  - name: Memory reviewer\n    tools: ${JSON.stringify(grant.tools)}\n`,
+			);
+		}
+		session = await createAdvisedSession("mnemopi", SessionManager.inMemory(tempDir.path()), {
+			"mnemopi.scoping": "global",
+		});
+		const current = session;
+		const advisor = current.getAdvisorAgent();
+		const originalPath = current.getMnemopiSessionState()?.config.dbPath;
+		if (!advisor || !originalPath) throw new Error("Expected initialized Mnemopi and advisor");
+		await current.getToolByName("retain")!.execute("primary-retain", {
+			items: [{ content: "Aster observatory uses a copper telescope" }],
+		});
+		expect(advisor.state.tools.some(tool => tool.name === "recall")).toBe(grant.recall);
+		expect(advisor.state.tools.some(tool => tool.name === "retain")).toBe(grant.retain);
+		if (grant.recall) {
+			const recalled = await advisor.state.tools
+				.find(tool => tool.name === "recall")!
+				.execute("advisor-recall", { query: "copper telescope" });
+			expect(JSON.stringify(recalled.content)).toContain("Aster observatory");
+		}
+		cfgMnemopiDbPath.override(current.settings, tempDir.path());
+		await current.settleMemoryBackend();
+		expect(current.getAdvisorAgent()).toBe(advisor);
+		expect(advisor.state.tools.some(tool => tool.name === "recall" || tool.name === "retain")).toBe(false);
+		cfgMnemopiDbPath.override(current.settings, originalPath);
+		await current.settleMemoryBackend();
+		expect(current.getAdvisorAgent()).toBe(advisor);
+		expect(advisor.state.tools.some(tool => tool.name === "recall")).toBe(grant.recall);
+		expect(advisor.state.tools.some(tool => tool.name === "retain")).toBe(grant.retain);
+		if (grant.retain) {
+			await advisor.state.tools
+				.find(tool => tool.name === "retain")!
+				.execute("advisor-retain", {
+					items: [{ content: "The copper telescope checklist lives in the blue binder" }],
+				});
+		}
+		if (grant.recall) {
+			const recalled = await advisor.state.tools
+				.find(tool => tool.name === "recall")!
+				.execute("advisor-recovered-recall", { query: "copper telescope" });
+			expect(JSON.stringify(recalled.content)).toContain("Aster observatory");
+		}
+		if (grant.retain) {
+			const recalled = await current.getToolByName("recall")!.execute("primary-recall", { query: "blue binder" });
+			expect(JSON.stringify(recalled.content)).toContain("checklist");
+		}
 	});
 
 	it.each(["hindsight", "mnemopi"])("keeps in-memory advisor URL tools bound to the %s session", async backend => {

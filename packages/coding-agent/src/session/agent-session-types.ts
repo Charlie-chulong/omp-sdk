@@ -373,6 +373,8 @@ export interface AgentSessionConfig {
 	providerPromptCacheKeySource?: "explicit" | "fork";
 	/** Full advisor toolset built against an advisor-scoped tool session. */
 	advisorTools?: AgentTool[];
+	/** Rebuild memory factories against the distinct advisor ToolSession after backend readiness changes. */
+	createAdvisorMemoryTools?: () => Promise<AgentTool[]>;
 	/**
 	 * Build a `grep` honoring a Cursor `pi_grep` frame's own context width and
 	 * match cap, against the advisor-scoped tool session. Without it an advisor

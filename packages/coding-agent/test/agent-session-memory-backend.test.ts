@@ -15,7 +15,9 @@ import { MEMORY_BACKEND_TOOL_NAMES } from "@oh-my-pi/pi-coding-agent/memory-back
 import { computeMnemopiBankScope } from "@oh-my-pi/pi-coding-agent/mnemopi/config";
 import { mnemopiBackend } from "@oh-my-pi/pi-coding-agent/mnemopi/backend";
 import { getMnemopiSessionState } from "@oh-my-pi/pi-coding-agent/mnemopi/state";
+import * as sdkProfile from "@oh-my-pi/pi-coding-agent/sdk-profile";
 import { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
+import type { AgentSessionConfig } from "@oh-my-pi/pi-coding-agent/session/agent-session-types";
 import { AgentStorage } from "@oh-my-pi/pi-coding-agent/session/agent-storage";
 import type { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
@@ -29,7 +31,14 @@ import { createInMemoryAuthStorage } from "./helpers/agent-session-setup";
 import { cfgAutolearnEnabled } from "@oh-my-pi/pi-coding-agent/autolearn/settings";
 import { cfgHindsightApiUrl, cfgHindsightMentalModelsEnabled } from "@oh-my-pi/pi-coding-agent/hindsight/settings";
 import { cfgMemoryBackend } from "@oh-my-pi/pi-coding-agent/memory-backend/settings";
-import { cfgMnemopiBank, cfgMnemopiRecallLimit, cfgMnemopiScoping } from "@oh-my-pi/pi-coding-agent/mnemopi/settings";
+import {
+	cfgMnemopiBank,
+	cfgMnemopiEmbeddingApiKey,
+	cfgMnemopiLlmMode,
+	cfgMnemopiNoEmbeddings,
+	cfgMnemopiRecallLimit,
+	cfgMnemopiScoping,
+} from "@oh-my-pi/pi-coding-agent/mnemopi/settings";
 
 function createTool(name: string): AgentTool {
 	return {
@@ -71,7 +80,10 @@ describe("AgentSession memory backend lifecycle", () => {
 		tempDir.removeSync();
 	});
 
-	function createSession(createMemoryTools: () => Promise<AgentTool[]>): AgentSession {
+	function createSession(
+		createMemoryTools: () => Promise<AgentTool[]>,
+		rebuildSystemPrompt?: AgentSessionConfig["rebuildSystemPrompt"],
+	): AgentSession {
 		const model = buildModel({
 			id: "mock",
 			name: "mock",
@@ -104,9 +116,11 @@ describe("AgentSession memory backend lifecycle", () => {
 			createMemoryTools,
 			toolRegistry,
 			builtInToolNames: [read.name],
-			rebuildSystemPrompt: async toolNames => ({
-				systemPrompt: [`backend:${cfgMemoryBackend.get(settings)};tools:${toolNames.sort().join(",")}`],
-			}),
+			rebuildSystemPrompt:
+				rebuildSystemPrompt ??
+				(async toolNames => ({
+					systemPrompt: [`backend:${cfgMemoryBackend.get(settings)};tools:${toolNames.sort().join(",")}`],
+				})),
 		});
 		return session;
 	}
@@ -350,6 +364,151 @@ describe("AgentSession memory backend lifecycle", () => {
 		await rebindMemoryBackendForCwd(current);
 		expect(current.getHindsightSessionState()).toBeDefined();
 		expect(current.getActiveToolNames()).toEqual(expect.arrayContaining(["recall", "retain", "reflect", "learn"]));
+	});
+
+	it("makes memory tools usable after explicit live recovery from an incompatible core configuration", async () => {
+		spyOn(sdkProfile, "isCoreSdk").mockReturnValue(true);
+		settings = Settings.isolated({ "memory.backend": "mnemopi", "mnemopi.scoping": "global" });
+		const toolSession = {
+			settings,
+			getMnemopiSessionState: () => session && getMnemopiSessionState(session),
+		} as unknown as ToolSession;
+		const current = createSession(async () => {
+			const tools = await Promise.all(MEMORY_BACKEND_TOOL_NAMES.map(name => BUILTIN_TOOLS[name](toolSession)));
+			return tools.filter((tool): tool is AgentTool => tool !== null);
+		});
+		await current.applyMemoryBackend();
+		expect(current.getToolByName("retain")).toBeUndefined();
+		expect(current.getToolByName("recall")).toBeUndefined();
+		cfgMnemopiNoEmbeddings.override(settings, true);
+		cfgMnemopiLlmMode.override(settings, "none");
+		await current.settleMemoryBackend();
+		await current.getToolByName("retain")!.execute("recovery", {
+			items: [{ content: "Aster observatory uses a copper telescope" }],
+		});
+		const recalled = await current.getToolByName("recall")!.execute("recovery", { query: "copper telescope" });
+		expect(recalled.content.some(block => block.type === "text" && block.text.includes("Aster observatory"))).toBe(
+			true,
+		);
+	});
+
+	it.each(["complete", "reject"] as const)(
+		"does not resurrect initial Mnemopi startup or its %s result after memory switches off",
+		async outcome => {
+			spyOn(sdkProfile, "isCoreSdk").mockReturnValue(true);
+			// Keep ambient service credentials out of this controlled pending-provider boundary.
+			spyOn(cfgMnemopiEmbeddingApiKey, "get").mockReturnValue(undefined);
+			const dbPath = tempDir.join("pending-memory.db");
+			settings = Settings.isolated({
+				"memory.backend": "mnemopi",
+				"mnemopi.scoping": "global",
+				"mnemopi.dbPath": dbPath,
+				"mnemopi.embeddingApiUrl": "https://openrouter.ai/api/v1",
+				"mnemopi.embeddingModel": "openai/text-embedding-3-small",
+				"mnemopi.llmMode": "none",
+			});
+			let originalPrompt: string[];
+			const current = createSession(
+				async () => (getMnemopiSessionState(current) ? [createTool("retain")] : []),
+				async () => {
+					const instructions = await mnemopiBackend.buildDeveloperInstructions(
+						tempDir.path(),
+						tempDir.path(),
+						settings,
+						current,
+					);
+					return { systemPrompt: instructions ? [instructions] : originalPrompt };
+				},
+			);
+			originalPrompt = current.agent.state.systemPrompt;
+			const started = Promise.withResolvers<void>();
+			const credentials = Promise.withResolvers<string | undefined>();
+			const notices: string[] = [];
+			current.subscribe(event => {
+				if (event.type === "notice" && event.source === "memory") notices.push(event.message);
+			});
+			spyOn(current.modelRegistry, "getApiKeyForProvider").mockImplementationOnce(() => {
+				started.resolve();
+				return credentials.promise;
+			});
+			const initializing = current.initializeMemoryBackend();
+			await started.promise;
+			cfgMemoryBackend.override(settings, "off");
+			const settled = current.settleMemoryBackend();
+			if (outcome === "reject") credentials.reject(new Error("Retired credential lookup failed"));
+			else credentials.resolve(undefined);
+			await Promise.all([initializing, settled]);
+			expect(getMnemopiSessionState(current)).toBeUndefined();
+			expect(current.getToolByName("retain")).toBeUndefined();
+			expect(current.getEnabledToolNames()).toEqual(["read"]);
+			expect(current.agent.state.systemPrompt).toEqual(originalPrompt);
+			expect(
+				await mnemopiBackend.buildDeveloperInstructions(tempDir.path(), tempDir.path(), settings, current),
+			).toBeUndefined();
+			expect(
+				(await mnemopiBackend.status!({ agentDir: tempDir.path(), cwd: tempDir.path(), session: current })).error,
+			).toBeUndefined();
+			expect(notices).toEqual([]);
+			expect(await Bun.file(dbPath).exists()).toBe(false);
+		},
+	);
+
+	it("keeps pending Mnemopi initialization usable when an inactive backend's settings change", async () => {
+		settings = Settings.isolated({
+			"memory.backend": "mnemopi",
+			"mnemopi.scoping": "global",
+			"mnemopi.noEmbeddings": true,
+			"mnemopi.llmMode": "none",
+			"mnemopi.autoRetain": false,
+		});
+		const toolSession = {
+			settings,
+			getMnemopiSessionState: () => session && getMnemopiSessionState(session),
+		} as unknown as ToolSession;
+		const current = createSession(async () => {
+			const tools = await Promise.all(MEMORY_BACKEND_TOOL_NAMES.map(name => BUILTIN_TOOLS[name](toolSession)));
+			return tools.filter((tool): tool is AgentTool => tool !== null);
+		});
+		const started = Promise.withResolvers<void>();
+		const release = Promise.withResolvers<void>();
+		const start = mnemopiBackend.start;
+		spyOn(mnemopiBackend, "start").mockImplementationOnce(async options => {
+			started.resolve();
+			await release.promise;
+			await start(options);
+		});
+		const initializing = current.initializeMemoryBackend();
+		await started.promise;
+		cfgHindsightApiUrl.override(settings, "https://unused-hindsight.example");
+		const settled = current.settleMemoryBackend();
+		release.resolve();
+		await Promise.all([initializing, settled]);
+		await current.getToolByName("retain")!.execute("unrelated-config-retain", {
+			items: [{ content: "Aster observatory uses a copper telescope" }],
+		});
+		const recalled = await current
+			.getToolByName("recall")!
+			.execute("unrelated-config-recall", { query: "copper telescope" });
+		expect(recalled.content.some(block => block.type === "text" && block.text.includes("Aster observatory"))).toBe(
+			true,
+		);
+	});
+
+	it("does not publish tools from delayed initial memory presentation after disposal begins", async () => {
+		cfgMemoryBackend.override(settings, "mnemopi");
+		const started = Promise.withResolvers<void>();
+		const created = Promise.withResolvers<AgentTool[]>();
+		const current = createSession(async () => {
+			started.resolve();
+			return created.promise;
+		});
+		const pending = current.initializeMemoryBackend();
+		await started.promise;
+		current.beginDispose();
+		created.resolve([createTool("retain")]);
+		await pending;
+		expect(current.getToolByName("retain")).toBeUndefined();
+		expect(current.getEnabledToolNames()).toEqual(["read"]);
 	});
 
 	it("applies memory settings edited mid-session before the next prompt", async () => {

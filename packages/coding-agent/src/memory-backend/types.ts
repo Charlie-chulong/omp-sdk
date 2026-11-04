@@ -82,14 +82,19 @@ export interface MemoryRuntimeContext {
 	save(input: string | MemoryBackendSaveInput): Promise<MemoryBackendSaveResult>;
 }
 
-export interface MemoryBackendStartOptions {
+export interface MemoryBackendInheritance {
+	parentHindsightSessionState?: HindsightSessionState;
+	parentMnemopiSessionState?: MnemopiSessionState;
+}
+
+export interface MemoryBackendStartOptions extends MemoryBackendInheritance {
 	session: AgentSession;
 	settings: Settings;
 	modelRegistry: ModelRegistry;
 	agentDir: string;
 	taskDepth: number;
-	parentHindsightSessionState?: HindsightSessionState;
-	parentMnemopiSessionState?: MnemopiSessionState;
+	/** False once configuration, session identity, cwd or lifecycle ownership changes during async startup. */
+	isCurrent?: () => boolean;
 }
 
 /** A successful recall, including an empty result, staged until user-turn delivery. */

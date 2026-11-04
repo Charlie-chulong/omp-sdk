@@ -558,6 +558,9 @@ export class MnemopiSessionState {
 	budgetRecallBlock(block: string): string {
 		const instructions = prompt.render(mnemopiInstructions, {
 			toolRefs: memoryToolRefs(this.session.getXdevToolEntries()),
+			noEmbeddings: this.config.providerOptions.noEmbeddings,
+			noLlm: this.config.llmMode === "none",
+			autoRetain: this.config.autoRetain,
 		});
 		return truncateApproxTokens(
 			[instructions, block].join("\n\n").trim(),

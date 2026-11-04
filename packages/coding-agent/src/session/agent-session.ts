@@ -212,6 +212,7 @@ import type { IrcMessage } from "@oh-my-pi/pi-tui/tools/irc";
 import type { JobWidgetEntry } from "@oh-my-pi/pi-tui/tools/job-widget";
 import type { DaemonCompletionNotification } from "../launch/protocol";
 import { MEMORY_RECALL_CHANGES_MESSAGE_TYPE } from "../memory-backend/recall-entry";
+import type { MemoryBackendInheritance } from "../memory-backend/types";
 import { shutdownMnemopiEmbedClient } from "../mnemopi/embed-client";
 import { getMnemopiSessionState, type MnemopiSessionState, setMnemopiSessionState } from "../mnemopi/state";
 import { MAGIC_KEYWORDS, type MagicKeywordContext, type MagicKeywordId } from "../modes/magic-keywords";
@@ -2270,8 +2271,14 @@ export class AgentSession implements SettingsScope {
 				this.#tools.setBaseSystemPrompt(prompt);
 				this.agent.setSystemPrompt(prompt);
 			},
-			refreshBaseSystemPrompt: () => this.#tools.refreshBaseSystemPrompt(),
-			replaceMemoryTools: tools => this.#tools.replaceMemoryTools(tools),
+			refreshBaseSystemPrompt: commitIf => this.#tools.refreshBaseSystemPrompt(commitIf),
+			replaceMemoryTools: async (tools, commitIf) => {
+				await this.#tools.replaceMemoryTools(tools, commitIf);
+				if (commitIf && !commitIf()) return;
+				const advisorTools = await config.createAdvisorMemoryTools?.();
+				if (commitIf && !commitIf()) return;
+				if (advisorTools) this.#advisors.replaceMemoryTools(advisorTools);
+			},
 		};
 		this.#memory = new SessionMemory(memoryHost, {
 			memoryEnabled: this.memoryEnabled,
@@ -7272,6 +7279,12 @@ export class AgentSession implements SettingsScope {
 	/** Resolves once every memory-setting edit so far, and the backend transitions it started, has settled. */
 	settleMemoryBackend(): Promise<void> {
 		return this.#memory.settle();
+	}
+
+	/** Serialize initial memory startup with reconfiguration and retain inherited parent-state aliases. */
+	initializeMemoryBackend(inherited: MemoryBackendInheritance = {}): Promise<void> {
+		if (!this.memoryEnabled) return Promise.resolve();
+		return this.#memory.initialize(inherited);
 	}
 
 	/** Rebuilds the stable base prompt, optionally discarding a stale asynchronous rebuild. */
