@@ -142,6 +142,28 @@
 				"clientOmit": []
 			},
 			{
+				"name": "get_runtime_resources",
+				"doc": "List the actual resources retained by this session without starting new kernels.",
+				"params": null,
+				"result": "GetRuntimeResourcesResult",
+				"nullable": false,
+				"unwrap": "resources",
+				"timeoutMs": null,
+				"completion": null,
+				"clientOmit": []
+			},
+			{
+				"name": "release_runtime_resource",
+				"doc": "Release one idle owned resource; active or shared work is rejected.",
+				"params": "ReleaseRuntimeResourceParams",
+				"result": "ReleaseRuntimeResourceResult",
+				"nullable": false,
+				"unwrap": "released",
+				"timeoutMs": null,
+				"completion": null,
+				"clientOmit": []
+			},
+			{
 				"name": "set_approval_mode",
 				"doc": "Change session-only tool approval mode immediately, without interrupting an active turn.",
 				"params": "SetApprovalModeParams",
@@ -2345,6 +2367,62 @@
 				"aborted"
 			],
 			"type": "string"
+		},
+		"RuntimeResource": {
+			"type": "object",
+			"properties": {
+				"id": {
+					"type": "string"
+				},
+				"kind": {
+					"enum": [
+						"python_kernel",
+						"javascript_kernel",
+						"shell",
+						"helper"
+					],
+					"type": "string"
+				},
+				"ownerSessionId": {
+					"type": "string"
+				},
+				"state": {
+					"enum": [
+						"starting",
+						"running",
+						"retained",
+						"stopping"
+					],
+					"type": "string"
+				},
+				"retentionReasons": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					}
+				},
+				"liveHandles": {
+					"type": "integer"
+				},
+				"releasable": {
+					"type": "boolean"
+				},
+				"ownerAgentId": {
+					"type": "string"
+				},
+				"pid": {
+					"type": "integer"
+				}
+			},
+			"required": [
+				"id",
+				"kind",
+				"ownerSessionId",
+				"state",
+				"retentionReasons",
+				"liveHandles",
+				"releasable"
+			]
 		},
 		"TodoItem": {
 			"type": "object",
@@ -6203,6 +6281,42 @@
 			},
 			"required": [
 				"sessionDir"
+			]
+		},
+		"GetRuntimeResourcesResult": {
+			"type": "object",
+			"properties": {
+				"resources": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/RuntimeResource"
+					}
+				}
+			},
+			"required": [
+				"resources"
+			]
+		},
+		"ReleaseRuntimeResourceParams": {
+			"type": "object",
+			"properties": {
+				"resourceId": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"resourceId"
+			]
+		},
+		"ReleaseRuntimeResourceResult": {
+			"type": "object",
+			"properties": {
+				"released": {
+					"type": "boolean"
+				}
+			},
+			"required": [
+				"released"
 			]
 		},
 		"SetApprovalModeParams": {

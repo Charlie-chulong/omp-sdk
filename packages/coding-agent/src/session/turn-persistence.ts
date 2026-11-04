@@ -19,6 +19,24 @@
  */
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 
+const kPersistedSessionEntryId = Symbol("persistedSessionEntryId");
+type PersistedMessage = AgentMessage & { [kPersistedSessionEntryId]?: string };
+
+/** The exact journal entry a message came from; content keys alone can collide. */
+export function getPersistedSessionEntryId(message: AgentMessage): string | undefined {
+	return (message as PersistedMessage)[kPersistedSessionEntryId];
+}
+
+export function setPersistedSessionEntryId(message: AgentMessage, entryId: string): void {
+	(message as PersistedMessage)[kPersistedSessionEntryId] = entryId;
+}
+
+/** Preserve source identity while detaching provider-owned JSON containers. */
+export function copyPersistedSessionEntryId(target: AgentMessage, source: AgentMessage): void {
+	const entryId = getPersistedSessionEntryId(source);
+	if (entryId !== undefined) setPersistedSessionEntryId(target, entryId);
+}
+
 /**
  * Stable identity for messages that pass through {@link AgentSession}'s
  * incremental persistence path.

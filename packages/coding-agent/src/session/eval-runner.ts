@@ -2,19 +2,29 @@ import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { Agent } from "@oh-my-pi/pi-agent-core";
 import { logger } from "@oh-my-pi/pi-utils";
 import type { Settings } from "../config/settings";
-import { disposeVmContextsByOwner } from "../eval/js/context-manager";
+import {
+	disposeVmContextsByOwner,
+	getJavaScriptRuntimeResources,
+	reapOrphanedJavaScriptKernels,
+	releaseJavaScriptRuntimeResource,
+} from "../eval/js/context-manager";
+import { disposeCompletionRuntimeResources } from "../eval/completion-bridge";
+import { disposeJudgmentBatchRuntimeResources } from "../eval/judgment-batch-bridge";
 import { namespaceSessionId as namespacePythonSessionId } from "../eval/py";
 import {
 	disposeKernelSessionsByOwner,
+	getPythonRuntimeResources,
+	reapOrphanedPythonKernels,
+	releasePythonRuntimeResource,
 	executePython as executePythonCommand,
 	type PythonResult,
 } from "../eval/py/executor";
-import { defaultEvalSessionId } from "../eval/session-id";
 import type { ExtensionRunner } from "../extensibility/extensions";
 import type { ToolSession } from "../tools";
 import { outputMeta } from "../tools/output-meta";
 import type { PythonExecutionMessage } from "./messages";
 import type { SessionManager } from "./session-manager";
+import type { RuntimeResource } from "./runtime-resources";
 
 import { cfgPythonInterpreter, cfgPythonKernelMode } from "../eval/settings";
 
@@ -157,12 +167,23 @@ export class EvalRunner {
 		return this.#kernelOwnerId;
 	}
 
-	/** Returns this session's eval executor id, shared by the eval tool and user Python shortcuts. */
+	async getRuntimeResources(): Promise<RuntimeResource[]> {
+		await Promise.all([reapOrphanedPythonKernels(), reapOrphanedJavaScriptKernels()]);
+		return [...getPythonRuntimeResources(this.#kernelOwnerId), ...getJavaScriptRuntimeResources(this.#kernelOwnerId)];
+	}
+
+	async releaseRuntimeResource(resourceId: string): Promise<void> {
+		this.assertExecutionAllowed();
+		if (this.isRunning) throw new Error("Eval execution is active; stop it before releasing kernel variables");
+		const resource = (await this.getRuntimeResources()).find(item => item.id === resourceId);
+		if (!resource) throw new Error("Eval resource not found for this session");
+		if (resource.kind === "python_kernel") await releasePythonRuntimeResource(this.#kernelOwnerId, resourceId);
+		else await releaseJavaScriptRuntimeResource(this.#kernelOwnerId, resourceId);
+	}
+
+	/** Shares one owner-scoped executor across transcript branches, while isolating working directories. */
 	getSessionId(): string {
-		return defaultEvalSessionId({
-			cwd: this.#host.sessionManager.getCwd(),
-			getSessionFile: () => this.#host.sessionManager.getSessionFile() ?? null,
-		});
+		return `owner:${this.#kernelOwnerId}:cwd:${this.#host.sessionManager.getCwd()}`;
 	}
 
 	/** Flushes deferred Python results into agent state and persistence. */
@@ -186,6 +207,8 @@ export class EvalRunner {
 		const results = await Promise.allSettled([
 			disposeKernelSessionsByOwner(this.#kernelOwnerId, options),
 			disposeVmContextsByOwner(this.#kernelOwnerId, options),
+			disposeCompletionRuntimeResources(this.#kernelOwnerId),
+			disposeJudgmentBatchRuntimeResources(this.#kernelOwnerId),
 		]);
 		const errors: unknown[] = [];
 		for (const result of results) if (result.status === "rejected") errors.push(result.reason);

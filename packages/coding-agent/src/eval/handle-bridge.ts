@@ -82,7 +82,11 @@ function resolveHandle(ref: EvalHandleRef, options: EvalHandleBridgeOptions): Re
 		return { ref, job, manager };
 	}
 	const completion = getCompletionHandle(ref.id);
-	if (!completion || completion.ownerId !== ownerId) {
+	if (
+		!completion ||
+		completion.ownerId !== ownerId ||
+		completion.kernelOwnerId !== (options.session.getEvalKernelOwnerId?.() ?? undefined)
+	) {
 		throw new ToolError(`unknown completion handle ${ref.id}; result expired`);
 	}
 	return { ref, completion };

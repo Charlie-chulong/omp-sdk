@@ -33,6 +33,7 @@ import type { Settings } from "../config/settings";
 import { MAIN_AGENT_ID } from "../registry/agent-registry";
 import { Semaphore } from "../task/parallel";
 import type { ToolSession } from "../tools";
+import type { RuntimeResource } from "../session/runtime-resources";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import {
 	findRetryFallbackCandidates,
@@ -94,6 +95,8 @@ export interface EvalCompletionHandleResult {
 /** Process-local state retained for one eval completion handle. */
 export interface CompletionHandleEntry {
 	ownerId: string;
+	kernelOwnerId?: string;
+	ownerSessionId: string;
 	controller: AbortController;
 	promise: Promise<void>;
 	settled: boolean;
@@ -121,15 +124,61 @@ export function getCompletionHandle(id: string): CompletionHandleEntry | undefin
 	return completionHandles.get(id);
 }
 
+export function getCompletionRuntimeResources(kernelOwnerId: string): RuntimeResource[] {
+	const resources: RuntimeResource[] = [];
+	for (const [id, entry] of completionHandles) {
+		if (entry.kernelOwnerId !== kernelOwnerId) continue;
+		resources.push({
+			id,
+			kind: "helper",
+			ownerSessionId: entry.ownerSessionId,
+			ownerAgentId: entry.ownerId,
+			state: entry.settled ? "retained" : "running",
+			liveHandles: entry.settled ? 0 : 1,
+			retentionReasons: [entry.settled ? "helper_result" : "live_execution"],
+			releasable: entry.settled,
+		});
+	}
+	return resources;
+}
+
+export function releaseCompletionRuntimeResource(kernelOwnerId: string, resourceId: string): void {
+	const entry = completionHandles.get(resourceId);
+	if (!entry || entry.kernelOwnerId !== kernelOwnerId)
+		throw new ToolError("Completion resource not found for this owner");
+	if (!entry.settled) throw new ToolError("Completion is running; cancel or wait for it before releasing its result");
+	clearTimeout(entry.evictionTimer);
+	completionHandles.delete(resourceId);
+}
+
+/** Session disposal cancels only handles attached to its stable kernel owner and awaits their requests. */
+export async function disposeCompletionRuntimeResources(kernelOwnerId: string): Promise<void> {
+	const pending: Promise<void>[] = [];
+	for (const [id, entry] of completionHandles) {
+		if (entry.kernelOwnerId !== kernelOwnerId) continue;
+		entry.controller.abort(new ToolError("Completion runtime owner disposed"));
+		pending.push(
+			entry.promise.then(() => {
+				clearTimeout(entry.evictionTimer);
+				if (completionHandles.get(id) === entry) completionHandles.delete(id);
+			}),
+		);
+	}
+	await Promise.all(pending);
+}
+
 /** Cancel and remove every completion handle, retaining actual request settlement for its owner. */
 export function releaseCompletionHandles(ownerId: string): Promise<void> {
 	const pending: Promise<void>[] = [];
 	for (const [id, entry] of completionHandles) {
 		if (entry.ownerId !== ownerId) continue;
 		entry.controller.abort(new ToolError("Completion handle owner released"));
-		pending.push(entry.promise);
-		clearTimeout(entry.evictionTimer);
-		completionHandles.delete(id);
+		pending.push(
+			entry.promise.then(() => {
+				clearTimeout(entry.evictionTimer);
+				if (completionHandles.get(id) === entry) completionHandles.delete(id);
+			}),
+		);
 	}
 	return Promise.all(pending).then(() => {});
 }
@@ -479,6 +528,8 @@ export function retainCompletionHandle(
 	const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
 	const entry: CompletionHandleEntry = {
 		ownerId,
+		kernelOwnerId: options.session.getEvalKernelOwnerId?.() ?? undefined,
+		ownerSessionId: options.session.getSessionId?.() ?? ownerId,
 		controller,
 		promise: Promise.resolve(),
 		settled: false,

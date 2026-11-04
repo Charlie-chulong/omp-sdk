@@ -2279,6 +2279,14 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 			// State
 			// =================================================================
 
+			case "get_runtime_resources":
+				return success(id, "get_runtime_resources", { resources: await session.getRuntimeResources() });
+			case "release_runtime_resource":
+				if (typeof command.resourceId !== "string" || !command.resourceId)
+					return error(id, "release_runtime_resource", "resourceId must be a nonempty string");
+				await session.releaseRuntimeResource(command.resourceId);
+				return success(id, "release_runtime_resource", { released: true });
+
 			case "get_state": {
 				// A goal exit triggered by the last turn restores tools asynchronously; report after it.
 				await goalController.settled();

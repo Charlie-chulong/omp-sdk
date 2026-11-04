@@ -166,8 +166,7 @@ async function status(session: ToolSession, id: string): Promise<JudgmentBatchSt
 }
 
 afterEach(async () => {
-	releaseJudgmentBatches("Main");
-	releaseJudgmentBatches("Other");
+	await Promise.all([releaseJudgmentBatches("Main"), releaseJudgmentBatches("Other")]);
 	for (const manager of managers) await manager.dispose();
 	managers.clear();
 	vi.restoreAllMocks();
@@ -596,7 +595,7 @@ describe("judge_batch bridge", () => {
 			runEvalJudgmentBatch({ op: "attach", id: created.id }, { session: makeSession({ agentId: "Other" }).session }),
 		).rejects.toThrow(`unknown judge_batch "${created.id}"`);
 
-		releaseJudgmentBatches("Main");
+		await releaseJudgmentBatches("Main");
 		await expect(runEvalJudgmentBatch({ op: "attach", id: created.id }, { session })).rejects.toThrow(
 			`unknown judge_batch "${created.id}"`,
 		);

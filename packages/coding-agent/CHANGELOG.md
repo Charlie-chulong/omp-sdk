@@ -11,6 +11,7 @@
 - Added Node SDK plugin-management commands and Desktop provider-helper imports without requiring an OMP executable or bundled Bun runtime.
 - Added runtime plugin startup checks and `omp plugin check --fix` to persistently disable failing plugins while preserving healthy plugins, scope, settings, and feature selection.
 - Added `createAgentSession({ proxyPolicy })`, `session.setProxyPolicy()` / `getProxyPolicy()`, and RPC `set_proxy_policy` for isolated live conversation routing inherited by nested sessions.
+- Added explicit runtime resource inventory and release through `AgentSession.getRuntimeResources()` / `releaseRuntimeResource(resourceId)` and RPC `get_runtime_resources` / `release_runtime_resource`, reporting ownership, live handles, retention reasons and releasability; busy/shared resources and background dependencies refuse destructive release.
 - Added queueable compaction: `/compact` sent with the follow-up key (Ctrl+Q) while the agent works now runs when it yields instead of interrupting it ([#17397](https://github.com/can1357/oh-my-pi/pull/17397) by [@H4vC](https://github.com/H4vC))
 
 ### Changed
@@ -20,8 +21,15 @@
 - Desktop packaging now validates an isolated native addon and excludes full-native platform leaf packages, while generic SDK and Bun CLI defaults retain full native features.
 - Source SDK builds now reuse unchanged artifacts and dependency file lists, with uncompressed development staging kept separate from validated release archives.
 - Node SDK plugins, custom tools/commands, and eval now execute JavaScript only, removing the runtime TypeScript compiler dependency; TS/TSX/JSX extensions must be precompiled. Bun CLI TypeScript support and source-file read/write/edit remain unchanged.
+- File-backed history now uses bounded lazy entry facades, 8 MiB hot-body retention and an 8 MiB body LRU with persisted-source rereads; complete `File` bodies remain persisted without generic tool-text truncation, preserving image externalization and private-field stripping.
+- Cold history can reuse the selected Node build's indexed-session-journal export without launching an SDK host. Initial index/catalog scanning and warm small-page I/O are distinct costs; absent dynamic metadata snapshots remain explicitly unavailable.
+- Safe unload preserves active/admitted work, unconfirmed content, permissions, background dependencies and retained variables: inventory, persistence drain, inventory again, then a synchronous admission guard. Desktop's stable `desktop:<agentId>` owner survives rewind; idle eligibility remains five minutes with a 30-second recheck. Retained-entry release is terminal and only follows disposal.
+- Body accounting budgets are not JavaScript heap, macOS `phys_footprint`, or Windows process commit measurements and do not enlarge the compressed 4 GiB V8 cage or establish native-platform qualification.
 
 ### Fixed
+
+- Fixed conversation rewind leaving retained Python/JavaScript kernels in inventory but routing the next eval to empty replacement kernels; executor identity now follows the stable runtime owner and cwd rather than the branched transcript path.
+- Fixed active shell inventory blocking behind the native run lock until work finished; running shells now report their live execution/PIDs immediately and remain nonreleasable.
 
 - Fixed asynchronous subprocess stdin-close rejections during MCP cleanup and Python kernel shutdown terminating session RPC processes; teardown observes failures without waiting for stalled input.
 - Fixed pipe-backed daemon sends leaking backpressure write rejections instead of returning the failure to the caller.

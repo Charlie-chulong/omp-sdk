@@ -104,6 +104,7 @@ import type { CatalogPolicyInputs } from "@oh-my-pi/pi-catalog/types";
 import { type EditStore, type PowerAssertion, type PowerAssertionOptions } from "@oh-my-pi/pi-natives";
 import {
 	$env,
+	cloneJsonTree,
 	escapeXmlText,
 	formatDuration,
 	getAgentDbPath,
@@ -146,13 +147,29 @@ import { combine, type SettingsScope } from "../config/registry";
 import { type Settings, withActiveSettings } from "../config/settings";
 import { RawSseDebugBuffer } from "@oh-my-pi/pi-tui/apps/debug/raw-sse-buffer";
 import { getEditStore } from "../edit/store";
-import { releaseCompletionHandles } from "../eval/completion-bridge";
-import { releaseJudgmentBatches } from "../eval/judgment-batch-bridge";
+import {
+	getCompletionRuntimeResources,
+	releaseCompletionHandles,
+	releaseCompletionRuntimeResource,
+} from "../eval/completion-bridge";
+import {
+	getJudgmentBatchRuntimeResources,
+	releaseJudgmentBatches,
+	releaseJudgmentBatchRuntimeResource,
+} from "../eval/judgment-batch-bridge";
 import type { EvalPreludeDefinition } from "../eval/preludes";
 import type { PythonResult } from "../eval/py/executor";
 import { EVAL_STATE_CONTEXT_TYPE, formatEvalStateContext, isEvalStateContext } from "../eval/state";
 import { WorkPoolRegistry } from "../task/workpool";
-import { type BashPtyOptions, type BashResult, releaseShellSessions, stopShellSessions } from "../exec/bash-executor";
+import type { RuntimeResource } from "./runtime-resources";
+import { hasLiveOwnedService } from "../launch/services";
+import {
+	type BashPtyOptions,
+	type BashResult,
+	getShellRuntimeResources,
+	releaseShellRuntimeResource,
+	stopShellSessions,
+} from "../exec/bash-executor";
 import type { TtsrManager } from "../export/ttsr";
 import type { LoadedCustomCommand } from "../extensibility/custom-commands";
 import type { CustomTool } from "../extensibility/custom-tools/types";
@@ -488,7 +505,12 @@ import { SessionTools, type SessionToolsHost } from "./session-tools";
 import { resolveOpenAIWebsocketPreference } from "./settings-stream-fn";
 import type { ShakeMode, ShakeResult } from "./shake-types";
 import { ToolChoiceQueue } from "./tool-choice-queue";
-import { planTurnPersistence, sameMessageContent, sessionMessagePersistenceKey } from "./turn-persistence";
+import {
+	getPersistedSessionEntryId,
+	planTurnPersistence,
+	sameMessageContent,
+	sessionMessagePersistenceKey,
+} from "./turn-persistence";
 import { TurnRecovery, type TurnRecoveryHost } from "./turn-recovery";
 import { YieldQueue } from "./yield-queue";
 
@@ -801,9 +823,6 @@ interface TitleInput {
 	tried: boolean;
 }
 
-const kPersistedSessionEntryId = Symbol("persistedSessionEntryId");
-type PersistedAssistantMessage = AssistantMessage & { [kPersistedSessionEntryId]?: string };
-
 const INTERRUPTED_THINKING_MIN_CHARS = 60;
 const SESSION_CWD_CHANGE_REJECTED = Symbol("sessionCwdChangeRejected");
 
@@ -1112,6 +1131,7 @@ export class AgentSession implements SettingsScope {
 	#agentKind: "main" | "sub" = "main";
 	#scoutAllowedBySpawnPolicy = true;
 	#providerSessionId: string | undefined;
+	readonly #serviceOwnerId: string | undefined;
 	#freshProviderSessionId: string | undefined;
 	/** OAuth account pools enforced on this session's key lookups; lifted on dispose. */
 	#accountPoolScope: SessionAccountPoolScope | undefined;
@@ -1990,6 +2010,8 @@ export class AgentSession implements SettingsScope {
 			settings: this.settings,
 			extensionRunner: () => this.#extensionRunner,
 			isStreaming: () => this.isStreaming,
+			getKernelOwnerId: () => this.#eval.getKernelOwnerId(),
+			isDisposed: () => this.#isDisposed,
 		};
 		this.#bash = new BashRunner(bashHost);
 		// Power assertions are taken per turn (see #beginInFlight); nothing acquired here.
@@ -2177,7 +2199,7 @@ export class AgentSession implements SettingsScope {
 			scheduleAgentContinue: options => this.#scheduleAgentContinue(options),
 			waitForSessionMessagePersistence: message => this.#waitForSessionMessagePersistence(message),
 			appendSessionMessage: message => this.#appendSessionMessage(message),
-			persistedAssistantEntryId: message => (message as PersistedAssistantMessage)[kPersistedSessionEntryId],
+			persistedAssistantEntryId: getPersistedSessionEntryId,
 			sessionMessageAlreadyPersisted: message => this.#sessionMessageAlreadyPersisted(message),
 			setModelWithProviderSessionReset: model => this.#setModelWithProviderSessionReset(model),
 			resolveActiveEditMode: () => this.#tools.resolveActiveEditMode(),
@@ -2373,8 +2395,7 @@ export class AgentSession implements SettingsScope {
 			},
 		});
 		this.yieldQueue.register<LaunchCompletionEntry>(LAUNCH_COMPLETION_MESSAGE_TYPE, {
-			isStale: entry =>
-				this.#isDisposed || !isLaunchCompletionOwner(entry.owner, this.sessionManager.getSessionId()),
+			isStale: entry => this.#isDisposed || !isLaunchCompletionOwner(entry.owner, this.getServiceOwnerId()),
 			build: buildLaunchCompletionBatchMessage,
 		});
 		// Background-job completions / late diagnostics are pulled into the run at
@@ -2540,6 +2561,7 @@ export class AgentSession implements SettingsScope {
 		this.#textOutputCommitted = this.#agentKind === "main";
 		this.#scoutAllowedBySpawnPolicy = config.scoutAllowedBySpawnPolicy ?? true;
 		this.#providerSessionId = config.providerSessionId;
+		this.#serviceOwnerId = config.serviceOwnerId;
 		this.#accountPoolScope = config.accountPoolScope;
 		this.#inheritedProviderPromptCacheKey =
 			config.providerPromptCacheKeySource === "fork" ? this.agent.promptCacheKey : undefined;
@@ -3119,6 +3141,11 @@ export class AgentSession implements SettingsScope {
 
 	getAgentId(): string | undefined {
 		return this.#agentId;
+	}
+
+	/** Supervisor ownership remains stable while the embedded conversation rewrites its transcript. */
+	getServiceOwnerId(): string {
+		return this.#serviceOwnerId ?? this.sessionManager.getSessionId();
 	}
 
 	/** Dequeue the next HARD forced tool choice for the upcoming LLM call, dropping
@@ -4165,9 +4192,6 @@ export class AgentSession implements SettingsScope {
 		// A digest entry carries no persistence key, so the memo stays valid across it.
 		if (message.role === "assistant") this.#tools.recordReplyPrompt(message);
 		const entryId = this.sessionManager.appendMessage(message);
-		if (message.role === "assistant") {
-			(message as PersistedAssistantMessage)[kPersistedSessionEntryId] = entryId;
-		}
 		const key = sessionMessagePersistenceKey(message);
 		if (wasFresh && cache && key) {
 			cache.keys.add(key);
@@ -6416,10 +6440,11 @@ export class AgentSession implements SettingsScope {
 			logger.warn("Session dispose: Sharpshooter release failed", { error: String(error) });
 		}
 		const advisorRecorderClosed = this.#advisors.recorderClosed();
-		releaseShellSessions(this.sessionManager.getSessionId());
+		await this.#bash.abortAndWait();
 		const results = await Promise.allSettled([
 			this.#disposeOwnedAsyncJobs(),
 			this.#eval.disposeKernels(),
+			stopShellSessions(this.#eval.getKernelOwnerId()),
 			this.#releaseOwnedBrowserTabs(this.sessionManager.getSessionId()),
 			this.#releaseOwnedComputerSessions(this.#eval.getKernelOwnerId()),
 			this.#disconnectOwnedMcp(),
@@ -6865,7 +6890,9 @@ export class AgentSession implements SettingsScope {
 	prewarmModelConnection(): void {
 		const model = this.model;
 		if (!model || this.#isDisposed || this.isStreaming) return;
-		void withProxyPolicy(this.proxyController, () => withProxyProvider(model.provider, () => prewarmModelConnection(model)));
+		void withProxyPolicy(this.proxyController, () =>
+			withProxyProvider(model.provider, () => prewarmModelConnection(model)),
+		);
 	}
 
 	get isAborting(): boolean {
@@ -7545,6 +7572,54 @@ export class AgentSession implements SettingsScope {
 	}
 	getEvalKernelOwnerId(): string {
 		return this.#eval.getKernelOwnerId();
+	}
+
+	/** Safe unload must retain these non-persisted variables and their live dependencies. */
+	async getRuntimeResources(): Promise<RuntimeResource[]> {
+		const owner = this.#eval.getKernelOwnerId();
+		const resources = [
+			...(await this.#eval.getRuntimeResources()),
+			...(await getShellRuntimeResources(owner)),
+			...getCompletionRuntimeResources(owner),
+			...getJudgmentBatchRuntimeResources(owner),
+		];
+		const pending =
+			this.agent.state.pendingToolCalls.size > 0 || this.isBusyForSnapshot || this.isSessionTransitioning;
+		const background =
+			(this.#asyncJobManager?.getRunningJobs(this.#agentId ? { ownerId: this.#agentId } : undefined).length ?? 0) >
+				0 ||
+			(this.#evalToolSession !== undefined && hasLiveOwnedService(this.#evalToolSession)) ||
+			resources.some(resource => resource.kind === "helper" && resource.state === "running");
+		for (const resource of resources) {
+			resource.ownerAgentId = this.#agentId ?? resource.ownerAgentId;
+			if (resource.kind === "shell") resource.ownerSessionId = this.sessionId;
+			if (pending) resource.retentionReasons.push("pending_tool");
+			if (background) resource.retentionReasons.push("background_dependency");
+			resource.releasable &&= !pending && !background;
+		}
+		return resources;
+	}
+
+	/** Explicit user action: releases just this kernel/shell and permanently discards its variables. */
+	async releaseRuntimeResource(resourceId: string): Promise<void> {
+		const resource = (await this.getRuntimeResources()).find(item => item.id === resourceId);
+		if (!resource) throw new Error("Runtime resource not found for this session");
+		if (
+			!resource.releasable ||
+			this.#isDisposed ||
+			this.isBusyForSnapshot ||
+			this.isSessionTransitioning ||
+			this.agent.state.pendingToolCalls.size > 0
+		)
+			throw new Error(
+				"Runtime resource has live work or background dependencies; stop them before releasing variables",
+			);
+		if (resource.kind === "shell") await releaseShellRuntimeResource(this.#eval.getKernelOwnerId(), resourceId);
+		else if (resource.kind === "helper") {
+			if (getCompletionRuntimeResources(this.#eval.getKernelOwnerId()).some(item => item.id === resourceId))
+				releaseCompletionRuntimeResource(this.#eval.getKernelOwnerId(), resourceId);
+			else releaseJudgmentBatchRuntimeResource(this.#eval.getKernelOwnerId(), resourceId);
+		} else await this.#eval.releaseRuntimeResource(resourceId);
 	}
 
 	/** Current session display name, if set */
@@ -11343,7 +11418,7 @@ export class AgentSession implements SettingsScope {
 				const stopped = await Promise.allSettled([
 					ownedStop,
 					this.agent.waitForAbortedProviderCleanup(),
-					stopShellSessions(this.sessionId),
+					stopShellSessions(this.#eval.getKernelOwnerId()),
 				]);
 				const failures = stopped.flatMap(result => (result.status === "rejected" ? [result.reason] : []));
 				await this.waitForAdmittedSubmissions();
@@ -13077,7 +13152,7 @@ export class AgentSession implements SettingsScope {
 		let volatileSuffix = false;
 		if (history?.length) {
 			// Detach before the conversion pipeline can await or mutate caller-owned messages.
-			const detachedHistory = structuredClone(history);
+			const detachedHistory = cloneJsonTree(history);
 			for (const message of detachedHistory) {
 				if (message.role === "custom" && message.customType === IMAGE_ATTACHMENT_DESCRIPTION_TYPE) {
 					volatileSuffix = true;
@@ -14350,20 +14425,22 @@ export class AgentSession implements SettingsScope {
 	async fetchUsageReports(signal?: AbortSignal): Promise<UsageReport[] | null> {
 		const authStorage = this.#modelRegistry.authStorage;
 		if (!authStorage.usage.reports) return null;
-		const reports = await this.#inLogContext(() => authStorage.usage.reports!({
-			baseUrlResolver: provider => {
-				if (provider === "google-antigravity") {
-					const mode = cfgProvidersAntigravityEndpoint.get(this.settings);
-					if (mode === "sandbox") {
-						return "https://daily-cloudcode-pa.sandbox.googleapis.com";
-					} else if (mode === "production") {
-						return "https://daily-cloudcode-pa.googleapis.com";
+		const reports = await this.#inLogContext(() =>
+			authStorage.usage.reports!({
+				baseUrlResolver: provider => {
+					if (provider === "google-antigravity") {
+						const mode = cfgProvidersAntigravityEndpoint.get(this.settings);
+						if (mode === "sandbox") {
+							return "https://daily-cloudcode-pa.sandbox.googleapis.com";
+						} else if (mode === "production") {
+							return "https://daily-cloudcode-pa.googleapis.com";
+						}
 					}
-				}
-				return this.#modelRegistry.getProviderBaseUrl?.(provider);
-			},
-			signal,
-		}));
+					return this.#modelRegistry.getProviderBaseUrl?.(provider);
+				},
+				signal,
+			}),
+		);
 		// Every fresh usage snapshot doubles as the salvage-sweep heartbeat: the
 		// status line calls this every 5 minutes while the TUI is open.
 		if (reports) {
@@ -14425,11 +14502,13 @@ export class AgentSession implements SettingsScope {
 	 * credential. Never throws for business outcomes — inspect `code`.
 	 */
 	async redeemResetCredit(target: ResetCreditTarget, signal?: AbortSignal): Promise<ResetCreditRedeemOutcome> {
-		return this.#inLogContext(() => this.#modelRegistry.authStorage.resets.redeem({
-			target,
-			baseUrlResolver: provider => this.#modelRegistry.getProviderBaseUrl?.(provider),
-			signal,
-		}));
+		return this.#inLogContext(() =>
+			this.#modelRegistry.authStorage.resets.redeem({
+				target,
+				baseUrlResolver: provider => this.#modelRegistry.getProviderBaseUrl?.(provider),
+				signal,
+			}),
+		);
 	}
 
 	/**
@@ -14445,10 +14524,12 @@ export class AgentSession implements SettingsScope {
 		if (provider) {
 			return this.#inLogContext(() => this.#modelRegistry.authStorage.resets.list({ ...options, provider }));
 		}
-		const [codex, claude] = await this.#inLogContext(() => Promise.all([
-			this.#modelRegistry.authStorage.resets.list({ ...options, provider: "openai-codex" }),
-			this.#modelRegistry.authStorage.resets.list({ ...options, provider: "anthropic" }),
-		]));
+		const [codex, claude] = await this.#inLogContext(() =>
+			Promise.all([
+				this.#modelRegistry.authStorage.resets.list({ ...options, provider: "openai-codex" }),
+				this.#modelRegistry.authStorage.resets.list({ ...options, provider: "anthropic" }),
+			]),
+		);
 		return [...codex, ...claude];
 	}
 	/**

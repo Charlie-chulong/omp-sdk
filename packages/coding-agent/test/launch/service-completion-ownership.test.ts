@@ -12,7 +12,15 @@ import {
 	DAEMON_RUNTIME_DIR_ENV,
 	type DaemonCompletionNotification,
 } from "../../src/launch/protocol";
-import { listServices, sendService, startService, waitForOwnedServiceCompletion } from "../../src/launch/services";
+import {
+	hasLiveOwnedService,
+	listServices,
+	sendService,
+	serviceLogs,
+	startService,
+	stopService,
+	waitForOwnedServiceCompletion,
+} from "../../src/launch/services";
 import type { ToolSession } from "../../src/tools";
 import { BashTool } from "../../src/tools/bash";
 
@@ -161,6 +169,74 @@ describe("session-owned supervised services", () => {
 				pendingCompletions: DaemonCompletionNotification[];
 			};
 			expect(metadata.pendingCompletions).toEqual([]);
+		} finally {
+			vi.restoreAllMocks();
+			await client.request({ op: "shutdown" }).catch(() => undefined);
+			client.close();
+			await broker.finished;
+			process.title = previousTitle;
+		}
+	}, 15_000);
+
+	it("keeps a Desktop service leased, readable and stoppable after its transcript rewinds", async () => {
+		using tempDir = TempDir.createSync("@omp-service-rewind-");
+		const projectDir = path.join(tempDir.path(), "project");
+		const runtimeDir = path.join(tempDir.path(), "runtime");
+		await fs.mkdir(projectDir);
+		const client = await brokerClients.createDaemonBrokerClient(projectDir, { runtimeDir, idleGraceMs: 5_000 });
+		const previousTitle = process.title;
+		const broker = await startBroker(projectDir, runtimeDir);
+		let sessionId = "before-rewind";
+		const changes: Array<() => void> = [];
+		const deliveries: DaemonCompletionNotification[] = [];
+		const delivered = Promise.withResolvers<void>();
+		const session: ToolSession = {
+			cwd: projectDir,
+			hasUI: false,
+			settings: Settings.isolated(),
+			getSessionFile: () => null,
+			getSessionSpawns: () => "*",
+			getSessionId: () => sessionId,
+			getAgentId: () => "Main",
+			getServiceOwnerId: () => "desktop:stable-agent",
+			registerSessionChangeCallback: callback => {
+				changes.push(callback);
+			},
+			queueLaunchCompletion: notification => {
+				deliveries.push(notification);
+				delivered.resolve();
+				return Promise.resolve();
+			},
+		};
+		try {
+			vi.spyOn(brokerClients, "daemonClientForProject").mockResolvedValue(client);
+			const started = await startService(session, {
+				name: "rewind-service",
+				command: "echo rewind-service-ready; read answer",
+				pty: false,
+				ready: { log: "rewind-service-ready", timeout: 5 },
+			});
+			sessionId = "after-rewind";
+			for (const change of changes) change();
+			// No list refresh may be needed to recover the live-work lease.
+			expect(hasLiveOwnedService(session)).toBe(true);
+			expect((await listServices(session)).find(row => row.id === started.daemon.id)?.state).toBe("ready");
+			expect(await serviceLogs(session, "rewind-service")).toContain("rewind-service-ready");
+			await sendService(session, "rewind-service", "finish\n");
+			await delivered.promise;
+			expect(deliveries.map(row => [row.owner, row.daemon.id])).toEqual([
+				["desktop:stable-agent", started.daemon.id],
+			]);
+			expect(hasLiveOwnedService(session)).toBe(false);
+			const restarted = await startService(session, {
+				name: "rewind-service",
+				command: "echo rewind-service-ready; read answer",
+				pty: false,
+				ready: { log: "rewind-service-ready", timeout: 5 },
+			});
+			expect(restarted.daemon.owner).toBe("desktop:stable-agent");
+			expect((await stopService(session, "rewind-service")).state).toBe("exited");
+			expect(hasLiveOwnedService(session)).toBe(false);
 		} finally {
 			vi.restoreAllMocks();
 			await client.request({ op: "shutdown" }).catch(() => undefined);

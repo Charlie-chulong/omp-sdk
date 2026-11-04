@@ -443,7 +443,7 @@ describe("AgentSession dispose releases retained memory", () => {
 		});
 		await current.dispose({ drainTimeoutMs: 20 });
 		session = undefined;
-		const bytesAfterDispose = await Bun.file(sessionFile).text();
+		let bytesAfterRevive: string | undefined;
 
 		// Revival sees completed messages even though their notifications remain
 		// parked; notification-side writes after sealing must still be rejected.
@@ -457,17 +457,20 @@ describe("AgentSession dispose releases retained memory", () => {
 				expect.stringContaining("seed"),
 				expect.stringContaining("completed before disposal"),
 			]);
+			// The new owner writes while the old handler is still parked. Neither
+			// its late notification nor the old owner's second release may erase it.
+			revived.appendMessage({ role: "user", content: "post-revive", timestamp: Date.now() });
+			await revived.flush();
+			bytesAfterRevive = await Bun.file(sessionFile).text();
 		} finally {
 			release.resolve();
 		}
 		await secondRelease.promise;
 		expect(current.sessionManager.getEntries()).toHaveLength(0);
-		expect(await Bun.file(sessionFile).text()).toBe(bytesAfterDispose);
+		expect(await Bun.file(sessionFile).text()).toBe(bytesAfterRevive);
 
-		// The revival writer can append without losing completed messages or
-		// incorporating the old notification handler's rejected writes.
-		revived.appendMessage({ role: "user", content: "post-revive", timestamp: Date.now() });
-		await revived.flush();
+		// Reopening preserves completed messages and the new owner's append,
+		// without incorporating the old notification handler's rejected writes.
 		await revived.close();
 		const reread = await SessionManager.open(sessionFile, tempDir.path());
 		const rereadTexts = reread
@@ -497,12 +500,12 @@ describe("AgentSession dispose releases retained memory", () => {
 		let armed = false;
 		let atomicWrites = 0;
 		class FailingAtomicStorage extends FileSessionStorage {
-			override async writeTextAtomic(
+			override async writeLinesAtomic(
 				filePath: string,
-				body: string,
+				lines: Iterable<string>,
 				options?: { commitGuard?: () => boolean },
 			): Promise<void> {
-				if (!armed) return super.writeTextAtomic(filePath, body, options);
+				if (!armed) return super.writeLinesAtomic(filePath, lines, options);
 				atomicWrites++;
 				reachedAtomic.resolve();
 				await gate.promise;

@@ -22,6 +22,7 @@ import { formatCost } from "@oh-my-pi/pi-tui/overlays/agent-hub-renderer";
 import type { ChainJudge } from "../judgment";
 import { MAIN_AGENT_ID } from "../registry/agent-registry";
 import type { ToolSession } from "../tools";
+import type { RuntimeResource } from "../session/runtime-resources";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import { withBridgeTimeoutPause } from "./bridge-timeout";
 import { EVAL_HANDLE_CONCURRENCY, evalRequestSlots } from "./completion-bridge";
@@ -172,6 +173,8 @@ function ownerOf(session: ToolSession): string {
 export class JudgmentBatch {
 	readonly id: string;
 	readonly ownerId: string;
+	readonly kernelOwnerId: string | undefined;
+	readonly ownerSessionId: string;
 	readonly intent: string;
 	readonly total: number;
 	readonly #inputs: BatchInput[];
@@ -202,12 +205,28 @@ export class JudgmentBatch {
 	) {
 		this.id = `jdgb-${Snowflake.next()}`;
 		this.ownerId = ownerOf(session);
+		this.kernelOwnerId = session.getEvalKernelOwnerId?.() ?? undefined;
+		this.ownerSessionId = session.getSessionId?.() ?? this.ownerId;
 		this.intent = intent;
 		this.total = inputs.length;
 		this.#inputs = inputs;
 		this.#questions = questions;
 		this.#options = options;
 		this.#session = session;
+	}
+
+	/** The batch stays owned even after the creating eval cell returns. */
+	getRuntimeResource(): RuntimeResource {
+		return {
+			id: this.id,
+			kind: "helper",
+			ownerSessionId: this.ownerSessionId,
+			ownerAgentId: this.ownerId,
+			state: this.#running ? "running" : "retained",
+			liveHandles: this.#running ? 1 : 0,
+			retentionReasons: [this.#running ? "live_execution" : "helper_result"],
+			releasable: !this.#running,
+		};
 	}
 
 	/**
@@ -508,7 +527,41 @@ const batches = new Map<string, JudgmentBatch>();
 /** Resolve a batch owned by the calling session. */
 export function getJudgmentBatch(id: string, session: ToolSession): JudgmentBatch | undefined {
 	const batch = batches.get(id);
-	return batch && batch.ownerId === ownerOf(session) ? batch : undefined;
+	return batch &&
+		batch.ownerId === ownerOf(session) &&
+		batch.kernelOwnerId === (session.getEvalKernelOwnerId?.() ?? undefined)
+		? batch
+		: undefined;
+}
+
+export function getJudgmentBatchRuntimeResources(kernelOwnerId: string): RuntimeResource[] {
+	const resources: RuntimeResource[] = [];
+	for (const batch of batches.values())
+		if (batch.kernelOwnerId === kernelOwnerId) resources.push(batch.getRuntimeResource());
+	return resources;
+}
+
+export function releaseJudgmentBatchRuntimeResource(kernelOwnerId: string, resourceId: string): void {
+	const batch = batches.get(resourceId);
+	if (!batch || batch.kernelOwnerId !== kernelOwnerId)
+		throw new ToolError("Judgment batch resource not found for this owner");
+	if (!batch.getRuntimeResource().releasable)
+		throw new ToolError("Judgment batch is running; cancel or wait for it before releasing its results");
+	batches.delete(resourceId);
+}
+
+export async function disposeJudgmentBatchRuntimeResources(kernelOwnerId: string): Promise<void> {
+	const pending: Promise<void>[] = [];
+	for (const [id, batch] of batches) {
+		if (batch.kernelOwnerId !== kernelOwnerId) continue;
+		batch.cancel();
+		pending.push(
+			batch.waitForIdle().then(() => {
+				if (batches.get(id) === batch) batches.delete(id);
+			}),
+		);
+	}
+	await Promise.all(pending);
 }
 
 /** Cancel and forget every batch, retaining settlement even when no async job could be registered. */
@@ -517,8 +570,11 @@ export function releaseJudgmentBatches(ownerId: string): Promise<void> {
 	for (const [id, batch] of batches) {
 		if (batch.ownerId !== ownerId) continue;
 		batch.cancel();
-		pending.push(batch.waitForIdle());
-		batches.delete(id);
+		pending.push(
+			batch.waitForIdle().then(() => {
+				if (batches.get(id) === batch) batches.delete(id);
+			}),
+		);
 	}
 	return Promise.all(pending).then(() => {});
 }
@@ -581,7 +637,8 @@ export async function runEvalJudgmentBatch(
 		case "close": {
 			const batch = requireBatch(args, session);
 			batch.cancel();
-			batches.delete(batch.id);
+			await batch.waitForIdle();
+			if (batches.get(batch.id) === batch) batches.delete(batch.id);
 			return { closed: true };
 		}
 		default:

@@ -21,6 +21,7 @@ import type { BashResult } from "../../exec/bash-executor";
 import type { ContextUsage } from "../../extensibility/extensions/types";
 import type { AgentSessionEvent, SessionStats } from "../../session/agent-session";
 import type { RestoredQueuedMessage } from "../../session/agent-session-types";
+import type { RuntimeResource } from "../../session/runtime-resources";
 import type { CacheWarmingMode } from "../../session/cache-warmer";
 import type { FileEntry, SessionEntry, SessionTreeNode } from "../../session/session-entries";
 import type { UsageLimitState } from "../../session/usage-limit";
@@ -64,6 +65,8 @@ export type RpcCommand =
 
 	// State
 	| { id?: string; type: "get_state" }
+	| { id?: string; type: "get_runtime_resources" }
+	| { id?: string; type: "release_runtime_resource"; resourceId: string }
 	| { id?: string; type: "set_approval_mode"; mode: ApprovalMode }
 	| { id?: string; type: "set_fast_mode"; enabled: boolean }
 	| { id?: string; type: "set_slow_mode"; enabled: boolean }
@@ -464,6 +467,14 @@ export type RpcResponse =
 
 	// State
 	| { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_runtime_resources";
+			success: true;
+			data: { resources: RuntimeResource[] };
+	  }
+	| { id?: string; type: "response"; command: "release_runtime_resource"; success: true; data: { released: true } }
 	| { id?: string; type: "response"; command: "set_approval_mode"; success: true; data: { mode: ApprovalMode } }
 	| {
 			id?: string;

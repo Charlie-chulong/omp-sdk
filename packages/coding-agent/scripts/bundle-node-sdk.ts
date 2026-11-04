@@ -25,6 +25,7 @@ const desktopModuleAliases = new Set([
 	`${codingAgentPrefix}/headless`,
 	`${codingAgentPrefix}/async`,
 	`${codingAgentPrefix}/extensibility/host-api`,
+	`${codingAgentPrefix}/session/indexed-session-journal`,
 	"@oh-my-pi/pi-ai/providers/transform-messages",
 	"@oh-my-pi/pi-ai/utils/retry-after",
 	"@oh-my-pi/pi-ai/utils/tool-call-arguments",

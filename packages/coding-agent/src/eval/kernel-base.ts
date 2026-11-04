@@ -291,6 +291,15 @@ export abstract class BaseKernel<TExecuteOptions extends KernelExecuteOptions = 
 		return this.#alive && !this.#disposed;
 	}
 
+	/** Handles belong to this subprocess, not a PID discovered from the operating system. */
+	get runtimePid(): number | undefined {
+		return this.#proc?.pid;
+	}
+
+	get liveHandleCount(): number {
+		return this.#pending.size + this.#pendingControls.size;
+	}
+
 	/**
 	 * Settles once the kernel stops accepting work: subprocess exit or the start
 	 * of a shutdown. Retained-state reporting uses it to mark the kernel dead.

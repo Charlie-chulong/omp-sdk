@@ -152,21 +152,25 @@ function isSnapcompactArchiveSlot(
  * next compaction re-renders the archive from `text`, so a cut would drop the
  * newest history uncounted and render {@link TRUNCATION_NOTICE} into the frames.
  */
-function persistSnapcompactArchive(archive: Record<string, unknown>, blobStore: BlobStore): Record<string, unknown> {
-	const frames = truncateForPersistence(archive.frames, blobStore, SNAPCOMPACT_FRAMES_KEY);
+function persistSnapcompactArchive(
+	archive: Record<string, unknown>,
+	blobStore: BlobStore,
+	maxStringChars: number,
+): Record<string, unknown> {
+	const frames = truncateForPersistence(archive.frames, blobStore, SNAPCOMPACT_FRAMES_KEY, maxStringChars);
 	const persisted = frames === archive.frames ? archive : { ...archive, frames };
 	const view = archive.withoutThinking;
 	if (!isRecord(view) || !isRecord(view.archive)) return persisted;
-	const viewArchive = persistSnapcompactArchive(view.archive, blobStore);
+	const viewArchive = persistSnapcompactArchive(view.archive, blobStore, maxStringChars);
 	return viewArchive === view.archive
 		? persisted
 		: { ...persisted, withoutThinking: { ...view, archive: viewArchive } };
 }
 
-function snapcompactArchiveNeedsRewrite(archive: Record<string, unknown>): boolean {
-	if (persistenceNodeNeedsRewrite(archive.frames, SNAPCOMPACT_FRAMES_KEY)) return true;
+function snapcompactArchiveNeedsRewrite(archive: Record<string, unknown>, maxStringChars: number): boolean {
+	if (persistenceNodeNeedsRewrite(archive.frames, SNAPCOMPACT_FRAMES_KEY, maxStringChars)) return true;
 	const view = archive.withoutThinking;
-	return isRecord(view) && isRecord(view.archive) && snapcompactArchiveNeedsRewrite(view.archive);
+	return isRecord(view) && isRecord(view.archive) && snapcompactArchiveNeedsRewrite(view.archive, maxStringChars);
 }
 
 /**
@@ -182,7 +186,12 @@ function snapcompactArchiveNeedsRewrite(archive: Record<string, unknown>): boole
  * synchronous blob-store path (`fs.writeFileSync`), so blob bytes are in the
  * kernel page cache before the JSONL line referencing them is written.
  */
-function truncateForPersistence(obj: unknown, blobStore: BlobStore, key?: string): unknown {
+function truncateForPersistence(
+	obj: unknown,
+	blobStore: BlobStore,
+	key?: string,
+	maxStringChars = MAX_PERSIST_CHARS,
+): unknown {
 	if (obj === null || obj === undefined) return obj;
 	if (
 		typeof obj === "object" &&
@@ -251,7 +260,7 @@ function truncateForPersistence(obj: unknown, blobStore: BlobStore, key?: string
 		if (key === "image_url" && isImageDataUrl(obj)) {
 			return externalizeImageDataUrlSync(blobStore, obj);
 		}
-		if (obj.length > MAX_PERSIST_CHARS) {
+		if (obj.length > maxStringChars) {
 			// Defensive: signature keys normally sit on blocks the guard above returns
 			// verbatim, but if one is reached here (unknown carrier shape), preserve it —
 			// truncation produces an invalid signature the API rejects, and clearing
@@ -259,7 +268,7 @@ function truncateForPersistence(obj: unknown, blobStore: BlobStore, key?: string
 			if (key === "thinkingSignature" || key === "thoughtSignature" || key === "textSignature") {
 				return obj;
 			}
-			const limit = Math.max(0, MAX_PERSIST_CHARS - TRUNCATION_NOTICE.length);
+			const limit = Math.max(0, maxStringChars - TRUNCATION_NOTICE.length);
 			return `${truncateString(obj, limit)}${TRUNCATION_NOTICE}`;
 		}
 		return obj;
@@ -271,7 +280,7 @@ function truncateForPersistence(obj: unknown, blobStore: BlobStore, key?: string
 		const result: unknown[] = new Array(obj.length);
 		for (let i = 0; i < obj.length; i++) {
 			const item = obj[i];
-			const newItem = truncateForPersistence(item, blobStore, key);
+			const newItem = truncateForPersistence(item, blobStore, key, maxStringChars);
 			if (newItem !== item) changed = true;
 			result[i] = newItem;
 		}
@@ -283,7 +292,7 @@ function truncateForPersistence(obj: unknown, blobStore: BlobStore, key?: string
 		// change (jsonlEvents presence, oversized/image/signature strings).
 		// The common persisted entry is already clean and returns here with
 		// zero array/tuple allocation; only a dirty node pays for the rebuild.
-		if (!persistenceNodeNeedsRewrite(obj)) return obj;
+		if (!persistenceNodeNeedsRewrite(obj, key, maxStringChars)) return obj;
 		let changed = false;
 		const entries: Array<readonly [string, unknown]> = [];
 		for (const childKey in obj) {
@@ -296,8 +305,8 @@ function truncateForPersistence(obj: unknown, blobStore: BlobStore, key?: string
 				continue;
 			}
 			const newValue = isSnapcompactArchiveSlot(key, childKey, value)
-				? persistSnapcompactArchive(value, blobStore)
-				: truncateForPersistence(value, blobStore, childKey);
+				? persistSnapcompactArchive(value, blobStore, maxStringChars)
+				: truncateForPersistence(value, blobStore, childKey, maxStringChars);
 			if (newValue !== value) changed = true;
 			entries.push([childKey, newValue]);
 		}
@@ -331,11 +340,11 @@ function truncateForPersistence(obj: unknown, blobStore: BlobStore, key?: string
  * pass exactly — a false negative silently keeps oversized content, so when
  * in doubt this must return true.
  */
-function persistenceNodeNeedsRewrite(obj: unknown, key?: string): boolean {
+function persistenceNodeNeedsRewrite(obj: unknown, key?: string, maxStringChars = MAX_PERSIST_CHARS): boolean {
 	if (obj === null || obj === undefined) return false;
 	if (typeof obj === "string") {
 		if (
-			obj.length > MAX_PERSIST_CHARS &&
+			obj.length > maxStringChars &&
 			key !== "thinkingSignature" &&
 			key !== "thoughtSignature" &&
 			key !== "textSignature"
@@ -346,12 +355,7 @@ function persistenceNodeNeedsRewrite(obj: unknown, key?: string): boolean {
 	}
 	if (Array.isArray(obj)) {
 		for (const item of obj) {
-			if (
-				item !== null && typeof item === "object"
-					? persistenceNodeNeedsRewrite(item, key)
-					: persistenceNodeNeedsRewrite(item, key)
-			)
-				return true;
+			if (persistenceNodeNeedsRewrite(item, key, maxStringChars)) return true;
 		}
 		return false;
 	}
@@ -377,10 +381,10 @@ function persistenceNodeNeedsRewrite(obj: unknown, key?: string): boolean {
 			if (!Object.hasOwn(obj, childKey)) continue;
 			const value = (obj as Record<string, unknown>)[childKey];
 			if (isSnapcompactArchiveSlot(key, childKey, value)) {
-				if (snapcompactArchiveNeedsRewrite(value)) return true;
+				if (snapcompactArchiveNeedsRewrite(value, maxStringChars)) return true;
 				continue;
 			}
-			if (persistenceNodeNeedsRewrite(value, childKey)) return true;
+			if (persistenceNodeNeedsRewrite(value, childKey, maxStringChars)) return true;
 		}
 		return false;
 	}
@@ -563,7 +567,17 @@ function stripSpilledMcpStructuredContent(entry: FileEntry): FileEntry {
 	return { ...entry, message: { ...entry.message, details: persistedDetails } };
 }
 
-export function prepareEntryForPersistence(entry: FileEntry, blobStore: BlobStore): FileEntry {
+/** File journals stream full records; other backends retain their existing string limit. */
+export function prepareEntryForPersistence(
+	entry: FileEntry,
+	blobStore: BlobStore,
+	preserveFullContent = false,
+): FileEntry {
 	const projected = stripSpilledMcpStructuredContent(stripReplayedReasoningSignatures(entry));
-	return truncateForPersistence(projected, blobStore) as FileEntry;
+	return truncateForPersistence(
+		projected,
+		blobStore,
+		undefined,
+		preserveFullContent ? Number.POSITIVE_INFINITY : MAX_PERSIST_CHARS,
+	) as FileEntry;
 }

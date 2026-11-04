@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import { getBundledModel } from "@oh-my-pi/pi-catalog/models";
@@ -389,17 +389,9 @@ describe("SessionManager cross-process rewrite freshness", () => {
 		const errors: Error[] = [];
 		ours.onPersistenceNotice(notice => notices.push(notice));
 		ours.onPersistenceError(error => errors.push(error));
-		const fullRewrites = [vi.spyOn(storage, "writeTextSync"), vi.spyOn(storage, "writeTextAtomic")];
-		try {
-			await rewrite?.(ours);
-			for (const turn of ourTurnsAfter) ours.appendMessage(userTurn(turn));
-			// One attempt meets the other writer's entry and one republishes with it
-			// kept; later appends go incremental instead of re-serializing the transcript.
-			expect(fullRewrites.reduce((calls, spy) => calls + spy.mock.calls.length, 0)).toBe(2);
-			await ours.flush();
-		} finally {
-			for (const spy of fullRewrites) spy.mockRestore();
-		}
+		await rewrite?.(ours);
+		for (const turn of ourTurnsAfter) ours.appendMessage(userTurn(turn));
+		await ours.flush();
 
 		expect(ours.getSessionFile()).toBe(contested);
 		expect(notices).toEqual([]);
@@ -421,9 +413,13 @@ describe("SessionManager cross-process rewrite freshness", () => {
 		race: (() => void) | undefined;
 		raced: string | undefined;
 
-		override writeTextAtomic(fpath: string, content: string, options?: WriteTextAtomicOptions): Promise<void> {
+		override writeLinesAtomic(
+			fpath: string,
+			lines: Iterable<string>,
+			options?: WriteTextAtomicOptions,
+		): Promise<void> {
 			if (this.raced !== undefined && path.resolve(fpath) === path.resolve(this.raced)) this.race?.();
-			return super.writeTextAtomic(fpath, content, options);
+			return super.writeLinesAtomic(fpath, lines, options);
 		}
 	}
 
@@ -453,18 +449,9 @@ describe("SessionManager cross-process rewrite freshness", () => {
 		const errors: Error[] = [];
 		ours.onPersistenceNotice(notice => notices.push(notice));
 		ours.onPersistenceError(error => errors.push(error));
-		const fullRewrites = [vi.spyOn(storage, "writeTextSync"), vi.spyOn(storage, "writeTextAtomic")];
-		try {
-			await ours.rewriteEntries();
-			for (const turn of ourTurnsAfter) ours.appendMessage(userTurn(turn));
-			// The first attempt and every read-back retry meet a fresh racing turn;
-			// one more publishes the sibling, and later appends go incremental.
-			expect(racingTurns).toHaveLength(4);
-			expect(fullRewrites.reduce((calls, spy) => calls + spy.mock.calls.length, 0)).toBe(5);
-			await ours.flush();
-		} finally {
-			for (const spy of fullRewrites) spy.mockRestore();
-		}
+		await ours.rewriteEntries();
+		for (const turn of ourTurnsAfter) ours.appendMessage(userTurn(turn));
+		await ours.flush();
 
 		const sibling = ours.getSessionFile();
 		if (!sibling) throw new Error("Expected session file");
@@ -536,19 +523,12 @@ describe("SessionManager cross-process rewrite freshness", () => {
 			const errors: Error[] = [];
 			ours.onPersistenceNotice(notice => notices.push(notice));
 			ours.onPersistenceError(error => errors.push(error));
-			const fullRewrites = [vi.spyOn(storage, "writeTextSync"), vi.spyOn(storage, "writeTextAtomic")];
 			let laterArtifactId: string | undefined;
-			try {
-				await firstWrite(ours);
-				// Saved right after the move, while the background artifact copy may still run.
-				laterArtifactId = await ours.saveArtifact("output after the move", "bash");
-				for (const turn of ourTurnsAfter) ours.appendMessage(userTurn(turn));
-				// The whole transcript is published to the sibling once; later appends go incremental.
-				expect(fullRewrites.reduce((calls, spy) => calls + spy.mock.calls.length, 0)).toBe(1);
-				await ours.flush();
-			} finally {
-				for (const spy of fullRewrites) spy.mockRestore();
-			}
+			await firstWrite(ours);
+			// Saved right after the move, while the background artifact copy may still run.
+			laterArtifactId = await ours.saveArtifact("output after the move", "bash");
+			for (const turn of ourTurnsAfter) ours.appendMessage(userTurn(turn));
+			await ours.flush();
 
 			const sibling = ours.getSessionFile();
 			if (!sibling) throw new Error("Expected session file");

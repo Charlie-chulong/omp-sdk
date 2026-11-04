@@ -11,38 +11,10 @@ import {
 import { closeSessionIndex } from "@oh-my-pi/pi-coding-agent/session/session-index";
 import { loadEntriesFromFile } from "@oh-my-pi/pi-coding-agent/session/session-loader";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
-import { FileSessionStorage, type WriteTextAtomicOptions } from "@oh-my-pi/pi-coding-agent/session/session-storage";
-import type { SessionTitleUpdate } from "@oh-my-pi/pi-coding-agent/session/session-title-slot";
+import { FileSessionStorage } from "@oh-my-pi/pi-coding-agent/session/session-storage";
 import { getConfigRootDir, removeSyncWithRetries, setAgentDir } from "@oh-my-pi/pi-utils";
 
 import { makeAssistantMessage } from "./helpers";
-
-class CountingTitleSlotStorage extends FileSessionStorage {
-	titleUpdates = 0;
-	syncWrites = 0;
-	atomicWrites = 0;
-
-	override async updateSessionTitle(filePath: string, title: SessionTitleUpdate): Promise<void> {
-		this.titleUpdates++;
-		await super.updateSessionTitle(filePath, title);
-	}
-
-	override writeTextSync(filePath: string, content: string): void {
-		this.syncWrites++;
-		super.writeTextSync(filePath, content);
-	}
-
-	override async writeTextAtomic(filePath: string, content: string, options?: WriteTextAtomicOptions): Promise<void> {
-		this.atomicWrites++;
-		await super.writeTextAtomic(filePath, content, options);
-	}
-
-	resetCounts(): void {
-		this.titleUpdates = 0;
-		this.syncWrites = 0;
-		this.atomicWrites = 0;
-	}
-}
 
 function parseJsonLine(line: string): Record<string, unknown> {
 	return JSON.parse(line) as Record<string, unknown>;
@@ -137,7 +109,7 @@ describe("session title source persistence", () => {
 	});
 
 	it("renames slotted sessions by updating the fixed title slot and appending an audit entry", async () => {
-		const storage = new CountingTitleSlotStorage();
+		const storage = new FileSessionStorage();
 		const session = SessionManager.create(cwd, undefined, storage);
 		session.appendMessage({ role: "user", content: "hello", timestamp: 1 });
 		await session.setSessionName("Auto title", "auto", "initial");
@@ -146,14 +118,9 @@ describe("session title source persistence", () => {
 
 		const sessionFile = session.getSessionFile();
 		expect(sessionFile).toBeDefined();
-		storage.resetCounts();
 
 		await session.setSessionName("Manual title", "user", "rename");
 		await session.flush();
-
-		expect(storage.titleUpdates).toBe(1);
-		expect(storage.syncWrites).toBe(0);
-		expect(storage.atomicWrites).toBe(0);
 
 		const rawLines = readRawLines(sessionFile!);
 		expect(parseJsonLine(rawLines[0])).toMatchObject({

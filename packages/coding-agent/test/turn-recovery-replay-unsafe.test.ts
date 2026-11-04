@@ -8,6 +8,8 @@ import type { Model, Usage } from "@oh-my-pi/pi-catalog/types";
 import { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
+import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
+import { getPersistedSessionEntryId } from "@oh-my-pi/pi-coding-agent/session/turn-persistence";
 import {
 	type RecoveryCompactionResult,
 	TurnRecovery,
@@ -412,6 +414,37 @@ describe("TurnRecovery replay-unsafe output classification", () => {
 		const recovery = new TurnRecovery(createHost(fastModel, modelRegistry));
 		const message = makeMessage([{ type: "text", text: "partial visible output" }], fastModel);
 		expect(recovery.isFireworksFastFallbackEligible(message)).toBe(false);
+	});
+
+	it("rewinds to the actual source of a rebuilt assistant despite identical later entries", async () => {
+		const manager = SessionManager.create(tempDir.path(), tempDir.path());
+		const seedId = manager.appendMessage({ role: "user", content: "seed", timestamp: 1 });
+		const first: AssistantMessage = {
+			...makeMessage([{ type: "text", text: "same response" }], model),
+			stopReason: "stop",
+			errorMessage: undefined,
+			timestamp: 2,
+		};
+		const firstId = manager.appendMessage(first);
+		manager.appendMessage({ ...first, content: [{ type: "text", text: "same response" }] });
+		await manager.ensureOnDisk();
+		const file = manager.getSessionFile();
+		if (!file) throw new Error("Expected persisted history");
+		await manager.close();
+		const reopened = await SessionManager.open(file, tempDir.path(), undefined, { suppressBreadcrumb: true });
+		try {
+			const candidate = reopened.buildSessionContext().messages.find(message => message.role === "assistant");
+			if (candidate?.role !== "assistant") throw new Error("Expected first rebuilt assistant");
+			const recovery = new TurnRecovery({
+				...createHost(model, modelRegistry, { messages: [candidate] }),
+				sessionManager: reopened,
+				persistedAssistantEntryId: getPersistedSessionEntryId,
+			});
+			expect(recovery.discardAssistantTurn(candidate)).toBe(firstId);
+			expect(reopened.getBranch().map(entry => entry.id)).toEqual([seedId]);
+		} finally {
+			await reopened.close();
+		}
 	});
 
 	it("keeps a Fireworks Fast empty/whitespace failed turn eligible for Fast→base fallback", () => {

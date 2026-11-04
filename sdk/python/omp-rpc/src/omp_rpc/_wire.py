@@ -554,6 +554,19 @@ class ModelInfo:
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
+class RuntimeResource:
+    id: str
+    kind: Literal["python_kernel", "javascript_kernel", "shell", "helper"]
+    owner_session_id: str
+    state: Literal["starting", "running", "retained", "stopping"]
+    retention_reasons: tuple[str, ...]
+    live_handles: int
+    releasable: bool
+    owner_agent_id: str | None = None
+    pid: int | None = None
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
 class TodoItem:
     content: str
     status: TodoStatus
@@ -1897,6 +1910,21 @@ def parse_model_info(value: object, path: str = "ModelInfo") -> ModelInfo:
         priority=optional(payload, "priority", decode_int, path),
         thinking=optional(payload, "thinking", parse_thinking_config, path),
         compat=optional(payload, "compat", decode_json_object, path),
+    )
+
+
+def parse_runtime_resource(value: object, path: str = "RuntimeResource") -> RuntimeResource:
+    payload = expect_object(value, path)
+    return RuntimeResource(
+        id=required(payload, "id", decode_str, path),
+        kind=required(payload, "kind", cast('Decoder[Literal["python_kernel", "javascript_kernel", "shell", "helper"]]', literal(frozenset({"python_kernel", "javascript_kernel", "shell", "helper"}))), path),
+        owner_session_id=required(payload, "ownerSessionId", decode_str, path),
+        state=required(payload, "state", cast('Decoder[Literal["starting", "running", "retained", "stopping"]]', literal(frozenset({"starting", "running", "retained", "stopping"}))), path),
+        retention_reasons=required(payload, "retentionReasons", array(decode_str), path),
+        live_handles=required(payload, "liveHandles", decode_int, path),
+        releasable=required(payload, "releasable", decode_bool, path),
+        owner_agent_id=optional(payload, "ownerAgentId", decode_str, path),
+        pid=optional(payload, "pid", decode_int, path),
     )
 
 
@@ -3341,6 +3369,17 @@ class WireClient:
         params: dict[str, object] = {}
         return parse_session_state(self._command("get_state", params), "get_state")
 
+    def get_runtime_resources(self) -> tuple[RuntimeResource, ...]:
+        """List the actual resources retained by this session without starting new kernels."""
+        params: dict[str, object] = {}
+        return required(expect_object(self._command("get_runtime_resources", params), "get_runtime_resources"), "resources", array(parse_runtime_resource), "get_runtime_resources")
+
+    def release_runtime_resource(self, resource_id: str) -> bool:
+        """Release one idle owned resource; active or shared work is rejected."""
+        params: dict[str, object] = {}
+        params["resourceId"] = resource_id
+        return required(expect_object(self._command("release_runtime_resource", params), "release_runtime_resource"), "released", decode_bool, "release_runtime_resource")
+
     def set_approval_mode(self, mode: ApprovalMode) -> ApprovalMode:
         """Change session-only tool approval mode immediately, without interrupting an active turn."""
         params: dict[str, object] = {}
@@ -4081,6 +4120,7 @@ __all__ = [
     "RpcAgentEvent",
     "RpcFrameErrorEvent",
     "RpcNotification",
+    "RuntimeResource",
     "SelectOptionDetail",
     "SelectUiRequest",
     "SessionCredits",
@@ -4258,6 +4298,7 @@ __all__ = [
     "parse_retry_fallback_succeeded_event",
     "parse_rpc_agent_event",
     "parse_rpc_frame_error_event",
+    "parse_runtime_resource",
     "parse_select_option_detail",
     "parse_select_ui_request",
     "parse_session_credits",

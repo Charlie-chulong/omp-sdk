@@ -9,6 +9,7 @@ import {
 	workerEnvFromParent,
 } from "../../subprocess/worker-client";
 import type { ToolSession } from "../../tools";
+import type { RuntimeResource } from "../../session/runtime-resources";
 import { ToolAbortError } from "../../tools/tool-errors";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import { safeSend as safeSendIpc } from "../../utils/ipc";
@@ -47,6 +48,7 @@ export interface VmRunState {
 /** Isolated runtime transport used by the context manager and startup regression fixtures. */
 export interface JsEvalWorkerHandle {
 	mode: "process" | "worker";
+	pid?: number;
 	send(msg: WorkerInbound): void;
 	onMessage(handler: (msg: WorkerOutbound) => void): () => void;
 	onError(handler: (error: Error) => void): () => void;
@@ -449,6 +451,80 @@ export async function disposeVmContextsByOwner(ownerId: string, options?: { requ
 		toKill.map(session => killSession(session, new ToolError("JS context disposed"), { force: false })),
 	);
 	if (failures.length > 0) throw new AggregateError(failures, "JS owner shutdown failed");
+}
+
+export function getJavaScriptRuntimeResources(ownerId: string): RuntimeResource[] {
+	const resources = [...new Set([...sessions.values(), ...stoppingSessions.keys()])]
+		.filter(session => session.ownerIds.has(ownerId))
+		.map<RuntimeResource>(session => {
+			const liveHandles =
+				session.pending.size +
+				session.pendingSnapshots.size +
+				session.pendingShadowRuns.size +
+				[...session.pending.values()].reduce((count, run) => count + run.toolCalls.size, 0);
+			const shared = session.ownerIds.size > 1;
+			return {
+				id: session.kernelId,
+				kind: "javascript_kernel",
+				ownerSessionId: session.sessionId,
+				pid: session.worker.pid,
+				state: session.state === "dead" ? "stopping" : liveHandles > 0 ? "running" : "retained",
+				retentionReasons: [
+					...(liveHandles > 0 ? ["live_execution"] : ["kernel_variables"]),
+					...(shared ? ["shared_owner"] : []),
+				],
+				liveHandles,
+				releasable: liveHandles === 0 && !shared,
+			};
+		});
+	let starting = 0;
+	for (const session of startingSessions.values()) if (session.ownerIds.has(ownerId)) starting++;
+	if (starting > 0)
+		resources.push({
+			id: `javascript-start:${ownerId}`,
+			kind: "javascript_kernel",
+			ownerSessionId: ownerId,
+			state: "starting",
+			liveHandles: starting,
+			retentionReasons: ["live_execution"],
+			releasable: false,
+		});
+	return resources;
+}
+
+export async function releaseJavaScriptRuntimeResource(ownerId: string, resourceId: string): Promise<void> {
+	const session = [...new Set([...sessions.values(), ...stoppingSessions.keys()])].find(
+		item => item.kernelId === resourceId && item.ownerIds.has(ownerId),
+	);
+	const resource = getJavaScriptRuntimeResources(ownerId).find(item => item.id === resourceId);
+	if (!session || !resource?.releasable)
+		throw new Error("JavaScript kernel is busy, shared, or unavailable; stop its work before releasing variables");
+	if (session.state === "alive") {
+		// resetVmContext waits for the owned subprocess and its descendants to exit.
+		await resetVmContext(session.sessionKey);
+	} else {
+		await stoppingSessions.get(session)?.catch(() => undefined);
+		stoppingSessions.delete(session);
+		if (sessions.get(session.sessionKey) === session) sessions.delete(session.sessionKey);
+		await killSession(session, new ToolError("JS context release retried"), { force: false });
+	}
+}
+
+export async function reapOrphanedJavaScriptKernels(): Promise<void> {
+	const orphans = [...new Set([...sessions.values(), ...stoppingSessions.keys()])].filter(
+		session =>
+			session.ownerIds.size === 0 &&
+			!session.hasFallbackOwner &&
+			session.pending.size === 0 &&
+			session.pendingSnapshots.size === 0 &&
+			session.pendingShadowRuns.size === 0,
+	);
+	for (const session of orphans) {
+		if (sessions.get(session.sessionKey) === session) sessions.delete(session.sessionKey);
+		// Retrying a previous failed close still targets the exact retained worker handle.
+		stoppingSessions.delete(session);
+		await killSession(session, new ToolError("Ownerless JS context reclaimed"), { force: false });
+	}
 }
 
 /**
@@ -1090,6 +1166,7 @@ function spawnJsProcess(): JsEvalWorkerHandle {
 	};
 	return {
 		mode: "process",
+		pid: spawned.proc.pid,
 		send: message => base.send(message),
 		onMessage: handler => base.onMessage(handler),
 		onError: handler => base.onError(handler),

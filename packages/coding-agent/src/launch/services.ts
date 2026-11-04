@@ -6,8 +6,9 @@ import { formatDuration, replaceTabs } from "@oh-my-pi/pi-tui/render/render-util
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import { getDaemonRuntimeDir, logger, sanitizeText } from "@oh-my-pi/pi-utils";
 import { type DaemonBrokerClient, daemonClientForProject } from "./client";
-import { canonicalProjectDir } from "./paths";
+import { canonicalProjectDir, daemonRuntimeDir } from "./paths";
 import type { DaemonOperation, DaemonRpcResult } from "./protocol";
+import { readLiveDaemonBrokerPid } from "./presence";
 import { renderTerminalOutputIsolated } from "./terminal-output-worker-client";
 import type { ToolSession } from "../tools";
 import { resolveToCwd } from "../tools/path-utils";
@@ -66,7 +67,7 @@ export function waitForOwnedServiceCompletion(session: ToolSession, signal?: Abo
 }
 
 function serviceOwner(session: ToolSession): string | null | undefined {
-	return session.getSessionId?.() ?? session.getAgentId?.();
+	return session.getServiceOwnerId?.() ?? session.getSessionId?.() ?? session.getAgentId?.();
 }
 
 function track(session: ToolSession, daemon: DaemonSnapshot): void {
@@ -98,6 +99,9 @@ function subscribe(session: ToolSession, client: DaemonBrokerClient): void {
 		for (const listener of serviceState(session).listeners) listener();
 	});
 	session.registerSessionChangeCallback?.(() => {
+		// Embedded conversations retain their supervisor identity across rewinds.
+		// Keep the socket subscription and live-work lease until that owner actually changes.
+		if (serviceOwner(session) === owner) return;
 		// The previous session stays resumable (`/resume`, fork parent), so keep its
 		// completions queued in the broker for replay when that session id re-subscribes.
 		unsubscribe({ preservePending: true });
@@ -127,6 +131,12 @@ export async function listServices(session: ToolSession, signal?: AbortSignal): 
 	const result = await request(session, { op: "list" }, signal);
 	if (result.op !== "list") throw new Error("Unexpected daemon list response");
 	return result.daemons;
+}
+
+/** Reattach an embedded owner's existing broker lease without starting an empty broker. */
+export async function restoreOwnedServices(session: ToolSession): Promise<void> {
+	const projectDir = await canonicalProjectDir(session.cwd);
+	if (await readLiveDaemonBrokerPid(daemonRuntimeDir(projectDir))) await listServices(session);
 }
 
 /**

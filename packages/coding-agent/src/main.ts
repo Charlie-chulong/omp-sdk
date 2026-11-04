@@ -1474,6 +1474,7 @@ export async function buildSessionOptions(
 	if (sessionManager) {
 		options.sessionManager = sessionManager;
 	}
+	options.serviceOwnerId = process.env.OMP_DESKTOP_SERVICE_OWNER || undefined;
 	if (parsed.providerSessionId) {
 		options.providerSessionId = parsed.providerSessionId;
 	}

@@ -398,6 +398,18 @@ export type AgentSource = "bundled" | "user" | "project";
 
 export type SubagentStatus = "pending" | "running" | "completed" | "failed" | "aborted";
 
+export interface RuntimeResource {
+	id: string;
+	kind: "python_kernel" | "javascript_kernel" | "shell" | "helper";
+	ownerSessionId: string;
+	state: "starting" | "running" | "retained" | "stopping";
+	retentionReasons: string[];
+	liveHandles: number;
+	releasable: boolean;
+	ownerAgentId?: string;
+	pid?: number;
+}
+
 export interface TodoItem {
 	content: string;
 	status: TodoStatus;
@@ -1568,6 +1580,18 @@ export interface OpenSessionParams {
 	modelId?: string;
 }
 
+export interface GetRuntimeResourcesResult {
+	resources: RuntimeResource[];
+}
+
+export interface ReleaseRuntimeResourceParams {
+	resourceId: string;
+}
+
+export interface ReleaseRuntimeResourceResult {
+	released: boolean;
+}
+
 export interface SetApprovalModeParams {
 	mode: ApprovalMode;
 }
@@ -1904,6 +1928,8 @@ export interface RpcWireCommands {
 	new_session: { params: NewSessionParams; result: CancellationResult };
 	open_session: { params: OpenSessionParams; result: OpenSessionResult };
 	get_state: { params: undefined; result: SessionState };
+	get_runtime_resources: { params: undefined; result: GetRuntimeResourcesResult };
+	release_runtime_resource: { params: ReleaseRuntimeResourceParams; result: ReleaseRuntimeResourceResult };
 	set_approval_mode: { params: SetApprovalModeParams; result: SetApprovalModeResult };
 	set_fast_mode: { params: SetFastModeParams; result: FastModeResult };
 	set_slow_mode: { params: SetSlowModeParams; result: SetSlowModeResult };

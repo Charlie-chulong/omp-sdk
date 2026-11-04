@@ -14,6 +14,7 @@ import { createAgentSession } from "./sdk";
 import { SessionManager } from "./session/session-manager";
 import { resolveResumableSession } from "./session/session-listing";
 import { closeDaemonClients, daemonClientForProject } from "./launch/client";
+import { registerDaemonProjectPresence } from "./launch/presence";
 import { BUILTIN_TOOL_NAMES } from "./tools/builtin-names";
 import { cfgToolsApprovalMode } from "./tools/settings";
 import { ProxyPolicyController, type ProxyPolicy, setDefaultProxyPolicyController } from "@oh-my-pi/pi-ai/utils/proxy";
@@ -146,6 +147,7 @@ export async function startNodeRpcHost(options: NodeRpcHostOptions): Promise<nev
 		agentDir,
 		settings,
 		sessionManager,
+		serviceOwnerId: process.env.OMP_DESKTOP_SERVICE_OWNER || undefined,
 		modelPattern: parsed.provider && parsed.model ? `${parsed.provider}/${parsed.model}` : parsed.model,
 		thinkingLevel: parsed.thinking,
 		systemPrompt: options.systemPrompt ?? parsed.systemPrompt,
@@ -166,6 +168,7 @@ export async function startNodeRpcHost(options: NodeRpcHostOptions): Promise<nev
 			`Node SDK extensions failed: ${result.extensionsResult.errors.map(error => `${error.path}: ${error.error}`).join("; ")}`,
 		);
 	}
+	const daemonPresence = await registerDaemonProjectPresence(options.cwd);
 	settings.startWatching();
 	try {
 		return await runRpcMode(result.session, {
@@ -177,15 +180,18 @@ export async function startNodeRpcHost(options: NodeRpcHostOptions): Promise<nev
 		});
 	} finally {
 		settings.stopWatching();
+		await daemonPresence.close();
 	}
 }
 
 /** Stop a persisted project daemon through its existing broker protocol. */
-export async function stopNodeRpcDaemon(input: { cwd: string; name: string }): Promise<void> {
+export async function stopNodeRpcDaemon(input: { cwd: string; name: string; id?: string }): Promise<void> {
 	try {
 		const client = await daemonClientForProject(input.cwd);
-		const response = await client.request({ op: "stop", name: input.name, timeoutMs: 2000 });
+		const response = await client.request({ op: "stop", name: input.name, id: input.id, timeoutMs: 2000 });
 		if (response.op !== "stop") throw new Error(`Unexpected daemon broker response: ${response.op}`);
+		if (input.id !== undefined && response.daemon.id !== input.id)
+			throw new Error("Background process was replaced; its replacement was not stopped");
 	} finally {
 		await closeDaemonClients();
 	}

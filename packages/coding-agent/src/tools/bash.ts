@@ -888,6 +888,7 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 		// Holds the run's Shell only while it runs: a retained reference would
 		// keep a finished `:async:` Shell (and its background children) alive.
 		let pids: () => readonly number[] = NO_PIDS;
+		const shellOwnerId = this.session.getEvalKernelOwnerId?.() ?? options.sessionId;
 		// Outlives the run with the job row, so a finished pipeline stays readable.
 		const streams = new PipeStreams();
 		// The job's widget reads the command's own output and every pipe it opens.
@@ -944,8 +945,11 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 						// functions, and options reach the next call even after it is
 						// backgrounded. A job that starts in the background gets its own
 						// shell, so it never holds the session's.
-						sessionKey: options.foreground ? options.sessionId : `${options.sessionId ?? ""}:async:${jobId}`,
-						isSessionCurrent: () => (this.session.getSessionId?.() ?? undefined) === options.sessionId,
+						sessionKey: options.foreground ? shellOwnerId : `${shellOwnerId ?? ""}:async:${jobId}`,
+						isSessionCurrent: () =>
+							this.session.isDisposed?.() !== true &&
+							(this.session.getEvalKernelOwnerId?.() ?? this.session.getSessionId?.() ?? undefined) ===
+								shellOwnerId,
 						timeout: options.timeoutMs ?? 0,
 						signal: runSignal,
 						gitGuard: cfgBashGitGuard.get(this.session.settings),
@@ -1049,10 +1053,9 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 		ctx?: AgentToolContext,
 	): Promise<AgentToolResult<BashToolDetails>> {
 		let command = rawCommand;
-		// The session this call belongs to, captured before any await: a session
-		// change while the call waits must not move it into the new session's
-		// shell, nor hand it the new session's identity.
+		// Keep transcript attribution at admission; retained shell ownership is stable across branches.
 		const sessionId = this.session.getSessionId?.() ?? undefined;
+		const shellOwnerId = this.session.getEvalKernelOwnerId?.() ?? sessionId;
 		const sessionEnv = this.#sessionEnv();
 
 		// Extract a leading `cd <path> && ...` into cwd when the model ignores the
@@ -1671,8 +1674,11 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 				await executeBash(command, {
 					cwd: commandCwd,
 					env: sessionEnv,
-					sessionKey: sessionId,
-					isSessionCurrent: () => (this.session.getSessionId?.() ?? undefined) === sessionId,
+					sessionKey: shellOwnerId,
+					isSessionCurrent: () =>
+						this.session.isDisposed?.() !== true &&
+						(this.session.getEvalKernelOwnerId?.() ?? this.session.getSessionId?.() ?? undefined) ===
+							shellOwnerId,
 					timeout: timeoutMs ?? 0,
 					signal,
 					gitGuard: cfgBashGitGuard.get(this.session.settings),

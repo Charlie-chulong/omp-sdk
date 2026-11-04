@@ -34,6 +34,7 @@ export default class Ps extends Command {
 		lines: Flags.integer({ char: "n", description: "Number of log lines, max 1000 (logs)" }),
 		grep: Flags.string({ description: "Regex filter applied to log lines (logs)" }),
 		timeout: Flags.integer({ description: "Grace period in seconds before hard kill (stop)" }),
+		id: Flags.string({ description: "Stop only this daemon generation (stop/kill)" }),
 	};
 
 	static examples = [
@@ -61,6 +62,7 @@ export default class Ps extends Command {
 				lines: flags.lines,
 				grep: flags.grep,
 				timeout: flags.timeout,
+				id: flags.id,
 			},
 		};
 		await runPsCommand(cmd);

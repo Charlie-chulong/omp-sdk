@@ -225,9 +225,9 @@ process.exit(0);
 }
 
 describe("runEvalCompletion", () => {
-	afterEach(() => {
+	afterEach(async () => {
 		vi.restoreAllMocks();
-		releaseCompletionHandles("Main");
+		await releaseCompletionHandles("Main");
 	});
 
 	it("resolves each tier to its expected model", async () => {
@@ -1005,9 +1005,9 @@ describe("runEvalCompletion", () => {
 });
 
 describe("completion() through eval runtimes", () => {
-	afterEach(() => {
+	afterEach(async () => {
 		vi.restoreAllMocks();
-		releaseCompletionHandles("Main");
+		await releaseCompletionHandles("Main");
 	});
 
 	afterAll(async () => {

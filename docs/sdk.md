@@ -423,6 +423,24 @@ console.log(session.sessionFile); // absolute .jsonl path
 - Supports resume/open/list/fork workflows.
 - `session.sessionFile` is defined.
 
+File-backed history retains lightweight lazy entry facades, not every parsed
+body. Hot body retention is budgeted at 8 MiB with a separate 8 MiB body LRU;
+evicted bodies are reread from the persisted source for history and fork use.
+Complete `File` bodies are persisted without generic 500,000-character tool-text
+truncation. Images remain externalized and private fields are stripped from
+public history. Body accounting is not a physical-memory or live-heap limit.
+
+Cold readers use the indexed session journal; Node embedders resolve
+`@oh-my-pi/pi-coding-agent/session/indexed-session-journal` through the selected
+build's `dist/node/modules.json`. Do not start a session host or add another
+scanner for history. Report initial index/catalog scanning separately from warm
+small-page I/O. Cold metadata/history reads do not wake sessions; dynamic state
+without a retained snapshot is explicitly unavailable.
+This requires a real built Node SDK containing the manifest and journal export,
+including for embedders whose agent execution uses CLI. Missing packages or
+artifacts are a cold-history prerequisite error, not permission to fall back to
+another scanner or launch a host.
+
 ### In-memory
 
 ```ts
@@ -600,6 +618,28 @@ async function closeEmbeddedSession(session: AgentSession, closeHostInputAndUi: 
 During asynchronous disposal, the session records and synchronously flushes its exit diagnostic, emits `session_shutdown` once, stops extension fallback timers, aborts retries, compaction, and the active agent turn, and gives post-prompt and auto-learn work bounded time to settle. It then tears down session-owned async jobs, eval kernels, browser tabs, native computer sessions, MCP connections, advisor state, and memory state concurrently. These subsystem drains are best-effort and bounded where applicable; failures are logged rather than preventing the remaining subsystem cleanup.
 
 Only after work capable of appending session entries has settled does disposal clean up an empty moved session, close the `SessionManager`, close provider session state, disconnect the agent, and remove listeners. A failure from the final persistence cleanup or `SessionManager.close()` rejects the shared disposal promise; individual provider-session close failures are logged.
+
+`session.getRuntimeResources()` returns resource `id`, `kind`
+(`python_kernel`, `javascript_kernel`, `shell`, `helper`), `ownerSessionId`,
+optional `ownerAgentId`/`pid`, `state`, `retentionReasons`, `liveHandles`, and
+`releasable`. `session.releaseRuntimeResource(resourceId)` is an explicit,
+destructive release of that resource's variables. Busy/shared resources and
+resources required by background work refuse release. RPC hosts expose
+`get_runtime_resources` and `release_runtime_resource` with `resourceId`.
+
+Safe runtime unload is distinct from abort or unconditional disposal. Embedders
+must inventory, drain persistence, inventory again, and synchronously close
+admission at the final eligibility check. Active/admitted work, unconfirmed
+content, permissions, background dependencies and retained variables/resources
+prevent unload. Desktop uses stable owner `desktop:<agentId>` across rewind and
+considers idle unload after five minutes, with a 30-second recheck.
+
+`SessionManager.releaseRetainedEntries()` is a terminal release after session
+disposal and persistence close, not a cache eviction for a reusable session.
+It must not be used to bypass data or variable retention gates. Accounting bytes,
+JavaScript heap, macOS `phys_footprint`, and Windows process commit are distinct;
+body budgets do not enlarge the compressed 4 GiB V8 cage or prove native UI or
+Windows qualification.
 
 ## Tools and extension integration
 

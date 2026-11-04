@@ -126,6 +126,8 @@ With `eval.autoBackground.enabled` (default `false`), a cell that outlives `eval
 
 ## Runtime behavior
 
+AgentSession executor IDs use the stable runtime owner plus cwd, not the mutable native transcript path. Conversation rewind/branch can change the transcript ID without changing retained Python or JavaScript variables or their subprocesses; ordinary calls continue using those same kernels until explicit reset, release, or disposal. Separate runtime owners remain isolated even in the same cwd.
+
 ### JavaScript (`js`)
 
 - Persistent worker VM keyed by `js:${sessionId}`; `reset` recreates the VM and is destructive to concurrent users of that session id.
@@ -253,9 +255,11 @@ With `eval.tools.enabled` (default on), a cell can turn a function into a tool o
 
 - Prelude helpers may read/write files and call arbitrary registered tools; JS exposes network-capable `fetch`.
 - Python uses a retained subprocess kernel speaking framed local IPC. JavaScript uses an isolated subprocess, with a Bun Worker fallback; if both fail to start, the call fails without executing code on the host thread.
-- Retained runtimes have no heartbeat or idle timer; they survive calls until reset, owner disposal (`EvalRunner.disposeKernels()` calls `disposeKernelSessionsByOwner` and `disposeVmContextsByOwner` keyed by `kernelOwnerId`, in `packages/coding-agent/src/session/eval-runner.ts`), or process exit.
+- Retained runtimes have no independent idle timer; they survive calls until reset, explicit eligible resource release, owner disposal (`EvalRunner.disposeKernels()` calls `disposeKernelSessionsByOwner` and `disposeVmContextsByOwner` keyed by `kernelOwnerId`), or process exit. Desktop's five-minute idle eligibility/30-second recheck does not discard retained variables automatically.
 - Cancellation is destructive when needed: JS terminates its worker; managed kernels interrupt and may escalate to shutdown. A reset is likewise destructive to concurrent work sharing that backend session.
 - Eval-driven `agent()` children stay registered as keep-alive agents; owner teardown cancels their jobs, releases completion handles/judgment batches, and closes the owner's work pools.
+- Resource inventory (`session.getRuntimeResources()` / RPC `get_runtime_resources`) reports kind, owner, state, retention reasons, live handles and `releasable`. Explicit `session.releaseRuntimeResource(resourceId)` / RPC `release_runtime_resource` permanently discards that resource's variables; busy/shared kernels and background dependencies refuse release. Safe unload retains variable-bearing resources unless explicitly released, along with active/admitted work, unconfirmed input and permissions.
+- Desktop uses owner `desktop:<agentId>` independently of native transcript IDs, so rewind does not orphan kernels or background jobs. Cold inventory uses retained snapshots without waking an SDK host; missing dynamic snapshots are explicitly unavailable.
 
 ## Limits and errors
 

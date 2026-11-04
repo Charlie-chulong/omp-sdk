@@ -639,6 +639,28 @@ bun dev -- --version
 
 For architecture and contribution guidelines, see [packages/coding-agent/DEVELOPMENT.md](packages/coding-agent/DEVELOPMENT.md).
 
+### Embedded history and runtime retention
+
+The [SDK reference](docs/sdk.md#session-manager-behavior-persistent-vs-in-memory)
+describes bounded lazy file-backed history (8 MiB hot bodies plus an 8 MiB body
+LRU), source rereads, and cold indexed-journal reads without launching a host.
+Complete `File` bodies stay persisted; image externalization/private stripping
+remain intact. Initial index/catalog scanning is distinct from warm page I/O.
+
+`session.getRuntimeResources()` and `session.releaseRuntimeResource(resourceId)`
+(RPC `get_runtime_resources` / `release_runtime_resource`) expose actual retained
+resources. Explicit release discards variables; busy/shared resources and
+background dependencies refuse it. Safe unload inventories, drains persistence,
+inventories again and synchronously fences final admission, preserving active
+work, unconfirmed content, permissions and retained variables. Desktop ownership
+stays `desktop:<agentId>` across rewind; its five-minute idle eligibility and
+30-second recheck are not automatic variable disposal. Cold metadata without a
+dynamic snapshot is explicitly unavailable rather than waking a session.
+
+Accounting bytes, JavaScript heap, macOS `phys_footprint`, and Windows process
+commit are separate measurements; these budgets neither enlarge the compressed
+4 GiB V8 cage nor claim native UI or Windows qualification.
+
 ---
 
 ## Monorepo Packages

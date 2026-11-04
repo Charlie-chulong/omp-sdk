@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { getProjectDir, logger, Snowflake } from "@oh-my-pi/pi-utils";
 import type { OutputArtifactError } from "@oh-my-pi/pi-tui/tools/streaming-output";
 import type { ToolSession } from "../../tools";
+import type { RuntimeResource } from "../../session/runtime-resources";
 import {
 	buildManagedKernelEnv,
 	buildManagedKernelEnvPatch,
@@ -307,9 +308,10 @@ async function replaceSessionKernel(
 	void (async () => {
 		try {
 			const remaining = getRemainingTimeoutMs(options.deadlineMs);
-			await kernel
-				.shutdown(remaining !== undefined ? { timeoutMs: Math.max(0, remaining) } : undefined)
-				.catch(() => undefined);
+			const stopped = await kernel.shutdown(
+				remaining !== undefined ? { timeoutMs: Math.max(0, remaining) } : undefined,
+			);
+			if (stopped.confirmed === false) throw new Error("Python kernel replacement shutdown not confirmed");
 			if (replacement.deadlineMs !== undefined && replacement.deadlineMs <= Date.now()) {
 				throw new PythonExecutionCancelledError(true);
 			}
@@ -330,7 +332,17 @@ async function replaceSessionKernel(
 				session.generation !== generation ||
 				session.kernel !== kernel
 			) {
-				await next.shutdown().catch(() => undefined);
+				const detached = {
+					...session,
+					kernel: next,
+					ownerIds: new Set(session.ownerIds),
+					activeExecutions: 0,
+					replacement: undefined,
+				};
+				const forget = context.retainDetachedSession(detached);
+				const stopped = await next.shutdown();
+				if (stopped.confirmed === false) throw new Error("Python cancelled replacement shutdown not confirmed");
+				forget();
 				throw new PythonExecutionCancelledError(false);
 			}
 			session.kernel = next;
@@ -347,7 +359,10 @@ async function replaceSessionKernel(
 
 async function shutdownInvalidatedSession(session: PythonSession): Promise<KernelShutdownResult> {
 	const replacement = session.replacement;
-	if (replacement) await replacement.promise.catch(() => undefined);
+	if (replacement)
+		await replacement.promise.catch(error => {
+			if (!(error instanceof PythonExecutionCancelledError)) throw error;
+		});
 	return await session.kernel.shutdown();
 }
 
@@ -432,10 +447,27 @@ async function executePerCall(code: string, cwd: string, options: PythonExecutor
 		options.bridgeSessionId = `py-bridge:${crypto.randomUUID()}`;
 	}
 	const kernel = await startKernel(cwd, options);
+	const sessionId = options.sessionId ?? `session:${cwd}`;
+	const ownerId = options.kernelOwnerId ?? sessionId;
+	const session: PythonSession = {
+		sessionKey: `python-per-call:${kernel.id}`,
+		sessionId,
+		cwd,
+		kernel,
+		ownerIds: new Set([ownerId]),
+		hasFallbackOwner: options.kernelOwnerId === undefined,
+		activeExecutions: 1,
+		generation: 0,
+		stateSessions: new Set(options.toolSession ? [options.toolSession] : []),
+	};
+	const forget = sessionRegistry.retainDetachedSession(session);
 	try {
 		return await executeWithKernel(kernel, code, { ...options, cwd });
 	} finally {
-		await kernel.shutdown().catch(() => undefined);
+		session.activeExecutions = 0;
+		const stopped = await kernel.shutdown();
+		if (stopped.confirmed === false) throw new Error("Python per-call kernel shutdown not confirmed");
+		forget();
 	}
 }
 
@@ -577,6 +609,49 @@ export async function disposeKernelSessionsByOwner(
 	options?: { requireStopped?: boolean },
 ): Promise<void> {
 	await sessionRegistry.disposeByOwner(ownerId, options);
+}
+
+export function getPythonRuntimeResources(ownerId: string): RuntimeResource[] {
+	const resources = sessionRegistry.getOwnedSessions(ownerId).map<RuntimeResource>(session => {
+		const liveHandles = session.activeExecutions + (session.kernel.liveHandleCount ?? 0);
+		const shared = session.ownerIds.size > 1;
+		return {
+			id: session.kernel.id,
+			kind: "python_kernel",
+			ownerSessionId: session.sessionId,
+			pid: session.kernel.runtimePid,
+			state: session.kernel.isAlive() ? (liveHandles > 0 ? "running" : "retained") : "stopping",
+			retentionReasons: [
+				...(liveHandles > 0 ? ["live_execution"] : ["kernel_variables"]),
+				...(shared ? ["shared_owner"] : []),
+			],
+			liveHandles,
+			releasable: liveHandles === 0 && !shared,
+		};
+	});
+	const starting = sessionRegistry.getStartingOwnerCount(ownerId);
+	if (starting > 0)
+		resources.push({
+			id: `python-start:${ownerId}`,
+			kind: "python_kernel",
+			ownerSessionId: ownerId,
+			state: "starting",
+			liveHandles: starting,
+			retentionReasons: ["live_execution"],
+			releasable: false,
+		});
+	return resources;
+}
+
+export async function releasePythonRuntimeResource(ownerId: string, resourceId: string): Promise<void> {
+	const resource = getPythonRuntimeResources(ownerId).find(item => item.id === resourceId);
+	if (!resource?.releasable)
+		throw new Error("Python kernel is busy, shared, or unavailable; stop its work before releasing variables");
+	await sessionRegistry.releaseOwnedKernel(ownerId, session => session.kernel.id === resourceId);
+}
+
+export async function reapOrphanedPythonKernels(): Promise<void> {
+	await sessionRegistry.reapOrphans();
 }
 
 /** Projects against an already-retained, idle Python session without starting a kernel. */

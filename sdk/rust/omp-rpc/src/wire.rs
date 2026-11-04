@@ -2905,6 +2905,24 @@ impl SubagentStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RuntimeResource {
+	pub id: String,
+	pub kind: RuntimeResourceKind,
+	#[serde(rename = "ownerSessionId")]
+	pub owner_session_id: String,
+	pub state: RuntimeResourceState,
+	#[serde(rename = "retentionReasons")]
+	pub retention_reasons: Vec<String>,
+	#[serde(rename = "liveHandles")]
+	pub live_handles: i64,
+	pub releasable: bool,
+	#[serde(rename = "ownerAgentId", default, skip_serializing_if = "Option::is_none")]
+	pub owner_agent_id: Option<String>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub pid: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TodoItem {
 	pub content: String,
 	pub status: TodoStatus,
@@ -5230,6 +5248,22 @@ pub struct OpenSessionParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GetRuntimeResourcesResult {
+	pub resources: Vec<RuntimeResource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReleaseRuntimeResourceParams {
+	#[serde(rename = "resourceId")]
+	pub resource_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReleaseRuntimeResourceResult {
+	pub released: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SetApprovalModeParams {
 	pub mode: ApprovalMode,
 }
@@ -5860,6 +5894,54 @@ impl AssistantErrorEventReason {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum RuntimeResourceKind {
+	#[serde(rename = "python_kernel")]
+	PythonKernel,
+	#[serde(rename = "javascript_kernel")]
+	JavascriptKernel,
+	#[serde(rename = "shell")]
+	Shell,
+	#[serde(rename = "helper")]
+	Helper,
+}
+
+impl RuntimeResourceKind {
+	/// Wire value.
+	pub fn as_str(self) -> &'static str {
+		match self {
+			Self::PythonKernel => "python_kernel",
+			Self::JavascriptKernel => "javascript_kernel",
+			Self::Shell => "shell",
+			Self::Helper => "helper",
+		}
+	}
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum RuntimeResourceState {
+	#[serde(rename = "starting")]
+	Starting,
+	#[serde(rename = "running")]
+	Running,
+	#[serde(rename = "retained")]
+	Retained,
+	#[serde(rename = "stopping")]
+	Stopping,
+}
+
+impl RuntimeResourceState {
+	/// Wire value.
+	pub fn as_str(self) -> &'static str {
+		match self {
+			Self::Starting => "starting",
+			Self::Running => "running",
+			Self::Retained => "retained",
+			Self::Stopping => "stopping",
+		}
+	}
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum GoalModeStateMode {
 	#[serde(rename = "active")]
 	Active,
@@ -6319,6 +6401,37 @@ impl Command for GetStateCommand {
 
 	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
 		serde_json::from_value::<SessionState>(data.unwrap_or_else(|| Value::Object(Map::new())))
+	}
+}
+
+/// List the actual resources retained by this session without starting new kernels.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct GetRuntimeResourcesCommand {}
+
+impl Command for GetRuntimeResourcesCommand {
+	const NAME: &'static str = "get_runtime_resources";
+	const TIMEOUT_MS: Option<u64> = None;
+	type Output = Vec<RuntimeResource>;
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		serde_json::from_value::<GetRuntimeResourcesResult>(data.unwrap_or_else(|| Value::Object(Map::new()))).map(|result| result.resources)
+	}
+}
+
+/// Release one idle owned resource; active or shared work is rejected.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReleaseRuntimeResourceCommand {
+	#[serde(rename = "resourceId")]
+	pub resource_id: String,
+}
+
+impl Command for ReleaseRuntimeResourceCommand {
+	const NAME: &'static str = "release_runtime_resource";
+	const TIMEOUT_MS: Option<u64> = None;
+	type Output = bool;
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		serde_json::from_value::<ReleaseRuntimeResourceResult>(data.unwrap_or_else(|| Value::Object(Map::new()))).map(|result| result.released)
 	}
 }
 

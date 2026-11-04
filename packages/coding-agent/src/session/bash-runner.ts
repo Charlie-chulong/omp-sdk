@@ -2,12 +2,7 @@ import * as path from "node:path";
 import type { Agent } from "@oh-my-pi/pi-agent-core";
 import { logger } from "@oh-my-pi/pi-utils";
 import type { Settings } from "../config/settings";
-import {
-	type BashPtyOptions,
-	type BashResult,
-	executeBash as executeBashCommand,
-	releaseShellSessions,
-} from "../exec/bash-executor";
+import { type BashPtyOptions, type BashResult, executeBash as executeBashCommand } from "../exec/bash-executor";
 import type { ExtensionRunner } from "../extensibility/extensions";
 import { outputMeta } from "../tools/output-meta";
 import { clampTimeout } from "../tools/tool-timeouts";
@@ -54,6 +49,8 @@ export interface BashRunnerHost {
 	settings: Settings;
 	extensionRunner(): ExtensionRunner | undefined;
 	isStreaming(): boolean;
+	getKernelOwnerId(): string;
+	isDisposed(): boolean;
 }
 
 /** Owns bash execution and preserves result ownership across transcript transitions. */
@@ -139,10 +136,9 @@ export class BashRunner {
 				result = await executeBashCommand(command, {
 					onChunk,
 					signal: abortController.signal,
-					sessionKey: target.sessionId,
-					// A command still pending when its session was left must not keep a
-					// shell under that session after the transition released its shells.
-					isSessionCurrent: () => this.#host.sessionManager.getSessionId() === target.sessionId,
+					sessionKey: this.#host.getKernelOwnerId(),
+					// Transcript branches move result destinations, never the live shell's owner.
+					isSessionCurrent: () => !this.#host.isDisposed(),
 					cwd,
 					timeout: clampTimeout("bash", undefined, cfgToolsMaxTimeout.get(this.#host.settings)) * 1000,
 					onMinimizedSave: originalText => this.#saveOriginalArtifact(target, originalText),
@@ -292,11 +288,6 @@ export class BashRunner {
 		transition.newTarget.destination = currentDestination;
 		if (!success) transition.newTarget.sessionId = manager.getSessionId();
 		transition.resolveNew(currentDestination);
-		// The left session's persistent shells are unreachable under the new id; drop
-		// them as dispose does, rather than holding each one until process exit.
-		if (success && transition.oldSessionId !== manager.getSessionId()) {
-			releaseShellSessions(transition.oldSessionId);
-		}
 		if (transition.detachedManager && (oldDestination.kind !== "detached" || transition.oldTarget.refs === 0)) {
 			void transition.detachedManager.close().catch(error => {
 				logger.warn("Failed to close detached bash session writer", { error: String(error) });

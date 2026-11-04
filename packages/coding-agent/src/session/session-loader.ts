@@ -3,6 +3,7 @@ import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import {
+	cloneJsonTree,
 	ConcatSink,
 	getBlobsDir,
 	isEisdir,
@@ -25,8 +26,16 @@ import {
 	resolveImageDataUrlSync,
 } from "./blob-store";
 import { buildSessionContext } from "./session-context";
-import type { FileEntry, RawFileEntry, SessionEntry, SessionHeader } from "./session-entries";
+import {
+	CURRENT_SESSION_VERSION,
+	type FileEntry,
+	type RawFileEntry,
+	type SessionEntry,
+	type SessionHeader,
+} from "./session-entries";
 import { migrateToCurrentVersion } from "./session-migrations";
+import { IndexedSessionJournal, SessionEntryBodyCache } from "./indexed-session-journal";
+import { sanitizeRehydratedOpenAIResponsesAssistantMessage } from "./messages";
 import { isExternalizableImagePosition, isPersistenceTruncatedString } from "./session-persistence";
 import { FileSessionStorage, type SessionStorage } from "./session-storage";
 import { enotdir } from "./session-storage-errors";
@@ -126,11 +135,15 @@ export interface VisitEntriesFromFileStreamOptions {
 export interface LoadSessionOptions {
 	/** Propagate ENOENT instead of treating the path as a new empty session. */
 	throwIfMissing?: boolean;
+	/** Retain bookkeeping only; synchronous body/image getters hydrate selected records. */
+	lazyBodies?: boolean;
 }
 
 /** Parsed session entries plus corruption metadata needed by writable loaders. */
 export interface SessionLoadResult {
 	entries: FileEntry[];
+	journal?: IndexedSessionJournal;
+	bodyCache?: SessionEntryBodyCache;
 	titleSlot: SessionTitleUpdate | undefined;
 	malformedRecords: number;
 	/** Byte length of the snapshot actually parsed, or `null` when the path did not exist. */
@@ -551,6 +564,31 @@ export async function loadSessionFile(
 ): Promise<SessionLoadResult> {
 	try {
 		const statSize = storage.statSync(filePath).size;
+		if (options.lazyBodies && storage instanceof FileSessionStorage && statSize > 0) {
+			const journal = await IndexedSessionJournal.open(filePath);
+			if (journal.header?.version === CURRENT_SESSION_VERSION && !journal.invalidHeader) {
+				const blobs = new BlobStore(getBlobsDir());
+				const bodyCache = new SessionEntryBodyCache(journal, entry => {
+					if (entry.type === "message" && entry.message.role === "assistant") {
+						normalizeAssistantUsage(entry.message);
+						entry.message = sanitizeRehydratedOpenAIResponsesAssistantMessage(entry.message);
+					}
+					resolveBlobRefsInEntriesSync([entry], blobs);
+				});
+				const entries: FileEntry[] = [journal.header];
+				for (const ref of journal.entries)
+					entries.push(bodyCache.makeCold({ ...ref.metadata } as unknown as FileEntry, ref));
+				return {
+					entries,
+					journal,
+					bodyCache,
+					titleSlot: journal.titleSlot,
+					malformedRecords: journal.malformedRecords,
+					sourceSize: journal.sourceSize,
+					invalidHeader: false,
+				};
+			}
+		}
 		const { loaded, sourceSize } = await loadWithKnownSize(filePath, storage, statSize, options);
 		return { ...loaded, sourceSize };
 	} catch (caught) {
@@ -568,6 +606,9 @@ export async function loadSessionFile(
 			throw err;
 		}
 		if (isEnoent(err)) {
+			// Offset-index reads/saves can fail with ENOENT while the transcript
+			// still exists. Never adopt an empty journal over those durable bytes.
+			if (storage instanceof FileSessionStorage && storage.existsSync(filePath)) throw err;
 			return {
 				entries: [],
 				titleSlot: undefined,
@@ -776,10 +817,13 @@ export function resolveBlobRefsInEntriesSync(entries: FileEntry[], blobStore: Bl
  * the session lock — safe to call against a file another session is writing.
  */
 export async function loadSessionMessagesReadOnly(filePath: string): Promise<AgentMessage[]> {
-	const entries = await loadEntriesFromFile(filePath);
+	const loaded = await loadSessionFile(filePath, new FileSessionStorage(), { lazyBodies: true });
+	const entries = loaded.entries;
 	if (entries.length === 0) return [];
-	migrateToCurrentVersion(entries);
-	for (const entry of entries) repairTruncatedSnapcompactFrames(entry);
+	if (!loaded.journal) {
+		migrateToCurrentVersion(entries);
+		for (const entry of entries) repairTruncatedSnapcompactFrames(entry);
+	}
 	const blobs = new BlobStore(getBlobsDir());
 	const sessionEntries = entries.filter((e): e is SessionEntry => e.type !== "session");
 	const { messages } = buildSessionContext(sessionEntries, undefined, undefined, {
@@ -797,5 +841,5 @@ export async function loadSessionMessagesReadOnly(filePath: string): Promise<Age
 			: message,
 	);
 	await resolveBlobRefs(displayMessages, blobs);
-	return displayMessages;
+	return cloneJsonTree(displayMessages);
 }

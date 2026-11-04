@@ -86,6 +86,19 @@ export const rpcCommands: readonly RpcCommandSpec[] = [
 
 	{ name: "get_state", doc: "Snapshot the session state.", result: "SessionState" },
 	{
+		name: "get_runtime_resources",
+		doc: "List the actual resources retained by this session without starting new kernels.",
+		result: { resources: "RuntimeResource[]" },
+		unwrap: "resources",
+	},
+	{
+		name: "release_runtime_resource",
+		doc: "Release one idle owned resource; active or shared work is rejected.",
+		params: { resourceId: "string" },
+		result: { released: "boolean" },
+		unwrap: "released",
+	},
+	{
 		name: "set_approval_mode",
 		doc: "Change session-only tool approval mode immediately, without interrupting an active turn.",
 		params: { mode: "ApprovalMode" },

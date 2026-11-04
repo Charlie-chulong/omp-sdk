@@ -70,7 +70,7 @@ import { sendsImageInputOnWire } from "@oh-my-pi/pi-ai/providers/vision-guard";
 import { resolvePromptCacheLookback } from "@oh-my-pi/pi-catalog/compat/prompt-cache-lookback";
 import { modelsAreEqual } from "@oh-my-pi/pi-catalog/models";
 import type { CatalogPolicyInputs } from "@oh-my-pi/pi-catalog/types";
-import { isRecord, logger, prompt, Snowflake } from "@oh-my-pi/pi-utils";
+import { cloneJsonTree, isRecord, logger, prompt, Snowflake } from "@oh-my-pi/pi-utils";
 import * as snapcompact from "@oh-my-pi/snapcompact";
 import { assertNativeCapability, readNativeCapabilities } from "../native-capabilities";
 import { writeArtifact } from "./artifacts";
@@ -1043,11 +1043,10 @@ export class SessionMaintenance {
 
 		const entrySnapshots = new Map<SessionEntry, SessionEntry>();
 		for (const { region } of items) {
-			if (!entrySnapshots.has(region.entry)) entrySnapshots.set(region.entry, structuredClone(region.entry));
+			if (!entrySnapshots.has(region.entry)) entrySnapshots.set(region.entry, cloneJsonTree(region.entry));
 		}
 		const anchorEntry = anchorIndex >= 0 ? branchEntries[anchorIndex] : undefined;
-		if (anchorEntry && !entrySnapshots.has(anchorEntry))
-			entrySnapshots.set(anchorEntry, structuredClone(anchorEntry));
+		if (anchorEntry && !entrySnapshots.has(anchorEntry)) entrySnapshots.set(anchorEntry, cloneJsonTree(anchorEntry));
 		applyShakeRegions(items);
 		try {
 			this.#host.recordAnchoredHistoryRewrite(anchoredTokensRemoved);

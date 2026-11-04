@@ -596,26 +596,24 @@ describe("FileSessionStorage line streaming", () => {
 		expect(fs.readdirSync(tempDir).filter(name => name.endsWith(".tmp"))).toEqual([]);
 	});
 
-	it("routes streamed rewrites through overridden text writers", async () => {
-		const seen: string[] = [];
-		class InterceptingStorage extends FileSessionStorage {
-			override writeTextSync(fpath: string, content: string): void {
-				seen.push(`sync:${content}`);
-				super.writeTextSync(fpath, content);
-			}
-			override async writeTextAtomic(fpath: string, content: string, options?: WriteTextAtomicOptions) {
-				seen.push(`atomic:${content}`);
-				await super.writeTextAtomic(fpath, content, options);
-			}
-		}
-		const storage = new InterceptingStorage();
+	it("leaves the current file intact when a streamed body fails partway", async () => {
+		const storage = new FileSessionStorage();
 		const sessionPath = path.join(tempDir, "session.jsonl");
+		storage.writeLinesSync(sessionPath, lines, { expectedSize: null });
+		function* failingBody(): IterableIterator<string> {
+			yield `${"replacement".repeat(256 * 1024)}\n`;
+			throw new Error("body read failed");
+		}
 
-		storage.writeLinesSync(sessionPath, ["a\n", "b\n"]);
-		await storage.writeLinesAtomic(sessionPath, ["c\n", "d\n"]);
-
-		expect(seen).toEqual(["sync:a\nb\n", "atomic:c\nd\n"]);
-		expect(fs.readFileSync(sessionPath, "utf8")).toBe("c\nd\n");
+		expect(() =>
+			storage.writeLinesSync(sessionPath, failingBody(), { expectedSize: Buffer.byteLength(body) }),
+		).toThrow("body read failed");
+		expect(fs.readFileSync(sessionPath, "utf8")).toBe(body);
+		await expect(
+			storage.writeLinesAtomic(sessionPath, failingBody(), { expectedSize: Buffer.byteLength(body) }),
+		).rejects.toThrow("body read failed");
+		expect(fs.readFileSync(sessionPath, "utf8")).toBe(body);
+		expect(fs.readdirSync(tempDir).filter(name => name.endsWith(".tmp"))).toEqual([]);
 	});
 });
 

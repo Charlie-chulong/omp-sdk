@@ -10,6 +10,7 @@ import type {
 	Usage,
 } from "@oh-my-pi/pi-ai";
 import {
+	cloneJsonTree,
 	directoryIsEnterable,
 	directoryIsMissing,
 	getBlobsDir,
@@ -95,7 +96,6 @@ import {
 	type SessionInfo,
 } from "./session-listing";
 import {
-	loadEntriesFromFile,
 	loadSessionFile,
 	normalizeAssistantUsage,
 	parseSessionContent,
@@ -106,6 +106,12 @@ import {
 	visitEntriesFromFile,
 } from "./session-loader";
 import { generateId, migrateToCurrentVersion } from "./session-migrations";
+import {
+	estimateSessionValueBytes,
+	getIndexedTaskUsage,
+	IndexedSessionJournal,
+	SessionEntryBodyCache,
+} from "./indexed-session-journal";
 import {
 	computeDefaultSessionDir,
 	hasPositiveMovedProjectEvidence,
@@ -130,6 +136,7 @@ import {
 	normalizeWorkspaceDirectory,
 } from "./session-workspace";
 import { recordSessionRecap, recordSessionTitle } from "./session-index";
+import { copyPersistedSessionEntryId, setPersistedSessionEntryId } from "./turn-persistence";
 
 const JSONL_SUFFIX_LENGTH = ".jsonl".length;
 const DRAFT_ONLY_SESSION_MARKER = ".draft-only-session";
@@ -422,7 +429,10 @@ function entryUsage(entry: SessionEntry): Usage | undefined {
 	if (entry.type !== "message") return undefined;
 	const message = entry.message;
 	if (message.role === "assistant") return message.usage;
-	if (message.role === "toolResult" && message.toolName === "task") return taskUsageFrom(message.details);
+	if (message.role === "toolResult" && message.toolName === "task") {
+		const indexed = getIndexedTaskUsage(entry);
+		return indexed ? (indexed.usage as Usage | undefined) : taskUsageFrom(message.details);
+	}
 	return undefined;
 }
 
@@ -807,13 +817,13 @@ interface SessionBodyStamp {
  * streams them instead of materializing one string the size of the session.
  */
 interface SessionFileBody {
-	lines: string[];
+	lines: Iterable<string>;
 	bytes: number;
 	stamp: SessionBodyStamp;
 }
 
 /** Whether `text` is exactly the concatenation of `lines`, compared without building it. */
-function textMatchesLines(text: string, lines: readonly string[]): boolean {
+function textMatchesLines(text: string, lines: Iterable<string>): boolean {
 	let offset = 0;
 	for (const line of lines) {
 		if (!text.startsWith(line, offset)) return false;
@@ -925,6 +935,14 @@ export class SessionManager {
 	#hasTitleSlot = true;
 	#entries: SessionEntry[] = [];
 	#index = new SessionEntryIndex();
+	#journal: IndexedSessionJournal | undefined;
+	#bodyCache: SessionEntryBodyCache | undefined;
+	#cooledEntryCount = 0;
+	#markColdBodyMutation = (): void => {
+		this.#rewriteRequired = true;
+		this.#atomicRewriteDirty = true;
+		this.#bodyRevision++;
+	};
 
 	/** File reflects all current entries; appends can go incrementally. */
 	#fileIsCurrent = false;
@@ -1192,6 +1210,8 @@ export class SessionManager {
 		for (const entry of foreign) {
 			// A recovery that raced this one may already have kept it.
 			if (this.#index.has(entry.id)) continue;
+			if (entry.type === "message" && entry.message.role === "assistant")
+				setPersistedSessionEntryId(entry.message, entry.id);
 			this.#entries.push(entry);
 			this.#index.insert(entry);
 			adopted++;
@@ -1500,7 +1520,7 @@ export class SessionManager {
 		try {
 			await (this.#storage.writeLinesAtomic
 				? this.#storage.writeLinesAtomic(target, body.lines, options)
-				: this.#storage.writeTextAtomic(target, body.lines.join(""), options));
+				: this.#storage.writeTextAtomic(target, Array.from(body.lines).join(""), options));
 		} catch (error) {
 			const retryPath = await this.#recoverFromWriteConflict(error, recoveries);
 			if (retryPath) return this.#publishAuthoritativeBody(retryPath, operationError, commitGuard, recoveries + 1);
@@ -1538,14 +1558,118 @@ export class SessionManager {
 	}
 
 	#lineFor(entry: FileEntry): string {
-		return `${stringifyJson(prepareEntryForPersistence(entry, this.#blobs)) ?? "null"}\n`;
+		const persisted = this.#bodyCache?.entryForPersistence(entry) ?? entry;
+		return `${stringifyJson(prepareEntryForPersistence(persisted, this.#blobs, this.#storage instanceof FileSessionStorage)) ?? "null"}\n`;
 	}
 	#recordDurableAppend(line: string): void {
 		this.#expectedDiskSize = (this.#expectedDiskSize ?? 0) + Buffer.byteLength(line, "utf8");
+		this.#coolDurableHistory();
 	}
 
 	#recordFullRewrite(bytes: number): void {
 		this.#expectedDiskSize = bytes;
+		this.#journal?.invalidate(this.#liveRelocationWritePath() ?? this.#sessionFile);
+		// A fenced pass may predate an edit; its next pass must still see the pinned body.
+		if (!(this.#atomicRewriteFenceEpoch === this.#diskEpoch && this.#atomicRewriteDirty)) this.#bodyCache?.commit();
+		this.#cooledEntryCount = 0;
+		this.#coolDurableHistory();
+	}
+
+	#coolDurableHistory(): void {
+		if (!(this.#storage instanceof FileSessionStorage) || !this.#sessionFile || this.#entriesReleased) return;
+		if (!this.#journal) {
+			this.#journal = new IndexedSessionJournal(this.#liveRelocationWritePath() ?? this.#sessionFile);
+			this.#bodyCache = new SessionEntryBodyCache(this.#journal, entry =>
+				resolveBlobRefsInEntriesSync([entry], this.#blobs),
+			);
+			this.#bodyCache.onMutation = this.#markColdBodyMutation;
+		}
+		this.#journal.refreshSync();
+		const bodyCache = this.#bodyCache!;
+		let coldEnd = this.#entries.length;
+		let hotBytes = 0;
+		const hotBudget = 8 * 1024 * 1024;
+		while (coldEnd > this.#cooledEntryCount) {
+			const entry = this.#entries[coldEnd - 1]!;
+			if (bodyCache.isCold(entry)) break;
+			const bytes = estimateSessionValueBytes(entry);
+			if (hotBytes + bytes > hotBudget) break;
+			hotBytes += bytes;
+			coldEnd--;
+		}
+		for (; this.#cooledEntryCount < coldEnd; this.#cooledEntryCount++) {
+			const entry = this.#entries[this.#cooledEntryCount]!;
+			const ref = this.#journal.get(entry.id);
+			// A staged/failed write is never evicted: only confirmed disk refs qualify.
+			if (!ref) break;
+			bodyCache.makeCold(entry, ref);
+			if (entry.type === "message" && entry.message.role === "assistant")
+				setPersistedSessionEntryId(entry.message, entry.id);
+		}
+		void this.#journal
+			.save()
+			.catch(error => logger.warn("Session offset index was not saved", { error: toError(error).message }));
+	}
+
+	getHistoryRetentionStats(): {
+		hotEntries: number;
+		hotBodyBytes: number;
+		residentBodyBytes: number;
+		cachedBodyBytes: number;
+		pinnedBodyBytes: number;
+		borrowedBodyBytes: number;
+		overBudgetBytes: number;
+		cachedEntries: number;
+		pinnedEntries: number;
+		borrowedEntries: number;
+		maxBytes: number;
+		bytesRead: number;
+		entriesParsed: number;
+		indexedEntries: number;
+		indexBytesRead: number;
+		indexEntriesParsed: number;
+		entryBytesRead: number;
+		entryEntriesParsed: number;
+	} {
+		const bodies = this.#bodyCache?.getStats() ?? {
+			residentBodyBytes: 0,
+			cachedBodyBytes: 0,
+			pinnedBodyBytes: 0,
+			borrowedBodyBytes: 0,
+			overBudgetBytes: 0,
+			cachedEntries: 0,
+			pinnedEntries: 0,
+			borrowedEntries: 0,
+			maxBytes: 8 * 1024 * 1024,
+		};
+		const journal = this.#journal?.getStats() ?? {
+			bytesRead: 0,
+			entriesParsed: 0,
+			indexedEntries: 0,
+			residentBodyBytes: 0,
+			indexBytesRead: 0,
+			indexEntriesParsed: 0,
+			entryBytesRead: 0,
+			entryEntriesParsed: 0,
+		};
+		let hotEntries = 0;
+		let hotBodyBytes = 0;
+		for (const entry of this.#entries)
+			if (!this.#bodyCache?.isCold(entry)) {
+				hotEntries++;
+				hotBodyBytes += estimateSessionValueBytes(entry);
+			}
+		const residentBodyBytes = hotBodyBytes + bodies.residentBodyBytes;
+		const maxBytes = 8 * 1024 * 1024 + bodies.maxBytes;
+		return {
+			...journal,
+			...bodies,
+			hotEntries,
+			hotBodyBytes,
+			residentBodyBytes,
+			maxBytes,
+			overBudgetBytes: Math.max(0, residentBodyBytes - maxBytes),
+		};
 	}
 
 	/**
@@ -1599,13 +1723,25 @@ export class SessionManager {
 		const titleLine = this.#titleSlotLine();
 		const headerLine = this.#lineFor(this.#header);
 		const entries = this.#entries;
-		const lines = [titleLine, headerLine];
-		let bytes = Buffer.byteLength(titleLine, "utf8") + Buffer.byteLength(headerLine, "utf8");
-		for (const entry of entries) {
-			const line = this.#lineFor(entry);
-			bytes += Buffer.byteLength(line, "utf8");
-			lines.push(line);
-		}
+		const snapshot = entries.slice();
+		let bytes = 0;
+		let complete = false;
+		const lineFor = (entry: FileEntry): string => this.#lineFor(entry);
+		const stream: Iterable<string> = {
+			*[Symbol.iterator]() {
+				bytes = Buffer.byteLength(titleLine, "utf8") + Buffer.byteLength(headerLine, "utf8");
+				yield titleLine;
+				yield headerLine;
+				for (const entry of snapshot) {
+					const line = lineFor(entry);
+					bytes += Buffer.byteLength(line, "utf8");
+					yield line;
+				}
+				complete = true;
+			},
+		};
+		// Non-file backends retain their eager snapshot/publish semantics.
+		const lines = this.#storage instanceof FileSessionStorage ? stream : Array.from(stream);
 		const stamp: SessionBodyStamp = {
 			entries,
 			entryCount: entries.length,
@@ -1613,7 +1749,17 @@ export class SessionManager {
 			revision: this.#bodyRevision,
 			prefix: titleLine + headerLine,
 		};
-		return { lines, bytes, stamp };
+		return {
+			lines,
+			get bytes() {
+				if (!complete) {
+					const iterator = stream[Symbol.iterator]();
+					while (!iterator.next().done) {}
+				}
+				return bytes;
+			},
+			stamp,
+		};
 	}
 
 	#historyContainsAssistantMessage(): boolean {
@@ -1665,7 +1811,7 @@ export class SessionManager {
 				try {
 					const options = { expectedSize: this.#expectedDiskSize };
 					if (this.#storage.writeLinesSync) this.#storage.writeLinesSync(targetPath, body.lines, options);
-					else this.#storage.writeTextSync(targetPath, body.lines.join(""), options);
+					else this.#storage.writeTextSync(targetPath, Array.from(body.lines).join(""), options);
 					break;
 				} catch (err) {
 					const retryPath = this.#recoverFromWriteConflictSync(err, recoveries);
@@ -1800,7 +1946,7 @@ export class SessionManager {
 				try {
 					await (this.#storage.writeLinesAtomic
 						? this.#storage.writeLinesAtomic(sessionFile, body.lines, options)
-						: this.#storage.writeTextAtomic(sessionFile, body.lines.join(""), options));
+						: this.#storage.writeTextAtomic(sessionFile, Array.from(body.lines).join(""), options));
 				} catch (error) {
 					if (await this.#recoverFromWriteConflict(error, recoveries)) {
 						recoveries++;
@@ -2058,6 +2204,9 @@ export class SessionManager {
 		this.#titleUpdatedAt = timestamp;
 
 		this.#entries = [];
+		this.#journal = undefined;
+		this.#bodyCache = undefined;
+		this.#cooledEntryCount = 0;
 		this.#index.clear();
 		this.#fileIsCurrent = false;
 		this.#rewriteRequired = false;
@@ -2094,6 +2243,10 @@ export class SessionManager {
 		this.#titleSource = header.titleSource;
 		this.#titleUpdatedAt = header.timestamp;
 		const repairedUsage = normalizeLoadedUsage(entries);
+		for (const entry of entries) {
+			if (entry.type === "message" && entry.message.role === "assistant")
+				setPersistedSessionEntryId(entry.message, entry.id);
+		}
 		if (repairedUsage > 0) logger.warn("Loaded assistant messages with incomplete usage", { count: repairedUsage });
 		this.#index.rebuild(entries);
 	}
@@ -2121,8 +2274,10 @@ export class SessionManager {
 			logger.warn("Dropped session entry appended after terminal release", { type: entry.type });
 			return;
 		}
-		if (entry.type === "message" && entry.message.role === "assistant" && normalizeAssistantUsage(entry.message)) {
-			logger.warn("Assistant message recorded with incomplete usage", { id: entry.id });
+		if (entry.type === "message" && entry.message.role === "assistant") {
+			setPersistedSessionEntryId(entry.message, entry.id);
+			if (normalizeAssistantUsage(entry.message))
+				logger.warn("Assistant message recorded with incomplete usage", { id: entry.id });
 		}
 		this.#entries.push(entry);
 		this.#index.insert(entry);
@@ -2374,7 +2529,7 @@ export class SessionManager {
 		this.#sessionClaim = undefined;
 
 		const resolvedSessionFile = path.resolve(sessionFile);
-		const loaded = loadedSession ?? (await loadSessionFile(resolvedSessionFile, this.#storage));
+		const loaded = loadedSession ?? (await loadSessionFile(resolvedSessionFile, this.#storage, { lazyBodies: true }));
 		const sourceSize =
 			loaded.sourceSize !== undefined
 				? loaded.sourceSize
@@ -2407,8 +2562,8 @@ export class SessionManager {
 			return;
 		}
 
-		const migrated = migrateToCurrentVersion(fileEntries);
-		await resolveBlobRefsInEntries(fileEntries, this.#blobs);
+		const migrated = loaded.journal ? false : migrateToCurrentVersion(fileEntries);
+		if (!loaded.journal) await resolveBlobRefsInEntries(fileEntries, this.#blobs);
 		// loadEntriesFromFile guarantees entries[0] is a valid session header.
 		const header = fileEntries[0] as SessionHeader;
 
@@ -2436,6 +2591,10 @@ export class SessionManager {
 		}
 
 		this.#applyEntries(header, fileEntries.slice(1) as SessionEntry[]);
+		this.#journal = loaded.journal;
+		this.#bodyCache = loaded.bodyCache;
+		if (this.#bodyCache) this.#bodyCache.onMutation = this.#markColdBodyMutation;
+		this.#cooledEntryCount = loaded.journal ? this.#entries.length : 0;
 		this.#expectedDiskSize = sourceSize;
 		this.#additionalDirectories = header.additionalDirectories ?? [];
 		this.#titleUpdatedAt = titleSlot?.updatedAt ?? header.timestamp;
@@ -2770,7 +2929,11 @@ export class SessionManager {
 		manager.#additionalDirectories = [...this.#additionalDirectories];
 		manager.#header.additionalDirectories =
 			manager.#additionalDirectories.length > 0 ? [...manager.#additionalDirectories] : undefined;
-		manager.#entries = structuredClone(this.#entries);
+		manager.#entries = cloneJsonTree(this.#entries);
+		for (const entry of manager.#entries) {
+			if (entry.type === "message" && entry.message.role === "assistant")
+				setPersistedSessionEntryId(entry.message, entry.id);
+		}
 		manager.#index.rebuild(manager.#entries);
 		manager.#forceFileCreation = true;
 		await manager.#rewriteAtomically();
@@ -3045,6 +3208,9 @@ export class SessionManager {
 		this.seal();
 		this.#entries = [];
 		this.#index.clear();
+		this.#bodyCache = undefined;
+		this.#journal = undefined;
+		this.#cooledEntryCount = 0;
 		this.#inMemoryArtifacts = null;
 		this.#closeWriterEventually();
 		this.#entriesReleased = true;
@@ -3918,10 +4084,17 @@ export class SessionManager {
 	 * the full-history display transcript, from the current leaf path.
 	 */
 	buildSessionContext(options?: BuildSessionContextOptions): SessionContext {
-		return buildSessionContext(this.#entries, this.#index.leafId(), this.#index.entriesById(), {
+		const context = buildSessionContext(this.#entries, this.#index.leafId(), this.#index.entriesById(), {
 			resolveFrameData: data => lazyImageDataSync(this.#blobs, data),
 			...options,
 		});
+		// Providers own the selected context's containers, not cache mutation proxies.
+		context.messages = context.messages.map(message => {
+			const detached = cloneJsonTree(message);
+			copyPersistedSessionEntryId(detached, message);
+			return detached;
+		});
+		return context;
 	}
 
 	/** Prompt blocks for a snapcompact archive, budgeted and resolved as {@link buildSessionContext} attaches them. */
@@ -3934,6 +4107,7 @@ export class SessionManager {
 	sanitizeLoadedOpenAIResponsesReplayMetadata(): boolean {
 		let changed = false;
 		for (const entry of this.#entries) {
+			if (this.#bodyCache?.isCold(entry)) continue;
 			if (entry.type !== "message" || entry.message.role !== "assistant") continue;
 			const sanitized = sanitizeRehydratedOpenAIResponsesAssistantMessage(entry.message);
 			if (sanitized === entry.message) continue;
@@ -4231,15 +4405,18 @@ export class SessionManager {
 
 		// A missing source must fail instead of forking an empty parentless session:
 		// the loader swallows ENOENT by default for fresh-session opens, so fork opts out.
-		let sourceEntries: FileEntry[];
+		let sourceLoaded: SessionLoadResult;
 		try {
-			sourceEntries = await loadEntriesFromFile(sourcePath, storage, { throwIfMissing: true });
+			sourceLoaded = await loadSessionFile(sourcePath, storage, { throwIfMissing: true, lazyBodies: true });
 		} catch (err) {
 			if (isEnoent(err) || isEnotdir(err)) throw new ForkSourceNotFoundError(sourcePath);
 			throw err;
 		}
-		migrateToCurrentVersion(sourceEntries);
-		await resolveBlobRefsInEntries(sourceEntries, manager.#blobs);
+		const sourceEntries = sourceLoaded.entries;
+		if (!sourceLoaded.journal) {
+			migrateToCurrentVersion(sourceEntries);
+			await resolveBlobRefsInEntries(sourceEntries, manager.#blobs);
+		}
 
 		const sourceHeader = sourceEntries.find(entry => entry.type === "session") as SessionHeader | undefined;
 		const history = sourceEntries.filter(entry => entry.type !== "session") as SessionEntry[];
@@ -4269,6 +4446,14 @@ export class SessionManager {
 		manager.#titleUpdatedAt = nowIso();
 		manager.#hasTitleSlot = true;
 		manager.#entries = history;
+		for (const entry of history) {
+			if (entry.type === "message" && entry.message.role === "assistant")
+				setPersistedSessionEntryId(entry.message, entry.id);
+		}
+		manager.#journal = sourceLoaded.journal;
+		manager.#bodyCache = sourceLoaded.bodyCache;
+		if (manager.#bodyCache) manager.#bodyCache.onMutation = manager.#markColdBodyMutation;
+		manager.#cooledEntryCount = sourceLoaded.journal ? history.length : 0;
 		manager.#index.rebuild(history);
 		manager.sanitizeLoadedOpenAIResponsesReplayMetadata();
 		if (options?.repairInterruptedTail) {
@@ -4370,7 +4555,10 @@ export class SessionManager {
 		storage: SessionStorage = new FileSessionStorage(),
 		options?: { initialCwd?: string; parentSession?: string; suppressBreadcrumb?: boolean; throwIfMissing?: boolean },
 	): Promise<SessionManager> {
-		const probed = await loadSessionFile(filePath, storage, { throwIfMissing: options?.throwIfMissing });
+		const probed = await loadSessionFile(filePath, storage, {
+			throwIfMissing: options?.throwIfMissing,
+			lazyBodies: true,
+		});
 		const header = probed.entries.find(entry => entry.type === "session") as SessionHeader | undefined;
 		// Resume into the session's recorded cwd only when it is verifiably
 		// accessible. A deleted or permission-blocked (macOS TCC denial) project
@@ -4394,7 +4582,7 @@ export class SessionManager {
 		// closed here (ENOENT / holds-no-entries, without minting) instead of
 		// reviving stale history. Other callers keep the single probe read.
 		const loaded = options?.throwIfMissing
-			? await loadSessionFile(filePath, storage, { throwIfMissing: true })
+			? await loadSessionFile(filePath, storage, { throwIfMissing: true, lazyBodies: true })
 			: probed;
 		await manager.#setSessionFile(filePath, loaded, {
 			throwIfMissing: options?.throwIfMissing,

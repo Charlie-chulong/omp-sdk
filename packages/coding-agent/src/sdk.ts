@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import { restoreOwnedServices } from "./launch/services";
 import {
 	Agent,
 	type AgentEvent,
@@ -681,6 +682,8 @@ export interface CreateAgentSessionOptions {
 	/** Optional provider-facing session identifier for prompt caches and sticky auth selection.
 	 * Keeps persisted session files isolated while reusing provider-side caches. */
 	providerSessionId?: string;
+	/** Stable embedding owner for supervised services; independent of transcript branches. */
+	serviceOwnerId?: string;
 	/** Optional provider-facing prompt cache key, distinct from request lineage. */
 	providerPromptCacheKey?: string;
 	/** Task-derived cache candidate; applied only when the actual request model opts in. */
@@ -2503,6 +2506,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			trackEvalExecution: (execution, abortController) =>
 				session ? session.trackEvalExecution(execution, abortController) : execution,
 			getSessionId: () => sessionManager.getSessionId?.() ?? null,
+			getServiceOwnerId: () => options.serviceOwnerId ?? sessionManager.getSessionId(),
 			isDisposed: () => session?.isDisposed ?? false,
 			getHindsightSessionState: () => session?.getHindsightSessionState(),
 			getMnemopiSessionState: () => session?.getMnemopiSessionState(),
@@ -4866,6 +4870,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				const id = sessionManager.getSessionId?.();
 				return id ? `${id}-advisor` : null;
 			},
+			getServiceOwnerId: () => `${options.serviceOwnerId ?? sessionManager.getSessionId()}-advisor`,
 			queueLaunchCompletion: notification =>
 				session?.queueLaunchCompletion(notification) ??
 				Promise.reject(new Error("Session unavailable for launch completion delivery")),
@@ -5025,6 +5030,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			agentId: resolvedAgentId,
 			agentKind,
 			providerSessionId: options.providerSessionId,
+			serviceOwnerId: options.serviceOwnerId,
 			accountPoolScope,
 			providerPromptCacheKeySource,
 			advisorTools,
@@ -5754,6 +5760,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			});
 		}
 		startDeferredMCPDiscovery?.(session);
+		if (options.serviceOwnerId) await restoreOwnedServices(toolSession);
 
 		startupCleanup.move();
 		return {

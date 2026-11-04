@@ -28,6 +28,7 @@ interface RegistryKernelShutdownResult {
 
 interface RegistryKernel {
 	isAlive(): boolean;
+	readonly liveHandleCount?: number;
 	shutdown(options?: { timeoutMs: number }): Promise<RegistryKernelShutdownResult>;
 }
 
@@ -36,6 +37,7 @@ export interface KernelSession<TKernel extends RegistryKernel> extends SessionOw
 	sessionId: string;
 	cwd: string;
 	kernel: TKernel;
+	activeExecutions: number;
 }
 
 interface StartingKernelSession<TSession> extends SessionOwners {
@@ -50,6 +52,7 @@ export interface KernelSessionRegistryContext<
 	sessions: Map<string, TSession>;
 	startKernel: (cwd: string, options: TOptions) => Promise<TKernel>;
 	replaceSessionKernel: (session: TSession, cwd: string, options: TOptions) => Promise<TKernel>;
+	retainDetachedSession: (session: TSession) => () => void;
 }
 
 interface KernelSessionRegistryDescriptor<
@@ -94,6 +97,11 @@ interface KernelSessionRegistry<
 > {
 	disposeAll(): Promise<void>;
 	disposeByOwner(ownerId: string, options?: { requireStopped?: boolean }): Promise<void>;
+	getOwnedSessions(ownerId: string): TSession[];
+	getStartingOwnerCount(ownerId: string): number;
+	reapOrphans(): Promise<void>;
+	releaseOwnedKernel(ownerId: string, predicate: (session: TSession) => boolean): Promise<void>;
+	retainDetachedSession(session: TSession): () => void;
 	executeOnSession(code: string, cwd: string, options: TOptions): Promise<R>;
 	peekLiveKernel(cwd: string, options: TOptions): TKernel | undefined;
 	getPresentSession(cwd: string, options: TOptions): TSession | undefined;
@@ -139,6 +147,7 @@ export function createKernelSessionRegistry<
 	descriptor: KernelSessionRegistryDescriptor<TKernel, TOptions, R, TSession>,
 ): KernelSessionRegistry<TKernel, TOptions, R, TSession> {
 	const sessions = new Map<string, TSession>();
+	const orphanedSessions = new Set<TSession>();
 	const startingSessions = new Map<string, StartingKernelSession<TSession>>();
 	const resettingSessions = new Map<string, Promise<void>>();
 	const replacingSessionKernels = new Map<TSession, { kernel: TKernel; promise: Promise<TKernel> }>();
@@ -147,6 +156,12 @@ export function createKernelSessionRegistry<
 		sessions,
 		startKernel: descriptor.startKernel,
 		replaceSessionKernel,
+		retainDetachedSession: session => {
+			orphanedSessions.add(session);
+			return () => {
+				orphanedSessions.delete(session);
+			};
+		},
 	};
 
 	function waitForStartup(promise: Promise<TSession>, options: TOptions): Promise<TSession> {
@@ -195,6 +210,7 @@ export function createKernelSessionRegistry<
 				sessionId,
 				cwd,
 				kernel,
+				activeExecutions: 0,
 				ownerIds: new Set(startingSession.ownerIds),
 				hasFallbackOwner: startingSession.hasFallbackOwner,
 			});
@@ -229,16 +245,21 @@ export function createKernelSessionRegistry<
 		}
 		const old = session.kernel;
 		const remaining = getRemainingTimeoutMs(options.deadlineMs);
-		await old
-			.shutdown(remaining !== undefined ? { timeoutMs: Math.max(0, remaining) } : undefined)
-			.catch(() => undefined);
+		const stopped = await old.shutdown(remaining !== undefined ? { timeoutMs: Math.max(0, remaining) } : undefined);
+		if (stopped.confirmed === false)
+			throw new Error(`${descriptor.languageLabel} kernel replacement shutdown not confirmed`);
 		if (sessions.get(session.sessionKey) !== session) {
 			throw new descriptor.cancelledErrorClass(false);
 		}
 		requireRemainingKernelTimeoutMs(options.deadlineMs, descriptor.cancelledErrorClass);
 		const next = await logger.withoutContext(() => descriptor.startKernel(cwd, options));
 		if (sessions.get(session.sessionKey) !== session) {
-			await next.shutdown().catch(() => undefined);
+			const detached = { ...session, kernel: next, ownerIds: new Set(session.ownerIds), activeExecutions: 0 };
+			const forget = context.retainDetachedSession(detached);
+			const stopped = await next.shutdown();
+			if (stopped.confirmed === false)
+				throw new Error(`${descriptor.languageLabel} cancelled replacement shutdown not confirmed`);
+			forget();
 			throw new descriptor.cancelledErrorClass(false);
 		}
 		session.kernel = next;
@@ -292,17 +313,11 @@ export function createKernelSessionRegistry<
 
 	async function shutdownSession(session: TSession, resetting: boolean): Promise<RegistryKernelShutdownResult> {
 		const replacement = replacingSessionKernels.get(session)?.promise;
-		let shutdown: Promise<RegistryKernelShutdownResult>;
-		try {
-			shutdown = descriptor.shutdownSession?.(session, resetting) ?? session.kernel.shutdown();
-		} catch (error) {
-			if (replacement) await replacement.catch(() => undefined);
-			throw error;
-		}
-		if (!replacement) return await shutdown;
-		const [result] = await Promise.allSettled([shutdown, replacement]);
-		if (result.status === "rejected") throw result.reason;
-		return result.value;
+		if (replacement)
+			await replacement.catch(error => {
+				if (!(error instanceof descriptor.cancelledErrorClass)) throw error;
+			});
+		return await (descriptor.shutdownSession?.(session, resetting) ?? session.kernel.shutdown());
 	}
 	async function settleShutdown(
 		session: TSession,
@@ -319,15 +334,20 @@ export function createKernelSessionRegistry<
 			sessions.get(sessionKey) ?? (await startingSessions.get(sessionKey)?.promise.catch(() => undefined));
 		if (!existing) return;
 		descriptor.invalidateSession?.(existing);
-		sessions.delete(sessionKey);
-		await shutdownSession(existing, true).catch(() => undefined);
+		const result = await shutdownSession(existing, true);
+		if (result.confirmed === false)
+			throw new Error(`${descriptor.languageLabel} kernel reset shutdown not confirmed`);
+		if (sessions.get(sessionKey) === existing) sessions.delete(sessionKey);
 	}
 
 	async function disposeAll(): Promise<void> {
 		const pending = [...startingSessions.values()].map(starting => starting.promise);
 		startingSessions.clear();
 		if (descriptor.clearResetsOnDisposeAll) resettingSessions.clear();
-		const all = [...sessions.entries()];
+		const all = [...new Set([...sessions.values(), ...orphanedSessions])].map(
+			session => [session.sessionKey, session] as const,
+		);
+		orphanedSessions.clear();
 		for (const [id, session] of all) {
 			descriptor.invalidateSession?.(session);
 			if (sessions.get(id) === session) sessions.delete(id);
@@ -356,6 +376,7 @@ export function createKernelSessionRegistry<
 				reason,
 			});
 			if (!sessions.has(id)) sessions.set(id, session);
+			else if (sessions.get(id) !== session) orphanedSessions.add(session);
 		}
 	}
 
@@ -363,8 +384,7 @@ export function createKernelSessionRegistry<
 		const toShutdown: TSession[] = [];
 		const startingToShutdown: StartingKernelSession<TSession>[] = [];
 		const failures: unknown[] = [];
-		for (const session of Array.from(sessions.values())) {
-			if (!session.ownerIds.has(ownerId)) continue;
+		for (const session of getOwnedSessions(ownerId)) {
 			if (session.ownerIds.size === 1) {
 				toShutdown.push(session);
 				continue;
@@ -410,6 +430,7 @@ export function createKernelSessionRegistry<
 			const result = results[i];
 			if (result.status === "fulfilled" && result.value?.confirmed !== false) {
 				session.ownerIds.delete(ownerId);
+				orphanedSessions.delete(session);
 				continue;
 			}
 			const reason = result.status === "rejected" ? result.reason : "not confirmed";
@@ -420,6 +441,7 @@ export function createKernelSessionRegistry<
 				reason,
 			});
 			if (!sessions.has(session.sessionKey)) sessions.set(session.sessionKey, session);
+			else if (sessions.get(session.sessionKey) !== session) orphanedSessions.add(session);
 			failures.push(
 				result.status === "rejected"
 					? result.reason
@@ -427,6 +449,56 @@ export function createKernelSessionRegistry<
 			);
 		}
 		if (failures.length > 0) throw new AggregateError(failures, `${descriptor.languageLabel} owner shutdown failed`);
+	}
+
+	function getOwnedSessions(ownerId: string): TSession[] {
+		return [...new Set([...sessions.values(), ...orphanedSessions])].filter(session => session.ownerIds.has(ownerId));
+	}
+
+	function getStartingOwnerCount(ownerId: string): number {
+		let count = 0;
+		for (const starting of startingSessions.values()) if (starting.ownerIds.has(ownerId)) count++;
+		return count;
+	}
+
+	async function reapOrphans(): Promise<void> {
+		const orphans = [...new Set([...sessions.values(), ...orphanedSessions])].filter(
+			session =>
+				session.ownerIds.size === 0 &&
+				!session.hasFallbackOwner &&
+				session.activeExecutions === 0 &&
+				(session.kernel.liveHandleCount ?? 0) === 0,
+		);
+		for (const session of orphans) {
+			descriptor.invalidateSession?.(session);
+			if (sessions.get(session.sessionKey) === session) sessions.delete(session.sessionKey);
+			orphanedSessions.add(session);
+			const result = await shutdownSession(session, false);
+			if (result.confirmed === false) throw new Error(`${descriptor.languageLabel} orphan shutdown not confirmed`);
+			orphanedSessions.delete(session);
+		}
+	}
+
+	async function releaseOwnedKernel(ownerId: string, predicate: (session: TSession) => boolean): Promise<void> {
+		const session = getOwnedSessions(ownerId).find(predicate);
+		if (!session) throw new Error(`${descriptor.languageLabel} kernel not found for this owner`);
+		if (session.activeExecutions > 0 || (session.kernel.liveHandleCount ?? 0) > 0)
+			throw new Error("Kernel has live execution; stop it before releasing variables");
+		if (session.ownerIds.size !== 1) throw new Error("Kernel is shared with another owner; cannot release it safely");
+		descriptor.invalidateSession?.(session);
+		// Hold the key until exit is confirmed so a concurrent cell cannot start an untracked replacement.
+		const shutdown = shutdownSession(session, false).then(result => {
+			if (result.confirmed === false) throw new Error("Kernel shutdown not confirmed");
+			if (sessions.get(session.sessionKey) === session) sessions.delete(session.sessionKey);
+			session.ownerIds.delete(ownerId);
+			orphanedSessions.delete(session);
+		});
+		resettingSessions.set(session.sessionKey, shutdown);
+		try {
+			await shutdown;
+		} finally {
+			if (resettingSessions.get(session.sessionKey) === shutdown) resettingSessions.delete(session.sessionKey);
+		}
 	}
 
 	function peekLiveKernel(cwd: string, options: TOptions): TKernel | undefined {
@@ -474,6 +546,7 @@ export function createKernelSessionRegistry<
 		const runOptions = { ...options, cwd };
 		let result: R;
 		try {
+			session.activeExecutions++;
 			result = await descriptor.executeWithKernel(kernel, code, runOptions);
 		} catch (err) {
 			if (
@@ -487,9 +560,22 @@ export function createKernelSessionRegistry<
 				`${descriptor.languageLabel} kernel died during execution; completion is uncertain and the cell was not replayed. The next call will start a fresh kernel.`,
 				{ cause: err },
 			);
+		} finally {
+			session.activeExecutions--;
 		}
 		return result;
 	}
 
-	return { disposeAll, disposeByOwner, executeOnSession, peekLiveKernel, getPresentSession };
+	return {
+		disposeAll,
+		disposeByOwner,
+		getOwnedSessions,
+		getStartingOwnerCount,
+		reapOrphans,
+		releaseOwnedKernel,
+		retainDetachedSession: context.retainDetachedSession,
+		executeOnSession,
+		peekLiveKernel,
+		getPresentSession,
+	};
 }

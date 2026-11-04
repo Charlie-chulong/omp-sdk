@@ -15,6 +15,7 @@ import {
 import { $env } from "@oh-my-pi/pi-utils/env";
 import { isCmdShell, isExecutable, type ShellConfig } from "@oh-my-pi/pi-utils/procmgr";
 import { Settings } from "../config/settings";
+import type { RuntimeResource } from "../session/runtime-resources";
 import { type OutputArtifactError, OutputSink, type OutputSummary } from "@oh-my-pi/pi-tui/tools/streaming-output";
 import {
 	resolveOutputMaxColumns,
@@ -214,6 +215,7 @@ export async function applyDirenvPreflight(
 }
 
 const shellSessions = new Map<string, Shell>();
+const shellResourceIds = new WeakMap<Shell, string>();
 const brokenShellSessions = new Set<string>();
 const shellSessionQuarantines = new Map<string, Promise<unknown>>();
 /** Session keys with a command currently in flight on the persistent Shell. */
@@ -351,6 +353,79 @@ export async function stopShellSessions(owner: string): Promise<void> {
 	}
 	for (const result of results) if (result.status === "rejected") errors.push(result.reason);
 	if (errors.length > 0) throw new AggregateError(errors, "Native shell cancellation failed");
+}
+
+/** Enumerates only handles retained by this executor; no process-table/PID ownership guesses. */
+export async function getShellRuntimeResources(owner: string): Promise<RuntimeResource[]> {
+	const owned = new Set<Shell>();
+	for (const [key, shell] of shellSessions)
+		if (key.startsWith(`${owner}\n`) || key.startsWith(`${owner}:async:`)) owned.add(shell);
+	for (const [shell, retained] of retainedShells)
+		if (retained.owner === owner || retained.owner?.startsWith(`${owner}:async:`)) owned.add(shell);
+	for (const [shell, run] of nativeShellRuns)
+		if (run.owner === owner || run.owner?.startsWith(`${owner}:async:`)) owned.add(shell);
+	return await Promise.all(
+		[...owned].map(async shell => {
+			let id = shellResourceIds.get(shell);
+			if (!id) {
+				id = `shell:${crypto.randomUUID()}`;
+				shellResourceIds.set(shell, id);
+			}
+			const running =
+				nativeShellRuns.has(shell) ||
+				[...shellSessions].some(([key, value]) => value === shell && shellSessionsInUse.has(key));
+			// Native background inspection waits for the same session lock held by run().
+			// Active executions already pin this shell; do not wait for them to finish just to report inventory.
+			const background = running ? 0 : await shell.liveBackgroundJobCount();
+			const pids = shell.pids();
+			return {
+				id,
+				kind: "shell" as const,
+				ownerSessionId: owner,
+				pid: pids[0],
+				state: running ? ("running" as const) : ("retained" as const),
+				retentionReasons: [
+					...(running ? ["live_execution"] : []),
+					...(background > 0 ? ["background_dependency"] : []),
+					...(!running && background === 0 ? ["shell_variables"] : []),
+				],
+				liveHandles: pids.length + background + Number(running),
+				releasable: !running && background === 0,
+			};
+		}),
+	);
+}
+
+export async function releaseShellRuntimeResource(owner: string, resourceId: string): Promise<void> {
+	const resource = (await getShellRuntimeResources(owner)).find(item => item.id === resourceId);
+	if (!resource?.releasable)
+		throw new Error("Shell is busy or has background dependencies; stop its work before releasing variables");
+	const entry = [...shellSessions].find(
+		([key, shell]) => shellResourceIds.get(shell) === resourceId && key.startsWith(`${owner}\n`),
+	);
+	const retainedEntry = [...retainedShells].find(
+		([shell, retained]) =>
+			shellResourceIds.get(shell) === resourceId &&
+			(retained.owner === owner || retained.owner?.startsWith(`${owner}:async:`)),
+	);
+	const shell = entry?.[1] ?? retainedEntry?.[0];
+	if (!shell) throw new Error("Shell resource not found for this owner");
+	const background = await shell.liveBackgroundJobCount();
+	if (nativeShellRuns.has(shell) || (entry && shellSessionsInUse.has(entry[0])) || background > 0)
+		throw new Error("Shell became busy; stop its work before releasing variables");
+	// Reuse the executor's existing lease: concurrent commands cannot enter this exact native Shell.
+	if (entry) shellSessionsInUse.add(entry[0]);
+	try {
+		await shell.abort();
+		for (const [key, value] of shellSessions) if (value === shell) shellSessions.delete(key);
+		const retained = retainedShells.get(shell);
+		if (retained) {
+			clearInterval(retained.timer);
+			retainedShells.delete(shell);
+		}
+	} finally {
+		if (entry) shellSessionsInUse.delete(entry[0]);
+	}
 }
 
 function resolveShellCwd(cwd: string | undefined): string | undefined {

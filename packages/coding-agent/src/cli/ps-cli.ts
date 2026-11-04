@@ -59,6 +59,8 @@ export interface PsCommandArgs {
 		grep?: string;
 		/** stop: grace period in seconds before hard kill. */
 		timeout?: number;
+		/** stop/kill: leave a replacement generation running. */
+		id?: string;
 	};
 }
 
@@ -255,8 +257,10 @@ async function runAction(cmd: PsCommandArgs, name: string): Promise<void> {
 			case "stop":
 			case "kill": {
 				const timeoutMs = cmd.action === "kill" ? KILL_GRACE_MS : Math.round((cmd.flags.timeout ?? 5) * 1000);
-				const result = await client.request({ op: "stop", name, timeoutMs });
+				const result = await client.request({ op: "stop", name, timeoutMs, id: cmd.flags.id });
 				if (result.op !== "stop") throw new Error(`Unexpected broker response ${result.op}`);
+				if (cmd.flags.id !== undefined && result.daemon.id !== cmd.flags.id)
+					throw new Error("Background process was replaced; its replacement was not stopped");
 				printDaemonResult(cmd, cmd.action === "kill" ? "Killed" : "Stopped", result.daemon);
 				return;
 			}

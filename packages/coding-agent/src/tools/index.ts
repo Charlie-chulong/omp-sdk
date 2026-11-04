@@ -365,6 +365,8 @@ export interface ToolSession {
 	trackEvalExecution?<T>(execution: Promise<T>, abortController: AbortController): Promise<T>;
 	/** Get tool-state session ID (distinct from the owning session for advisors). */
 	getSessionId?: () => string | null;
+	/** Stable supervisor owner, distinct from the mutable transcript and IRC identities. */
+	getServiceOwnerId?: () => string | null;
 	/** Get Hindsight runtime state for this agent session. */
 	getHindsightSessionState?: () => HindsightSessionState | undefined;
 	/** Get Mnemopi runtime state for this agent session. */

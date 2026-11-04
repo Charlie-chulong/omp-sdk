@@ -2154,6 +2154,85 @@ func (v *SubagentStatus) UnmarshalJSON(data []byte) error {
 	return unknownValue("SubagentStatus", s)
 }
 
+type RuntimeResource struct {
+	ID               string               `json:"id"`
+	Kind             RuntimeResourceKind  `json:"kind"`
+	OwnerSessionID   string               `json:"ownerSessionId"`
+	State            RuntimeResourceState `json:"state"`
+	RetentionReasons []string             `json:"retentionReasons"`
+	LiveHandles      int64                `json:"liveHandles"`
+	Releasable       bool                 `json:"releasable"`
+	OwnerAgentID     *string              `json:"ownerAgentId,omitempty"`
+	Pid              *int64               `json:"pid,omitempty"`
+}
+
+func (v *RuntimeResource) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "RuntimeResource", v.decodeFrom)
+}
+
+func (v *RuntimeResource) decodeFrom(raw map[string]json.RawMessage) error {
+	var out RuntimeResource
+	d := fieldDecoder{raw: raw, owner: "RuntimeResource"}
+	d.required("id", &out.ID)
+	d.required("kind", &out.Kind)
+	d.required("ownerSessionId", &out.OwnerSessionID)
+	d.required("state", &out.State)
+	d.required("retentionReasons", &out.RetentionReasons)
+	d.required("liveHandles", &out.LiveHandles)
+	d.required("releasable", &out.Releasable)
+	d.optional("ownerAgentId", &out.OwnerAgentID)
+	d.optional("pid", &out.Pid)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
+type RuntimeResourceKind string
+
+const (
+	RuntimeResourceKindPythonKernel     RuntimeResourceKind = "python_kernel"
+	RuntimeResourceKindJavascriptKernel RuntimeResourceKind = "javascript_kernel"
+	RuntimeResourceKindShell            RuntimeResourceKind = "shell"
+	RuntimeResourceKindHelper           RuntimeResourceKind = "helper"
+)
+
+func (v *RuntimeResourceKind) UnmarshalJSON(data []byte) error {
+	s, err := decodeString(data, "RuntimeResourceKind")
+	if err != nil {
+		return err
+	}
+	switch value := RuntimeResourceKind(s); value {
+	case RuntimeResourceKindPythonKernel, RuntimeResourceKindJavascriptKernel, RuntimeResourceKindShell, RuntimeResourceKindHelper:
+		*v = value
+		return nil
+	}
+	return unknownValue("RuntimeResourceKind", s)
+}
+
+type RuntimeResourceState string
+
+const (
+	RuntimeResourceStateStarting RuntimeResourceState = "starting"
+	RuntimeResourceStateRunning  RuntimeResourceState = "running"
+	RuntimeResourceStateRetained RuntimeResourceState = "retained"
+	RuntimeResourceStateStopping RuntimeResourceState = "stopping"
+)
+
+func (v *RuntimeResourceState) UnmarshalJSON(data []byte) error {
+	s, err := decodeString(data, "RuntimeResourceState")
+	if err != nil {
+		return err
+	}
+	switch value := RuntimeResourceState(s); value {
+	case RuntimeResourceStateStarting, RuntimeResourceStateRunning, RuntimeResourceStateRetained, RuntimeResourceStateStopping:
+		*v = value
+		return nil
+	}
+	return unknownValue("RuntimeResourceState", s)
+}
+
 type TodoItem struct {
 	Content string     `json:"content"`
 	Status  TodoStatus `json:"status"`
@@ -7119,6 +7198,44 @@ func (v *NegotiateProtocolResult) decodeFrom(raw map[string]json.RawMessage) err
 	return nil
 }
 
+type GetRuntimeResourcesResult struct {
+	Resources []RuntimeResource `json:"resources"`
+}
+
+func (v *GetRuntimeResourcesResult) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "GetRuntimeResourcesResult", v.decodeFrom)
+}
+
+func (v *GetRuntimeResourcesResult) decodeFrom(raw map[string]json.RawMessage) error {
+	var out GetRuntimeResourcesResult
+	d := fieldDecoder{raw: raw, owner: "GetRuntimeResourcesResult"}
+	d.required("resources", &out.Resources)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
+type ReleaseRuntimeResourceResult struct {
+	Released bool `json:"released"`
+}
+
+func (v *ReleaseRuntimeResourceResult) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "ReleaseRuntimeResourceResult", v.decodeFrom)
+}
+
+func (v *ReleaseRuntimeResourceResult) decodeFrom(raw map[string]json.RawMessage) error {
+	var out ReleaseRuntimeResourceResult
+	d := fieldDecoder{raw: raw, owner: "ReleaseRuntimeResourceResult"}
+	d.required("released", &out.Released)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
 type SetApprovalModeResult struct {
 	Mode ApprovalMode `json:"mode"`
 }
@@ -7826,6 +7943,25 @@ func (c Commands) GetState(ctx context.Context) (SessionState, error) {
 	var out SessionState
 	err := c.call(ctx, "get_state", nil, 0, &out)
 	return out, err
+}
+
+// GetRuntimeResources sends "get_runtime_resources": List the actual resources retained by this session without starting new kernels.
+func (c Commands) GetRuntimeResources(ctx context.Context) ([]RuntimeResource, error) {
+	var out GetRuntimeResourcesResult
+	err := c.call(ctx, "get_runtime_resources", nil, 0, &out)
+	return out.Resources, err
+}
+
+// ReleaseRuntimeResourceCommand holds the parameters of "release_runtime_resource".
+type ReleaseRuntimeResourceCommand struct {
+	ResourceID string `json:"resourceId"`
+}
+
+// ReleaseRuntimeResource sends "release_runtime_resource": Release one idle owned resource; active or shared work is rejected.
+func (c Commands) ReleaseRuntimeResource(ctx context.Context, p ReleaseRuntimeResourceCommand) (bool, error) {
+	var out ReleaseRuntimeResourceResult
+	err := c.call(ctx, "release_runtime_resource", p, 0, &out)
+	return out.Released, err
 }
 
 // SetApprovalModeCommand holds the parameters of "set_approval_mode".

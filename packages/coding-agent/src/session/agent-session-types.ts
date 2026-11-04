@@ -364,6 +364,8 @@ export interface AgentSessionConfig {
 	agentKind?: "main" | "sub";
 	/** Provider-facing session ID override. */
 	providerSessionId?: string;
+	/** Stable embedding owner for supervised services, unaffected by transcript branches. */
+	serviceOwnerId?: string;
 	/** OAuth account pools enforced on the session's key lookups; the session lifts them on dispose. */
 	accountPoolScope?: SessionAccountPoolScope;
 	/** Whether the provider prompt-cache key was explicit or fork-inherited. */

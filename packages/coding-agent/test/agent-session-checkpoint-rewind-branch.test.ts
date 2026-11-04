@@ -631,7 +631,9 @@ describe("AgentSession checkpoint rewind branch context", () => {
 		expect(
 			session.messages.some(message => message.role === "toolResult" && message.toolCallId === "call_rewind_xdev"),
 		).toBe(false);
-		expect(session.messages).toEqual(session.sessionManager.buildSessionContext().messages);
+		expect(JSON.stringify(session.messages)).toBe(
+			JSON.stringify(session.sessionManager.buildSessionContext().messages),
+		);
 
 		expect(session.getLastCompletedRewind()).toEqual({
 			report,
