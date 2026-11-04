@@ -72,25 +72,67 @@ describe("createAgentSession auto-learn tool activation", () => {
 		expect(names).toContain("manage_skill");
 	});
 
-	it("initializes the selected memory backend before an auto-learn session can run", async () => {
-		const { session } = await createAgentSession({
+	it.each([
+		{ grant: "default subagent slate", toolNames: undefined, learn: false },
+		{ grant: "explicit read-only slate", toolNames: ["read"], learn: false },
+		{ grant: "explicit learn permission", toolNames: ["read", "learn"], learn: true },
+	])("keeps $grant authorization after inherited Mnemopi initialization", async grant => {
+		const settings = Settings.isolated({
+			"autolearn.enabled": true,
+			"memory.backend": "mnemopi",
+			"mnemopi.scoping": "global",
+			"mnemopi.noEmbeddings": true,
+			"mnemopi.llmMode": "none",
+			"mnemopi.autoRetain": false,
+		});
+		const common = {
 			cwd: registryDir,
 			agentDir: registryDir,
 			modelRegistry,
-			sessionManager: SessionManager.inMemory(),
-			settings: Settings.isolated({
-				"autolearn.enabled": true,
-				"memory.backend": "hindsight",
-				"hindsight.apiUrl": "http://127.0.0.1:1",
-				"hindsight.mentalModelsEnabled": false,
-			}),
+			settings,
 			model: getBundledModel("openai", "gpt-4o-mini"),
 			...noDiscoveryOptions(),
-			toolNames: ["read"],
-		});
-		sessions.push(session);
-
-		expect(session.getHindsightSessionState()).toBeDefined();
+		};
+		const parent = (
+			await createAgentSession({
+				...common,
+				sessionManager: SessionManager.inMemory(registryDir),
+				toolNames: ["read", "recall"],
+			})
+		).session;
+		sessions.push(parent);
+		const inherited = parent.getMnemopiSessionState();
+		if (!inherited) throw new Error("Expected initialized parent Mnemopi state");
+		const child = (
+			await createAgentSession({
+				...common,
+				sessionManager: SessionManager.inMemory(registryDir),
+				taskDepth: 1,
+				parentMnemopiSessionState: inherited,
+				toolNames: grant.toolNames,
+			})
+		).session;
+		sessions.push(child);
+		expect(child.getEnabledToolNames().includes("learn")).toBe(grant.learn);
+		expect(child.getToolByName("learn") !== undefined).toBe(grant.learn);
+		expect(child.getEnabledToolNames()).not.toContain("manage_skill");
+		if (grant.learn) {
+			expect(parent.getActiveToolNames()).toContain("learn");
+			await parent.getToolByName("learn")!.execute("forced-parent-learn", {
+				memory: "The observatory control room keeps a brass compass",
+			});
+			await child.getToolByName("learn")!.execute("authorized-child-learn", {
+				memory: "Check copper telescope alignment before each observatory launch",
+			});
+			const recalled = await parent
+				.getToolByName("recall")!
+				.execute("parent-recall", { query: "copper telescope alignment" });
+			expect(JSON.stringify(recalled.content)).toContain("observatory launch");
+			const parentMemory = await parent
+				.getToolByName("recall")!
+				.execute("forced-parent-recall", { query: "brass compass" });
+			expect(JSON.stringify(parentMemory.content)).toContain("observatory control room");
+		}
 	});
 
 	it("omits manage_skill from a restricted session when auto-learn is off", async () => {

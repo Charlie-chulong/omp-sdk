@@ -92,7 +92,8 @@ async function installMnemopiState(
 	session: AgentSession,
 	config: MnemopiBackendConfig,
 	inherited?: MnemopiSessionState,
-): Promise<MnemopiSessionState> {
+	commitIf?: () => boolean,
+): Promise<MnemopiSessionState | undefined> {
 	const state = new MnemopiSessionState({
 		sessionId: session.sessionId,
 		config,
@@ -101,18 +102,40 @@ async function installMnemopiState(
 	});
 	state.lastRecallSnippet = inherited?.lastRecallSnippet;
 	const previous = setMnemopiSessionState(session, state);
-	await previous?.dispose();
+	if (previous) await previous.dispose();
 	try {
+		if (getMnemopiSessionState(session) !== state || (commitIf && !commitIf())) {
+			if (getMnemopiSessionState(session) === state) setMnemopiSessionState(session, undefined);
+			await state.dispose({ consolidate: false });
+			return undefined;
+		}
 		state.attachSessionListeners();
 		// Promote age-eligible working memory to episodic before the session's
 		// first write can TTL-trim unconsolidated retain/learn rows (#10770).
 		state.promoteEligibleWorkingMemory();
 		return state;
 	} catch (error) {
-		setMnemopiSessionState(session, undefined);
+		if (getMnemopiSessionState(session) === state) setMnemopiSessionState(session, undefined);
 		await state.dispose({ consolidate: false });
 		throw error;
 	}
+}
+
+// Session-owned startup failures remain visible through the existing memory status API.
+const startupErrors = new WeakMap<AgentSession, string>();
+
+function unavailableMessage(session?: AgentSession): string {
+	return (session && startupErrors.get(session)) ?? "Mnemopi backend is not initialised for this session.";
+}
+
+function reportStartupFailure(session: AgentSession, error: unknown): void {
+	const reason = error instanceof Error ? error.message : String(error);
+	const message = /\bno such module: fts5\b/i.test(reason)
+		? `Mnemopi unavailable: ${reason}. This runtime's SQLite lacks FTS5, which Mnemopi requires even with embeddings and memory inference disabled. Install or rebuild a runtime with SQLITE_ENABLE_FTS5; changing memory providers does not add this capability.`
+		: `Mnemopi unavailable: ${reason}`;
+	startupErrors.set(session, message);
+	session.emitNotice("warning", message, "memory");
+	logger.warn("Mnemopi: backend startup failed.", { error: reason });
 }
 
 export const mnemopiBackend: MemoryBackend = {
@@ -121,7 +144,17 @@ export const mnemopiBackend: MemoryBackend = {
 	async start(options: MemoryBackendStartOptions): Promise<void> {
 		const { session, settings, agentDir, modelRegistry } = options;
 		const sessionId = session.sessionId;
-		if (!sessionId) return;
+		const isCurrent = () => !session.isDisposed && session.sessionId === sessionId && (options.isCurrent?.() ?? true);
+		if (!sessionId || !isCurrent()) return;
+		startupErrors.delete(session);
+		const previous = setMnemopiSessionState(session, undefined);
+		try {
+			if (previous) await previous.dispose({ retain: false });
+		} catch (error) {
+			if (isCurrent()) reportStartupFailure(session, error);
+			return;
+		}
+		if (!isCurrent()) return;
 
 		if (options.taskDepth > 0) {
 			const parent = getMnemopiSessionStateFromParent(options);
@@ -148,10 +181,13 @@ export const mnemopiBackend: MemoryBackend = {
 				sessionId,
 				session.sessionManager,
 			);
+			if (!isCurrent()) return;
 			await Promise.all([loadMnemopi(), loadMnemopiCore()]);
-			await installMnemopiState(session, config, getMnemopiSessionStateFromParent(options));
+			if (!isCurrent()) return;
+			await installMnemopiState(session, config, getMnemopiSessionStateFromParent(options), isCurrent);
+			if (isCurrent()) startupErrors.delete(session);
 		} catch (error) {
-			logger.warn("Mnemopi: backend startup failed; memory backend inert.", { error: String(error) });
+			if (isCurrent()) reportStartupFailure(session, error);
 		}
 	},
 
@@ -159,8 +195,14 @@ export const mnemopiBackend: MemoryBackend = {
 		return withLoopPhase("mnemopi.recall", () => {
 			const state = getMnemopiSessionState(session);
 			const primary = state?.aliasOf ?? state;
+			if (!primary) return undefined;
 			const parts = [
-				prompt.render(mnemopiInstructions, { toolRefs: memoryToolRefs(session?.getXdevToolEntries()) }),
+				prompt.render(mnemopiInstructions, {
+					toolRefs: memoryToolRefs(session?.getXdevToolEntries()),
+					noEmbeddings: primary.config.providerOptions.noEmbeddings,
+					noLlm: primary.config.llmMode === "none",
+					autoRetain: primary.config.autoRetain,
+				}),
 			];
 			if (primary?.lastRecallSnippet) parts.push(primary.lastRecallSnippet);
 			const rendered = parts.join("\n\n").trim();
@@ -200,7 +242,7 @@ export const mnemopiBackend: MemoryBackend = {
 			await Promise.all([loadMnemopi(), loadMnemopiCore()]);
 			await installMnemopiState(session, config);
 		} catch (error) {
-			logger.warn("Mnemopi: clear rehydrate failed; memory backend inert.", { error: String(error) });
+			if (session) reportStartupFailure(session, error);
 		}
 	},
 
@@ -260,7 +302,8 @@ export const mnemopiBackend: MemoryBackend = {
 				active: false,
 				writable: false,
 				searchable: false,
-				message: "Mnemopi backend is not initialised for this session.",
+				message: unavailableMessage(session),
+				error: session ? startupErrors.get(session) : undefined,
 			};
 		}
 
@@ -290,7 +333,7 @@ export const mnemopiBackend: MemoryBackend = {
 				query,
 				count: 0,
 				items: [],
-				message: "Mnemopi backend is not initialised for this session.",
+				message: unavailableMessage(session),
 			};
 		}
 		if (options?.signal?.aborted) {
@@ -318,7 +361,7 @@ export const mnemopiBackend: MemoryBackend = {
 			return {
 				backend: "mnemopi",
 				stored: 0,
-				message: "Mnemopi backend is not initialised for this session.",
+				message: unavailableMessage(session),
 			};
 		}
 		const content = input.content.trim();
@@ -558,9 +601,10 @@ async function resolveMnemopiProviderOptions(
 		noEmbeddings: config.providerOptions.noEmbeddings,
 		embeddingModel: config.providerOptions.embeddingModel,
 		embeddingApiUrl: config.providerOptions.embeddingApiUrl,
-		embeddingApiKey:
-			config.providerOptions.embeddingApiKey ??
-			(await openrouterKeyResolver(modelRegistry, sessionId, config.providerOptions.embeddingApiUrl)),
+		embeddingApiKey: config.providerOptions.noEmbeddings
+			? undefined
+			: (config.providerOptions.embeddingApiKey ??
+				(await openrouterKeyResolver(modelRegistry, sessionId, config.providerOptions.embeddingApiUrl))),
 		llm: false,
 	};
 

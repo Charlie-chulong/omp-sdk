@@ -357,6 +357,7 @@ import {
 } from "./tools/settings";
 import { cfgToolsFormat } from "./session/context-settings";
 import { cfgAutolearnEnabled } from "./autolearn/settings";
+import { cfgMemoryBackend } from "./memory-backend/settings";
 import { cfgBrowserEnabled } from "./tools/browser/settings";
 import {
 	cfgDefaultThinkingLevel,
@@ -5007,11 +5008,22 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			createMemoryTools: restrictToolNames
 				? undefined
 				: async () => {
+						const plan = await resolveBuiltinToolPlan(toolSession, options.toolNames);
 						const tools = await Promise.all(
-							MEMORY_BACKEND_TOOL_NAMES.map(name => BUILTIN_TOOLS[name](toolSession)),
+							MEMORY_BACKEND_TOOL_NAMES.filter(name => plan.names.includes(name)).map(name =>
+								BUILTIN_TOOLS[name](toolSession),
+							),
 						);
 						return tools.filter((tool): tool is AgentTool => tool !== null);
 					},
+			createAdvisorMemoryTools: async () => {
+				const tools = await Promise.all(
+					MEMORY_BACKEND_TOOL_NAMES.map(name => BUILTIN_TOOLS[name](advisorToolSession)),
+				);
+				return tools
+					.filter((tool): tool is AgentTool => tool !== null)
+					.map(tool => new ExtensionToolWrapper(wrapToolWithMetaNotice(tool), extensionRunner, advisorAgent));
+			},
 			createThinkTool: async () => (await HIDDEN_TOOLS.think(toolSession)) ?? null,
 			createVibeTools:
 				(options.taskDepth ?? 0) === 0 && !options.parentTaskPrefix
@@ -5551,18 +5563,11 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			}
 		}
 
-		const startMemoryBackend = async () => {
-			const memoryBackend = await resolveMemoryBackend(settings);
-			await memoryBackend.start({
-				session,
-				settings,
-				modelRegistry,
-				agentDir,
-				taskDepth,
+		const startMemoryBackend = () =>
+			session.initializeMemoryBackend({
 				parentHindsightSessionState: options.parentHindsightSessionState,
 				parentMnemopiSessionState: options.parentMnemopiSessionState,
 			});
-		};
 
 		const runAutoLearnCapture = createAutoLearnCaptureRunner({
 			sourceAgent: agent,
@@ -5631,12 +5636,10 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			},
 		});
 
-		// Auto-learn can immediately trigger a private capture after the first real
-		// stop. When it is enabled at startup and a memory backend is selected,
-		// install that backend's per-session state first so the capture turn's
-		// `learn` tool observes the same initialized state as normal memory tools.
-		// Other sessions keep memory startup in the background to preserve the
-		// existing startup profile.
+		// Mnemopi tools and instructions are published only after initialization
+		// settles. Await it so the first turn sees either working memory or an
+		// explicit unavailable state, never an uninitialized tool registry.
+		// Auto-learn also needs its backend ready before a private capture can run.
 		//
 		// The controller is installed for every top-level session and gates each
 		// stop on the live `autolearn.enabled`, so enabling or disabling it
@@ -5645,7 +5648,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		// tools per run. The subscription lives for the session's lifetime; the
 		// reference is intentionally discarded (the listener retains it).
 		if (!restrictToolNames) {
-			if (cfgAutolearnEnabled.get(settings) && taskDepth === 0) {
+			if (cfgMemoryBackend.get(settings) === "mnemopi" || (cfgAutolearnEnabled.get(settings) && taskDepth === 0)) {
 				await logger.time("startMemoryStartupTask", startMemoryBackend);
 			} else {
 				void logger.time("startMemoryStartupTask", startMemoryBackend);

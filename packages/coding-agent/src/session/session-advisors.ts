@@ -86,6 +86,7 @@ import { serviceTierForAllFamilies, serviceTierSettingToTier } from "../config/s
 import type { Settings } from "../config/settings";
 import { CursorExecHandlers, type CursorMcpResourceAdapter } from "../cursor";
 import { bridgeToolMap } from "../cursor-bridge-tools";
+import { MEMORY_BACKEND_TOOL_NAMES } from "../memory-backend/tool-names";
 import { estimateContextToolSchemaTokens } from "@oh-my-pi/pi-tui/status-line/context-usage";
 import type { PlanModeState } from "../plan-mode/state";
 import advisorBoundaryGuidance from "../prompts/advisor/boundary-guidance.md" with { type: "text" };
@@ -358,6 +359,7 @@ interface ActiveAdvisor {
 	 */
 	providerWaitRetries: number;
 	signature: string;
+	replaceMemoryTools(tools: AgentTool[]): void;
 }
 /** First index whose provider usage may anchor the advisor's context estimate. */
 function advisorAnchorSearchStart(messages: readonly AgentMessage[]): number {
@@ -1420,10 +1422,11 @@ export class SessionAdvisors {
 			// swaps in a `replace` instance for the exec channel only — the
 			// advisor's own loop keeps the tool it was given — and only when
 			// `edit` was actually granted.
+			const advisorBridgeTools = bridgeToolMap(advisorToolMap, this.#advisorCreateEditTool);
 			const advisorCursorExecHandlers = new CursorExecHandlers({
 				cwd: this.#host.sessionManager.getCwd(),
 				getCwd: () => this.#host.sessionManager.getCwd(),
-				tools: bridgeToolMap(advisorToolMap, this.#advisorCreateEditTool),
+				tools: advisorBridgeTools,
 				// Approval mode, per-tool policies and `autoApprove` live only on
 				// this context; without it every bridge tool fails closed to
 				// `always-ask`.
@@ -1694,6 +1697,33 @@ export class SessionAdvisors {
 				retryFallbackPendingSuccess: false,
 				providerWaitRetries: 0,
 				signature,
+				replaceMemoryTools: memoryTools => {
+					for (const tool of advisorAgent.state.tools) {
+						if (!MEMORY_BACKEND_TOOL_NAMES.some(name => name === tool.name)) continue;
+						advisorToolMap.delete(tool.name);
+						advisorBridgeTools.delete(tool.name);
+						if (tool.customWireName !== undefined) {
+							advisorToolMap.delete(tool.customWireName);
+							advisorBridgeTools.delete(tool.customWireName);
+						}
+					}
+					const granted = memoryTools.filter(tool => names.has(tool.name));
+					const nextTools = [
+						...advisorAgent.state.tools.filter(
+							tool => !MEMORY_BACKEND_TOOL_NAMES.some(name => name === tool.name),
+						),
+						...granted,
+					];
+					for (const tool of granted) {
+						advisorToolMap.set(tool.name, tool);
+						advisorBridgeTools.set(tool.name, tool);
+						if (tool.customWireName !== undefined) {
+							advisorToolMap.set(tool.customWireName, tool);
+							advisorBridgeTools.set(tool.customWireName, tool);
+						}
+					}
+					advisorAgent.setTools(nextTools);
+				},
 			};
 			this.#refreshAdvisorProviderIdentity(advisorRef);
 			this.#attachAdvisorRecorderFeed(advisorRef);
@@ -2861,6 +2891,16 @@ export class SessionAdvisors {
 	 */
 	getAdvisorAvailableToolNames(): string[] {
 		return (this.#advisorTools ?? []).map(tool => tool.name);
+	}
+
+	/** Refresh memory readiness without rebuilding advisors or widening their configured grants. */
+	replaceMemoryTools(tools: AgentTool[]): void {
+		const memoryTools = tools.filter(tool => MEMORY_BACKEND_TOOL_NAMES.some(name => name === tool.name));
+		this.#advisorTools = [
+			...(this.#advisorTools ?? []).filter(tool => !MEMORY_BACKEND_TOOL_NAMES.some(name => name === tool.name)),
+			...memoryTools,
+		];
+		for (const advisor of this.#advisors) advisor.replaceMemoryTools(memoryTools);
 	}
 
 	/**

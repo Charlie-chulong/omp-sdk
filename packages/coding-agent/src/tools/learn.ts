@@ -73,6 +73,7 @@ export class LearnTool implements AgentTool<LearnSchema> {
 		const backend = cfgMemoryBackend.get(session.settings);
 		if (backend !== "hindsight" && backend !== "mnemopi" && backend !== "local") return null;
 		if (backend === "hindsight" && !isHindsightConfigured(loadHindsightConfig(session.settings))) return null;
+		if (backend === "mnemopi" && !session.getMnemopiSessionState?.()) return null;
 		return new LearnTool(session);
 	}
 

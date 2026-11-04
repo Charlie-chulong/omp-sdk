@@ -35,6 +35,7 @@ export class MemoryRecallTool implements AgentTool<typeof memoryRecallSchema> {
 		const backend = cfgMemoryBackend.get(session.settings);
 		if (backend !== "hindsight" && backend !== "mnemopi") return null;
 		if (backend === "hindsight" && !isHindsightConfigured(loadHindsightConfig(session.settings))) return null;
+		if (backend === "mnemopi" && !session.getMnemopiSessionState?.()) return null;
 		return new MemoryRecallTool(session);
 	}
 

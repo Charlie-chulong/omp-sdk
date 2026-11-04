@@ -8,7 +8,7 @@ import { all as allSettings, combine, type Derived } from "../config/registry";
 import type { Settings } from "../config/settings";
 import type { HindsightSessionState } from "../hindsight/state";
 import { resolveMemoryBackend } from "../memory-backend/resolve";
-import type { MemoryBackendStartOptions } from "../memory-backend/types";
+import type { MemoryBackendInheritance, MemoryBackendStartOptions } from "../memory-backend/types";
 import type { MnemopiSessionState } from "../mnemopi/state";
 import { releaseSharpshooterSession } from "../sharpshooter/backend";
 
@@ -52,8 +52,8 @@ export interface SessionMemoryHost {
 	getMnemopiSessionState(): MnemopiSessionState | undefined;
 	takeMnemopiSessionState(): MnemopiSessionState | undefined;
 	setBaseSystemPrompt(prompt: string[]): void;
-	refreshBaseSystemPrompt(): Promise<void>;
-	replaceMemoryTools(tools: AgentTool[]): Promise<void>;
+	refreshBaseSystemPrompt(commitIf?: () => boolean): Promise<void>;
+	replaceMemoryTools(tools: AgentTool[], commitIf?: () => boolean): Promise<void>;
 }
 
 /** Owns memory backend transitions and transcript-scoped memory state. */
@@ -63,6 +63,7 @@ export class SessionMemory {
 	readonly #memoryTaskDepth: number;
 	readonly #createMemoryTools: (() => Promise<AgentTool[]>) | undefined;
 	#memoryBackendTransition: Promise<void> = Promise.resolve();
+	#configurationGeneration = 0;
 	#localMemoryStartupAbort: AbortController | undefined;
 	#baseSystemPromptBeforeMemoryPromotion: string[] | undefined;
 	/** Cwd the running backend state was built for; a transcript is never retained after it moved. */
@@ -109,6 +110,10 @@ export class SessionMemory {
 		const changed: string[] = [];
 		for (const id in next) if (!runtime.deepEquals(next[id], previous[id])) changed.push(id);
 		if (changed.length === 0) return;
+		const backend = cfgMemoryBackend.get(this.#host.settings);
+		if (changed.some(id => id === "memory.backend" || id.startsWith(`${backend}.`))) {
+			this.#configurationGeneration++;
+		}
 		this.#observedSettings = next;
 		const handling = this.#applySettingsChange(changed);
 		this.#settingsChanges.add(handling);
@@ -297,6 +302,7 @@ export class SessionMemory {
 	 */
 	async applyMemoryBackend(options: { retainMnemopi?: boolean } = {}): Promise<void> {
 		if (this.#host.isDisposed()) return;
+		this.#configurationGeneration++;
 		const retainMnemopi = options.retainMnemopi !== false;
 		const queued = this.#queuedApply;
 		if (queued) {
@@ -310,6 +316,49 @@ export class SessionMemory {
 			return this.#applyMemoryBackend(request.retainMnemopi);
 		});
 		await request.done;
+	}
+
+	/** Initial startup shares the lifecycle queue with live settings and retains parent-state aliasing. */
+	initialize(inherited: MemoryBackendInheritance): Promise<void> {
+		return this.#enqueueTransition(async () => {
+			if (!this.#memoryAgentDir || this.#host.isDisposed()) return;
+			const isCurrent = this.#startupCommitGuard();
+			const backend = await resolveMemoryBackend(this.#host.settings);
+			if (!isCurrent()) return;
+			await backend.start({
+				session: this.#host.memoryBackendSession(),
+				settings: this.#host.settings,
+				modelRegistry: this.#host.modelRegistry,
+				agentDir: this.#memoryAgentDir,
+				taskDepth: this.#memoryTaskDepth,
+				...inherited,
+				isCurrent,
+			});
+			if (!isCurrent() || backend.id !== "mnemopi") return;
+			await this.#refreshMemoryTools(isCurrent);
+			if (!isCurrent()) return;
+			await this.#host.refreshBaseSystemPrompt(isCurrent);
+		});
+	}
+
+	#startupCommitGuard(): () => boolean {
+		const sessionId = this.#host.memoryBackendSession().sessionId;
+		const cwd = this.#host.cwd();
+		const snapshot = memorySettingsValue().get(this.#host.settings);
+		const backend = cfgMemoryBackend.get(this.#host.settings);
+		const relevantIds = Object.keys(snapshot).filter(id => id === "memory.backend" || id.startsWith(`${backend}.`));
+		const generation = this.#configurationGeneration;
+		return () => {
+			if (
+				this.#host.isDisposed() ||
+				this.#configurationGeneration !== generation ||
+				this.#host.memoryBackendSession().sessionId !== sessionId ||
+				this.#host.cwd() !== cwd
+			)
+				return false;
+			const current = memorySettingsValue().get(this.#host.settings);
+			return relevantIds.every(id => runtime.deepEquals(snapshot[id], current[id]));
+		};
 	}
 
 	/** Runs `work` after every earlier transition; its failure does not block later ones. */
@@ -330,21 +379,24 @@ export class SessionMemory {
 		const retain = retainMnemopi && (this.#runtimeCwd ?? cwd) === cwd;
 		try {
 			await this.#disposeMemoryBackendState(true, retain);
+			const isCurrent = this.#startupCommitGuard();
 			this.#runtimeCwd = cwd;
 			if (this.#memoryAgentDir && this.#memoryTaskDepth === 0 && !this.#host.isDisposed()) {
 				const backend = await resolveMemoryBackend(this.#host.settings);
+				if (!isCurrent()) return;
 				await backend.start({
 					session: this.#host.memoryBackendSession(),
 					settings: this.#host.settings,
 					modelRegistry: this.#host.modelRegistry,
 					agentDir: this.#memoryAgentDir,
 					taskDepth: this.#memoryTaskDepth,
+					isCurrent,
 				});
 			}
-			if (this.#host.isDisposed()) return;
-			await this.#refreshMemoryTools();
-			if (this.#host.isDisposed()) return;
-			await this.#host.refreshBaseSystemPrompt();
+			if (!isCurrent()) return;
+			await this.#refreshMemoryTools(isCurrent);
+			if (!isCurrent()) return;
+			await this.#host.refreshBaseSystemPrompt(isCurrent);
 		} catch (error) {
 			await this.#disposeMemoryBackendState(false);
 			if (!this.#host.isDisposed()) {
@@ -358,12 +410,12 @@ export class SessionMemory {
 		}
 	}
 
-	async #refreshMemoryTools(): Promise<void> {
+	async #refreshMemoryTools(commitIf?: () => boolean): Promise<void> {
 		const tools = (await this.#createMemoryTools?.()) ?? [];
-		await this.#replaceMemoryTools(tools);
+		await this.#replaceMemoryTools(tools, commitIf);
 	}
 
-	#replaceMemoryTools(tools: AgentTool[]): Promise<void> {
-		return this.#host.replaceMemoryTools(tools);
+	#replaceMemoryTools(tools: AgentTool[], commitIf?: () => boolean): Promise<void> {
+		return this.#host.replaceMemoryTools(tools, commitIf);
 	}
 }

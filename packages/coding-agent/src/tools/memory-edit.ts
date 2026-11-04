@@ -36,6 +36,7 @@ export class MemoryEditTool implements AgentTool<typeof memoryEditSchema> {
 	static createIf(session: ToolSession): MemoryEditTool | null {
 		const backend = cfgMemoryBackend.get(session.settings);
 		if (backend !== "mnemopi") return null;
+		if (!session.getMnemopiSessionState?.()) return null;
 		return new MemoryEditTool(session);
 	}
 
