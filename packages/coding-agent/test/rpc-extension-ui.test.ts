@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "bun:test";
+import * as fs from "node:fs";
 import * as path from "node:path";
+import { pathToFileURL } from "node:url";
 import { isRecord, readJsonl, TempDir } from "@oh-my-pi/pi-utils";
 import type { ExtensionAskDialogQuestion } from "@oh-my-pi/pi-coding-agent/extensibility/extensions";
 import {
@@ -752,21 +754,52 @@ describe("RPC ask dialog", () => {
 		expect(onTimeout).not.toHaveBeenCalled();
 	});
 
-	it("keeps select prompts until the host opts in, then sends each ask as one dialog", async () => {
-		await using temp = await TempDir.create("@rpc-ask-dialog-");
-		const extensionPath = temp.join("scripted-ask.ts");
-		await Bun.write(extensionPath, scriptedAskProvider);
-		const child = Bun.spawn(
-			[
-				process.execPath,
-				path.join(import.meta.dir, "..", "src", "cli.ts"),
-				"--trusted-extension",
-				extensionPath,
-				"--mode",
-				"rpc-ui",
-				"--no-session",
-			],
-			{
+	const runtimes = [
+		"cli",
+		...["node", "node-desktop"].filter(artifact =>
+			fs.existsSync(path.join(import.meta.dir, "..", "dist", artifact, "rpc.mjs")),
+		),
+	];
+	it.each(runtimes)(
+		"%s keeps select prompts until the host opts in, then sends each ask as one dialog",
+		async runtime => {
+			await using temp = await TempDir.create("@rpc-ask-dialog-");
+			const extensionPath = temp.join("scripted-ask.mjs");
+			await Bun.write(extensionPath, scriptedAskProvider);
+			const command =
+				runtime === "cli"
+					? [
+							process.execPath,
+							path.join(import.meta.dir, "..", "src", "cli.ts"),
+							"--trusted-extension",
+							extensionPath,
+							"--mode",
+							"rpc-ui",
+							"--no-session",
+						]
+					: [
+							"node",
+							"--input-type=module",
+							"-e",
+							`import { startNodeRpcHost } from ${JSON.stringify(pathToFileURL(path.join(import.meta.dir, "..", "dist", runtime, "rpc.mjs")).href)}; await startNodeRpcHost(${JSON.stringify(
+								{
+									cwd: temp.path(),
+									agentDir: temp.join("agent"),
+									protocolMode: "rpc-ui",
+									model: "openai/gpt-4o-mini",
+									noSession: true,
+									extensions: [extensionPath],
+									extraArgs: [
+										"--no-extensions",
+										"--no-lsp",
+										"--no-context-files",
+										"--no-skills",
+										"--no-rules",
+									],
+								},
+							)});`,
+						];
+			const child = Bun.spawn(command, {
 				cwd: temp.path(),
 				env: {
 					PATH: Bun.env.PATH,
@@ -775,6 +808,7 @@ describe("RPC ask dialog", () => {
 					XDG_CONFIG_HOME: temp.join("config"),
 					XDG_DATA_HOME: temp.join("data"),
 					XDG_CACHE_HOME: temp.join("cache"),
+					OPENAI_API_KEY: "test-no-network",
 					CI: "true",
 					PI_NO_TITLE: "1",
 				},
@@ -782,93 +816,110 @@ describe("RPC ask dialog", () => {
 				stdout: "pipe",
 				stderr: "pipe",
 				timeout: 30_000,
-			},
-		);
-		const stdout = new Response(child.stdout).body;
-		if (!stdout) throw new Error("RPC ask fixture did not expose stdout");
-		const stderr = new Response(child.stderr).text();
-		const send = async (frame: object) => {
-			child.stdin.write(`${JSON.stringify(frame)}\n`);
-			await child.stdin.flush();
-		};
-		const selectRequests: Record<string, unknown>[] = [];
-		const askRequests: Record<string, unknown>[] = [];
-		const toolResults: unknown[] = [];
-		let optInResponse: unknown;
-		let finished = false;
+			});
+			const stdout = new Response(child.stdout).body;
+			if (!stdout) throw new Error("RPC ask fixture did not expose stdout");
+			const stderr = new Response(child.stderr).text();
+			const send = async (frame: object) => {
+				child.stdin.write(`${JSON.stringify(frame)}\n`);
+				await child.stdin.flush();
+			};
+			const selectRequests: Record<string, unknown>[] = [];
+			const askRequests: Record<string, unknown>[] = [];
+			const toolResults: unknown[] = [];
+			let optInResponse: unknown;
+			let finished = false;
 
-		try {
-			// The provider exists only once the extension loads, so select it over RPC.
-			await send({ type: "set_model", id: "model", provider: "scripted", modelId: "ask" });
-			for await (const frame of readJsonl<unknown>(stdout)) {
-				if (!isRecord(frame)) continue;
-				if (frame.type === "response" && frame.id === "model") {
-					if (frame.success !== true) throw new Error(`Scripted model unavailable: ${JSON.stringify(frame)}`);
-					await send({ type: "prompt", id: "fallback", message: JSON.stringify({ questions: [dbQuestion] }) });
-				} else if (frame.type === "extension_ui_request" && frame.method === "select") {
-					selectRequests.push(frame);
-					await send({ type: "extension_ui_response", id: frame.id, value: "Postgres" });
-				} else if (frame.type === "extension_ui_request" && frame.method === "ask") {
-					askRequests.push(frame);
-					await send({
-						type: "extension_ui_response",
-						id: frame.id,
-						answers: [
-							{ id: "db", selectedOptions: [], customInput: "DuckDB" },
-							{ id: "features", selectedOptions: ["Auth", "Search"] },
-						],
-					});
-				} else if (frame.type === "tool_execution_end" && frame.toolName === "ask") {
-					toolResults.push(frame.result);
-				} else if (frame.type === "prompt_result" && frame.id === "fallback") {
-					await send({ type: "set_ask_dialog", id: "opt-in", enabled: true });
-				} else if (frame.type === "response" && frame.id === "opt-in") {
-					optInResponse = frame;
-					await send({
-						type: "prompt",
-						id: "dialog",
-						message: JSON.stringify({ questions: [dbQuestion, featuresQuestion] }),
-					});
-				} else if (frame.type === "prompt_result" && frame.id === "dialog") {
-					finished = true;
-					break;
+			try {
+				// The provider exists only once the extension loads, so select it over RPC.
+				await send({ type: "set_model", id: "model", provider: "scripted", modelId: "ask" });
+				for await (const frame of readJsonl<unknown>(stdout)) {
+					if (!isRecord(frame)) continue;
+					if (frame.type === "response" && frame.id === "model") {
+						if (frame.success !== true) throw new Error(`Scripted model unavailable: ${JSON.stringify(frame)}`);
+						await send({
+							type: "prompt",
+							id: "fallback",
+							message: JSON.stringify({ questions: [dbQuestion, featuresQuestion] }),
+						});
+					} else if (frame.type === "extension_ui_request" && frame.method === "select") {
+						selectRequests.push(frame);
+						const doneOption = Array.isArray(frame.options)
+							? frame.options.find(option => typeof option === "string" && option.endsWith("Done selecting"))
+							: undefined;
+						const value = String(frame.title).includes(dbQuestion.question) ? "Postgres" : (doneOption ?? "Auth");
+						await send({ type: "extension_ui_response", id: frame.id, value });
+					} else if (frame.type === "extension_ui_request" && frame.method === "ask") {
+						askRequests.push(frame);
+						await send({
+							type: "extension_ui_response",
+							id: frame.id,
+							answers: [
+								{ id: "db", selectedOptions: [], customInput: "DuckDB" },
+								{ id: "features", selectedOptions: ["Auth", "Search"] },
+							],
+						});
+					} else if (frame.type === "tool_execution_end" && frame.toolName === "ask") {
+						if (frame.isError === true) throw new Error(`Ask tool failed: ${JSON.stringify(frame.result)}`);
+						toolResults.push(frame.result);
+					} else if (frame.type === "prompt_result" && frame.id === "fallback") {
+						await send({ type: "set_ask_dialog", id: "opt-in", enabled: true });
+					} else if (frame.type === "response" && frame.id === "opt-in") {
+						optInResponse = frame;
+						await send({
+							type: "prompt",
+							id: "dialog",
+							message: JSON.stringify({ questions: [dbQuestion, featuresQuestion] }),
+						});
+					} else if (frame.type === "prompt_result" && frame.id === "dialog") {
+						finished = true;
+						break;
+					}
 				}
+			} finally {
+				child.stdin.end();
+				child.kill();
+				await child.exited;
 			}
-		} finally {
-			child.stdin.end();
-			child.kill();
-			await child.exited;
-		}
 
-		if (!finished) throw new Error(`RPC ask fixture did not finish: ${await stderr}`);
-		await stderr;
-		expect(selectRequests).toHaveLength(1);
-		expect(selectRequests[0]).toMatchObject({ method: "select", title: "Which database?" });
-		expect(optInResponse).toEqual({
-			id: "opt-in",
-			type: "response",
-			command: "set_ask_dialog",
-			success: true,
-			data: { enabled: true },
-		});
-		expect(askRequests).toEqual([
-			{
-				type: "extension_ui_request",
-				id: expect.any(String),
-				method: "ask",
-				questions: [dbQuestion, featuresQuestion],
-			},
-		]);
-		expect(toolResults).toEqual([
-			expect.objectContaining({ details: expect.objectContaining({ selectedOptions: ["Postgres"] }) }),
-			expect.objectContaining({
-				details: {
-					results: [
-						expect.objectContaining({ id: "db", selectedOptions: [], customInput: "DuckDB" }),
-						expect.objectContaining({ id: "features", selectedOptions: ["Auth", "Search"] }),
-					],
+			if (!finished) throw new Error(`RPC ask fixture did not finish: ${await stderr}`);
+			await stderr;
+			// Single selection, checkbox selection, then the themed completion control.
+			expect(selectRequests).toHaveLength(3);
+			expect(optInResponse).toEqual({
+				id: "opt-in",
+				type: "response",
+				command: "set_ask_dialog",
+				success: true,
+				data: { enabled: true },
+			});
+			expect(askRequests).toEqual([
+				{
+					type: "extension_ui_request",
+					id: expect.any(String),
+					method: "ask",
+					questions: [dbQuestion, featuresQuestion],
 				},
-			}),
-		]);
-	}, 60_000);
+			]);
+			expect(toolResults).toEqual([
+				expect.objectContaining({
+					details: {
+						results: [
+							expect.objectContaining({ id: "db", selectedOptions: ["Postgres"] }),
+							expect.objectContaining({ id: "features", selectedOptions: ["Auth"] }),
+						],
+					},
+				}),
+				expect.objectContaining({
+					details: {
+						results: [
+							expect.objectContaining({ id: "db", selectedOptions: [], customInput: "DuckDB" }),
+							expect.objectContaining({ id: "features", selectedOptions: ["Auth", "Search"] }),
+						],
+					},
+				}),
+			]);
+		},
+		60_000,
+	);
 });

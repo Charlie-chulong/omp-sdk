@@ -30,6 +30,7 @@
 
 ### Fixed
 
+- Fixed `ask` failing in Node SDK sessions before showing a question.
 - Fixed conversation rewind leaving retained Python/JavaScript kernels in inventory but routing the next eval to empty replacement kernels; executor identity now follows the stable runtime owner and cwd rather than the branched transcript path.
 - Fixed active shell inventory blocking behind the native run lock until work finished; running shells now report their live execution/PIDs immediately and remain nonreleasable.
 

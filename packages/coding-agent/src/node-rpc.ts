@@ -3,12 +3,14 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { getAgentDir } from "@oh-my-pi/pi-utils/dirs";
 import { isEnoent } from "@oh-my-pi/pi-utils";
+import { initTheme } from "@oh-my-pi/pi-tui/theme";
 import { parseArgs } from "./cli/args";
 import { all } from "./config/registry";
 import { Settings } from "./config/settings";
 import { initializeNodeSdk } from "./node-bootstrap";
 import { runRpcMode } from "./modes/rpc/rpc-mode";
 import { claimRpcInput } from "./modes/rpc/rpc-input";
+import { cfgColorBlindMode, cfgSymbolPreset, cfgThemeDark, cfgThemeLight } from "./modes/settings";
 import { checkPluginStartup } from "./extensibility/plugins/startup-check";
 import { createAgentSession } from "./sdk";
 import { SessionManager } from "./session/session-manager";
@@ -104,6 +106,14 @@ export async function startNodeRpcHost(options: NodeRpcHostOptions): Promise<nev
 		agentDir,
 		configFiles: [...(options.configFiles ?? []), ...(parsed.config ?? [])],
 	});
+	// RPC bypasses CLI startup, but tool prompts still use its themed control labels.
+	await initTheme(
+		false,
+		cfgSymbolPreset.get(settings),
+		cfgColorBlindMode.get(settings),
+		cfgThemeDark.get(settings),
+		cfgThemeLight.get(settings),
+	);
 	for (const setting of all()) {
 		if (setting.definition.protocolDefault?.includes("rpc")) setting.pinDefault(settings);
 	}

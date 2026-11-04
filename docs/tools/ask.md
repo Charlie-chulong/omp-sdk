@@ -45,6 +45,8 @@
 
 ## Flow
 
+Node RPC hosts initialize the configured terminal theme before constructing the session, without starting a theme watcher. Both rich-dialog validation and fallback controls use theme-provided runtime labels even when the host has no local terminal UI.
+
 1. Registration requires `ask.enabled` and `AskTool.createIf()` requires `session.canPromptUser ?? session.hasUI`. A protocol session with a prompt-capable tool UI can receive it even without a local terminal UI; a session with no prompt surface cannot.
 2. `execute()` also requires `context.hasUI` and `context.ui`; if missing it aborts the context and throws `ToolAbortError("Ask tool requires interactive mode")`.
 3. It normalizes carriage-return runs in all supplied strings and rejects duplicate question IDs, duplicate option labels within a question, and reserved runtime-label collisions. It reads `ask.timeout`, converts seconds to milliseconds (`0` disables timeout), and disables timeout entirely while plan mode is enabled.
