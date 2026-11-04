@@ -18,7 +18,7 @@ import { resolveResumableSession } from "./session/session-listing";
 import { closeDaemonClients, daemonClientForProject } from "./launch/client";
 import { registerDaemonProjectPresence } from "./launch/presence";
 import { BUILTIN_TOOL_NAMES } from "./tools/builtin-names";
-import { cfgToolsApprovalMode } from "./tools/settings";
+import { cfgDebugEnabled, cfgToolsApprovalMode } from "./tools/settings";
 import { ProxyPolicyController, type ProxyPolicy, setDefaultProxyPolicyController } from "@oh-my-pi/pi-ai/utils/proxy";
 
 export * from "./modes/rpc/rpc-mode";
@@ -117,6 +117,8 @@ export async function startNodeRpcHost(options: NodeRpcHostOptions): Promise<nev
 	for (const setting of all()) {
 		if (setting.definition.protocolDefault?.includes("rpc")) setting.pinDefault(settings);
 	}
+	// DAP launch still depends on Bun; keep debug unregistered in Node hosts.
+	cfgDebugEnabled.override(settings, false);
 	if (parsed.approvalMode) cfgToolsApprovalMode.override(settings, parsed.approvalMode);
 	else if (parsed.autoApprove) cfgToolsApprovalMode.override(settings, "yolo");
 	if (parsed.smol || parsed.slow || parsed.plan) {

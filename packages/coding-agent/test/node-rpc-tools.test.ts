@@ -14,6 +14,7 @@ for (const artifact of ["node", "node-desktop"]) {
 		for (const scenario of [
 			{ name: "keeps images when an unrelated built-in is disabled", denied: ["ast_edit"], args: [], image: true },
 			{ name: "honors an explicit image denial", denied: ["generate_image"], args: [], image: false },
+			{ name: "keeps debug disabled despite an explicit whitelist", denied: [], args: ["--tools", "read,debug"], image: false },
 			{
 				name: "does not expand an explicit whitelist",
 				denied: ["ast_edit"],
@@ -25,7 +26,7 @@ for (const artifact of ["node", "node-desktop"]) {
 			test(scenario.name, async () => {
 				using root = TempDir.createSync("@node-rpc-tools-");
 				const config = root.join("config.yml");
-				await Bun.write(config, "generate_image:\n  enabled: true\n");
+				await Bun.write(config, "generate_image:\n  enabled: true\ndebug:\n  enabled: true\n");
 				const options = {
 					cwd: root.path(),
 					agentDir: root.join("agent"),
@@ -65,6 +66,7 @@ for (const artifact of ["node", "node-desktop"]) {
 				const state = await client.getState();
 				const names = state.dumpTools?.map(tool => tool.name) ?? [];
 				expect(names.includes("generate_image")).toBe(scenario.image);
+				expect(names).not.toContain("debug");
 				for (const denied of scenario.denied) expect(names).not.toContain(denied);
 			});
 		}
