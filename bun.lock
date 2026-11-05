@@ -361,6 +361,7 @@
   "patchedDependencies": {
     "puppeteer-core@25.3.0": "patches/puppeteer-core@25.3.0.patch",
     "@ark/schema@0.56.2": "patches/@ark%2Fschema@0.56.2.patch",
+    "https-proxy-agent@7.0.6": "patches/https-proxy-agent@7.0.6.patch",
   },
   "overrides": {
     "@ark/schema": "0.56.2",

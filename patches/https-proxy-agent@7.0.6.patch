@@ -1,0 +1,19 @@
+diff --git a/dist/parse-proxy-response.js b/dist/parse-proxy-response.js
+--- a/dist/parse-proxy-response.js
++++ b/dist/parse-proxy-response.js
+@@ -24,10 +24,14 @@ function parseProxyResponse(socket) {
+         function cleanup() {
++            socket.removeListener('close', cleanup);
+             socket.removeListener('end', onend);
+             socket.removeListener('error', onerror);
+             socket.removeListener('readable', read);
+         }
+         function onend() {
+-            cleanup();
++            // A TLS socket can emit ECONNRESET after end but before close.
++            // Keep its error handler until teardown; the CONNECT still fails.
++            socket.removeListener('readable', read);
++            socket.once('close', cleanup);
+             debug('onend');
+             reject(new Error('Proxy connection ended before receiving CONNECT response'));
+         }

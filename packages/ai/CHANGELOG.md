@@ -18,6 +18,7 @@
 
 ### Fixed
 
+- Fixed Node SDK sessions exiting when an HTTPS proxy closes during TLS negotiation.
 - Fixed SDK sessions failing to start with `database is locked` when another session is writing the shared credentials database.
 - Apple Foundation Models reports unavailable builds before probing or invoking its native bridge.
 - Fixed Node.js 24 compatibility for Base64-backed authentication, transcription requests, and gateway video job identifiers.
