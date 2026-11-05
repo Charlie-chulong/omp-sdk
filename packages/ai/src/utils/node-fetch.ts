@@ -1,5 +1,5 @@
 import { resolveExtraCa, withExtraCaInit } from "@oh-my-pi/pi-utils/tls-fetch";
-import { Agent, ProxyAgent, fetch as undiciFetch, type Dispatcher } from "undici/index.js";
+import { Agent, FormData as UndiciFormData, ProxyAgent, fetch as undiciFetch, type Dispatcher } from "undici/index.js";
 import type { ConnectionOptions } from "node:tls";
 import type { FetchImpl } from "../types";
 import { getProxyForUrl } from "./proxy";
@@ -22,7 +22,7 @@ export function portableFetch(base: FetchImpl = nativeFetch): FetchImpl {
 		const extraCa = resolveExtraCa();
 		const options = (extraCa ? withExtraCaInit(init, extraCa) : init) as ExtendedInit | undefined;
 		const url = new URL(input instanceof Request ? input.url : input.toString());
-		const proxy = options?.unix ? "" : options?.proxy ?? getProxyForUrl(undefined, url) ?? "";
+		const proxy = options?.unix ? "" : (options?.proxy ?? getProxyForUrl(undefined, url) ?? "");
 		// Bun treats an empty proxy as ambient routing; direct requests need an explicit dispatcher.
 		if (host.Bun && (proxy || options?.unix)) return base(input, { ...options, proxy } as RequestInit);
 		const tls = options?.tls;
@@ -48,14 +48,22 @@ export function portableFetch(base: FetchImpl = nativeFetch): FetchImpl {
 			dispatchers.set(key, dispatcher);
 		}
 		const { proxy: _proxy, tls: _tls, timeout: _timeout, unix: _unix, ...standard } = options ?? {};
-		const response = await undiciFetch(input instanceof Request ? input.url : input.toString(), {
+		const request = {
 			...(input instanceof Request
 				? { method: input.method, headers: input.headers, body: input.body, signal: input.signal }
 				: {}),
 			...standard,
 			dispatcher,
 			duplex: "half",
-		} as Parameters<typeof undiciFetch>[1]);
+		} as Parameters<typeof undiciFetch>[1];
+		// The host's FormData has a different brand from bundled undici's. Passing
+		// it through directly sends "[object FormData]" as text/plain instead.
+		if (request?.body instanceof FormData && !(request.body instanceof UndiciFormData)) {
+			const form = new UndiciFormData();
+			request.body.forEach((value, name) => form.append(name, value));
+			request.body = form;
+		}
+		const response = await undiciFetch(input instanceof Request ? input.url : input.toString(), request);
 		// undici's web types are structurally identical to the host DOM response.
 		return response as unknown as Response;
 	};
