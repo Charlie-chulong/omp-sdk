@@ -3419,6 +3419,14 @@ class WireClient:
         params: dict[str, object] = {}
         return required(expect_object(self._command("get_available_commands", params), "get_available_commands"), "commands", array(parse_available_slash_command), "get_available_commands")
 
+    def execute_extension_command(self, name: str, *, args: str | None = None) -> bool:
+        """Execute a registered extension command directly; an absent command fails without submitting model input."""
+        params: dict[str, object] = {}
+        params["name"] = name
+        if args is not None:
+            params["args"] = args
+        return required(expect_object(self._command("execute_extension_command", params), "execute_extension_command"), "executed", decode_bool, "execute_extension_command")
+
     def get_entries(self, since: str | None = None) -> SessionEntries:
         """Read the append-history; with `since`, only entries strictly after that durable entry id."""
         params: dict[str, object] = {}

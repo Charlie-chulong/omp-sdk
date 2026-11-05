@@ -1630,6 +1630,15 @@ export interface GetAvailableCommandsResult {
 	commands: AvailableSlashCommand[];
 }
 
+export interface ExecuteExtensionCommandParams {
+	name: string;
+	args?: string;
+}
+
+export interface ExecuteExtensionCommandResult {
+	executed: boolean;
+}
+
 export interface GetEntriesParams {
 	since?: string;
 }
@@ -1936,6 +1945,7 @@ export interface RpcWireCommands {
 	goal: { params: GoalParams; result: GoalResult };
 	set_ask_dialog: { params: SetAskDialogParams; result: SetAskDialogResult };
 	get_available_commands: { params: undefined; result: GetAvailableCommandsResult };
+	execute_extension_command: { params: ExecuteExtensionCommandParams; result: ExecuteExtensionCommandResult };
 	get_entries: { params: GetEntriesParams; result: SessionEntries };
 	get_tree: { params: undefined; result: SessionTree };
 	set_todos: { params: SetTodosParams; result: SetTodosResult };

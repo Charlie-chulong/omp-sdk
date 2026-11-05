@@ -151,6 +151,7 @@ Important edge behavior from runtime:
 - `{ id?, type: "goal", op: "get" | "create" | "resume" | "pause" | "drop", objective?: string, token_budget?: number }`
 - `{ id?, type: "set_ask_dialog", enabled: boolean }`
 - `{ id?, type: "get_available_commands" }`
+- `{ id?, type: "execute_extension_command", name: string, args?: string }`
 - `{ id?, type: "get_entries", since?: string }`
 - `{ id?, type: "get_tree" }`
 - `{ id?, type: "set_todos", phases: TodoPhase[] }`
@@ -1088,6 +1089,19 @@ Command discovery is intentionally an OMP dialect: Pi's `get_commands` (a
 `RpcSlashCommand[]` projection over extensions → prompt templates → skills) is
 not served because OMP's richer catalog (builtins/custom/MCP/file commands,
 broader `source` enum, no Pi `sourceInfo`) is not wire-compatible with it.
+
+### Command-only extension execution
+
+`execute_extension_command` looks up `name` in the current registered extension
+commands and invokes its handler with `args` (default `""`) and the current command
+context. Names are bare command names without whitespace. Success returns
+`data: { executed: true }`.
+
+This control-plane path does not run prompt/input handling or append a user
+message. A missing or removed command fails explicitly: it never falls back to
+model input. Shutdown and a session/runner replacement during execution also
+return failure. Handler side effects are not rolled back by a subsequent failure;
+hosts must not blindly replay non-idempotent commands.
 
 ### Pi-compatible history/tree commands with OMP-native entry payloads
 

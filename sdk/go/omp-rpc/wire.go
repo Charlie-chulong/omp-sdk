@@ -7312,6 +7312,25 @@ func (v *GetAvailableCommandsResult) decodeFrom(raw map[string]json.RawMessage) 
 	return nil
 }
 
+type ExecuteExtensionCommandResult struct {
+	Executed bool `json:"executed"`
+}
+
+func (v *ExecuteExtensionCommandResult) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "ExecuteExtensionCommandResult", v.decodeFrom)
+}
+
+func (v *ExecuteExtensionCommandResult) decodeFrom(raw map[string]json.RawMessage) error {
+	var out ExecuteExtensionCommandResult
+	d := fieldDecoder{raw: raw, owner: "ExecuteExtensionCommandResult"}
+	d.required("executed", &out.Executed)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
 type SetTodosResult struct {
 	TodoPhases []TodoPhase `json:"todoPhases"`
 }
@@ -8031,6 +8050,19 @@ func (c Commands) GetAvailableCommands(ctx context.Context) ([]AvailableSlashCom
 	var out GetAvailableCommandsResult
 	err := c.call(ctx, "get_available_commands", nil, 0, &out)
 	return out.Commands, err
+}
+
+// ExecuteExtensionCommandCommand holds the parameters of "execute_extension_command".
+type ExecuteExtensionCommandCommand struct {
+	Name string  `json:"name"`
+	Args *string `json:"args,omitempty"`
+}
+
+// ExecuteExtensionCommand sends "execute_extension_command": Execute a registered extension command directly; an absent command fails without submitting model input.
+func (c Commands) ExecuteExtensionCommand(ctx context.Context, p ExecuteExtensionCommandCommand) (bool, error) {
+	var out ExecuteExtensionCommandResult
+	err := c.call(ctx, "execute_extension_command", p, 0, &out)
+	return out.Executed, err
 }
 
 // GetEntriesCommand holds the parameters of "get_entries".

@@ -138,6 +138,13 @@ export const rpcCommands: readonly RpcCommandSpec[] = [
 		unwrap: "commands",
 	},
 	{
+		name: "execute_extension_command",
+		doc: "Execute a registered extension command directly; an absent command fails without submitting model input.",
+		params: { name: "string", "args?": "string" },
+		result: { executed: "boolean" },
+		unwrap: "executed",
+	},
+	{
 		name: "get_entries",
 		doc: "Read the append-history; with `since`, only entries strictly after that durable entry id.",
 		params: { "since?": "string" },

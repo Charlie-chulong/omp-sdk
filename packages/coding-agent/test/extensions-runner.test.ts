@@ -35,6 +35,10 @@ import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import { getProjectAgentDir, logger, TempDir } from "@oh-my-pi/pi-utils";
 import { createAssistantMessage } from "./helpers/agent-session-setup";
+import {
+	executeRpcExtensionCommand,
+	type RpcExtensionCommandSession,
+} from "@oh-my-pi/pi-coding-agent/modes/rpc/rpc-mode";
 
 describe("ExtensionRunner", () => {
 	let tempDir: TempDir;
@@ -95,6 +99,82 @@ describe("ExtensionRunner", () => {
 			errors: result.errors.filter(error => isTestScoped(error.path)),
 		};
 	};
+
+	async function rpcCommandFixture() {
+		const commandPath = path.join(extensionsDir, "control.ts");
+		await Bun.write(
+			commandPath,
+			`export default pi => {
+			pi.registerCommand("desktop-bridge", { handler: async () => {} });
+		};`,
+		);
+		const result = await loadTestExtensions();
+		expect(result.errors).toEqual([]);
+		const runner = new ExtensionRunner(
+			result.extensions,
+			result.runtime,
+			tempDir.path(),
+			sessionManager,
+			modelRegistry,
+		);
+		const session: RpcExtensionCommandSession = {
+			extensionRunner: runner,
+			sessionId: sessionManager.getSessionId(),
+		};
+		return { session, commands: result.extensions[0]!.commands };
+	}
+
+	it("executes a registered RPC extension command with its arguments and no transcript input", async () => {
+		const { session, commands } = await rpcCommandFixture();
+		const calls: string[] = [];
+		commands.set("desktop-bridge", {
+			name: "desktop-bridge",
+			handler: async (args, context) => {
+				calls.push(`${args}:${context.sessionManager.getSessionId()}`);
+			},
+		});
+		const entries = sessionManager.getEntries();
+		await executeRpcExtensionCommand(session, "desktop-bridge", "rebind");
+		expect(calls).toEqual([`rebind:${sessionManager.getSessionId()}`]);
+		expect(sessionManager.getEntries()).toEqual(entries);
+	});
+
+	it("fails a removed RPC extension command instead of falling back to user or model input", async () => {
+		const { session, commands } = await rpcCommandFixture();
+		expect(session.extensionRunner!.getCommand("desktop-bridge")).toBeDefined();
+		commands.delete("desktop-bridge");
+		const entries = sessionManager.getEntries();
+		await expect(executeRpcExtensionCommand(session, "desktop-bridge")).rejects.toThrow("not registered");
+		await expect(executeRpcExtensionCommand(session, "/missing command")).rejects.toThrow("without whitespace");
+		expect(sessionManager.getEntries()).toEqual(entries);
+	});
+
+	it("propagates RPC extension command failures and rejects a concurrent session replacement", async () => {
+		const { session, commands } = await rpcCommandFixture();
+		commands.set("desktop-bridge", {
+			name: "desktop-bridge",
+			handler: async () => {
+				throw new Error("listener could not bind");
+			},
+		});
+		await expect(executeRpcExtensionCommand(session, "desktop-bridge")).rejects.toThrow("could not bind");
+		const entered = Promise.withResolvers<void>();
+		const finish = Promise.withResolvers<void>();
+		commands.set("desktop-bridge", {
+			name: "desktop-bridge",
+			handler: async () => {
+				entered.resolve();
+				await finish.promise;
+			},
+		});
+		const execution = executeRpcExtensionCommand(session, "desktop-bridge");
+		await entered.promise;
+		const replacement = { ...session, sessionId: "replacement" };
+		Object.assign(session, replacement);
+		finish.resolve();
+		await expect(execution).rejects.toThrow("session changed");
+		expect(sessionManager.getEntries()).toEqual([]);
+	});
 
 	it("reflects SessionManager.moveTo() changes instead of the constructor-time snapshot (/move)", async () => {
 		const dirA = tempDir.join("dirA");

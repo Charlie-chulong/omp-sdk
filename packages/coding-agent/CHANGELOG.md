@@ -13,6 +13,7 @@
 - Added `createAgentSession({ proxyPolicy })`, `session.setProxyPolicy()` / `getProxyPolicy()`, and RPC `set_proxy_policy` for isolated live conversation routing inherited by nested sessions.
 - Added explicit runtime resource inventory and release through `AgentSession.getRuntimeResources()` / `releaseRuntimeResource(resourceId)` and RPC `get_runtime_resources` / `release_runtime_resource`, reporting ownership, live handles, retention reasons and releasability; busy/shared resources and background dependencies refuse destructive release.
 - Added `setToolEnabled(name, enabled)` for queued single-tool selection changes that retain concurrently registered tools and unrelated presentation ([#122](https://github.com/iris-cat-dev/omp/issues/122)).
+- Added command-only RPC execution for registered extension commands, with explicit missing-command failure instead of submitting model input ([#129](https://github.com/iris-cat-dev/omp/issues/129)).
 - Added queueable compaction: `/compact` sent with the follow-up key (Ctrl+Q) while the agent works now runs when it yields instead of interrupting it ([#17397](https://github.com/can1357/oh-my-pi/pull/17397) by [@H4vC](https://github.com/H4vC))
 
 ### Changed

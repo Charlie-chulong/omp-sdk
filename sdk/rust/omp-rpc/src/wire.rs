@@ -5313,6 +5313,18 @@ pub struct GetAvailableCommandsResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExecuteExtensionCommandParams {
+	pub name: String,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub args: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExecuteExtensionCommandResult {
+	pub executed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GetEntriesParams {
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub since: Option<String>,
@@ -6530,6 +6542,24 @@ impl Command for GetAvailableCommandsCommand {
 
 	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
 		serde_json::from_value::<GetAvailableCommandsResult>(data.unwrap_or_else(|| Value::Object(Map::new()))).map(|result| result.commands)
+	}
+}
+
+/// Execute a registered extension command directly; an absent command fails without submitting model input.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExecuteExtensionCommandCommand {
+	pub name: String,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub args: Option<String>,
+}
+
+impl Command for ExecuteExtensionCommandCommand {
+	const NAME: &'static str = "execute_extension_command";
+	const TIMEOUT_MS: Option<u64> = None;
+	type Output = bool;
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		serde_json::from_value::<ExecuteExtensionCommandResult>(data.unwrap_or_else(|| Value::Object(Map::new()))).map(|result| result.executed)
 	}
 }
 

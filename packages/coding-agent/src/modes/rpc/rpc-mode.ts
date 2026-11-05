@@ -925,6 +925,29 @@ export async function handleRpcSessionChange(
 	throw new Error("Unsupported RPC session change command");
 }
 
+export type RpcExtensionCommandSession = Pick<AgentSession, "extensionRunner" | "sessionId">;
+
+/** A control-plane command, deliberately separate from every prompt/input path. */
+export async function executeRpcExtensionCommand(
+	session: RpcExtensionCommandSession,
+	name: string,
+	args = "",
+): Promise<void> {
+	if (typeof name !== "string" || !name || /\s/.test(name))
+		throw new Error("Extension command name must be a nonempty name without whitespace");
+	if (typeof args !== "string") throw new Error("Extension command args must be a string");
+	const runner = session.extensionRunner;
+	const sessionId = session.sessionId;
+	const command = runner?.getCommand(name);
+	if (!runner || !command) throw new Error(`Extension command is not registered: ${name}`);
+	// No await between lookup and invocation: removal cannot turn a missing
+	// command into a regular user prompt, even during reload or session change.
+	const context = runner.createCommandContext();
+	await runner.runScoped(() => command.handler(args, context));
+	if (session.extensionRunner !== runner || session.sessionId !== sessionId)
+		throw new Error("OMP session changed during extension command execution");
+}
+
 export type RpcOpenSessionSession = Pick<
 	AgentSession,
 	"newSession" | "switchSession" | "sessionFile" | "sessionId" | "messages" | "model" | "setModel"
@@ -2047,6 +2070,12 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 					return error(id, "negotiate_protocol", `Unsupported RPC protocol version: ${command.protocolVersion}`);
 				return success(id, "negotiate_protocol", { protocolVersion: 2 });
 			}
+
+			case "execute_extension_command":
+				if (shutdownState.requested) throw new Error("OMP runtime is shutting down");
+				await executeRpcExtensionCommand(session, command.name, command.args);
+				if (shutdownState.requested) throw new Error("OMP runtime is shutting down");
+				return success(id, "execute_extension_command", { executed: true });
 
 			// =================================================================
 			// Prompting

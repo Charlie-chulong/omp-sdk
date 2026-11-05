@@ -79,6 +79,8 @@ export type RpcCommand =
 	  }
 	| { id?: string; type: "set_ask_dialog"; enabled: boolean }
 	| { id?: string; type: "get_available_commands" }
+	/** Execute only a registered extension command; never interpret it as model input. */
+	| { id?: string; type: "execute_extension_command"; name: string; args?: string }
 	| { id?: string; type: "get_entries"; since?: string }
 	| { id?: string; type: "get_tree" }
 	| { id?: string; type: "set_todos"; phases: TodoPhase[] }
@@ -493,6 +495,7 @@ export type RpcResponse =
 			success: true;
 			data: { commands: RpcAvailableSlashCommand[] };
 	  }
+	| { id?: string; type: "response"; command: "execute_extension_command"; success: true; data: { executed: true } }
 	| {
 			id?: string;
 			type: "response";
