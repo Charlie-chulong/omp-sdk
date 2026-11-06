@@ -132,3 +132,54 @@ describe("OpenAI-compatible image response_format", () => {
 		expect(form?.get("response_format")).toBe("b64_json");
 	});
 });
+
+describe("OpenAI image edit multipart wire contract", () => {
+	test.each([
+		{ name: "single DALL-E reference", modelId: "dall-e-2", count: 1, imageField: "image" },
+		{ name: "multiple GPT Image references", modelId: "gpt-image-2.6-sunburst", count: 2, imageField: "image[]" },
+	])(
+		"$name reaches a strict multipart endpoint without losing image bytes",
+		async ({ modelId, count, imageField }) => {
+			const inputs = [
+				INPUT_IMAGE,
+				{ data: Buffer.from("second original image").toString("base64"), mimeType: "image/png" },
+			].slice(0, count);
+			const server = Bun.serve({
+				hostname: "127.0.0.1",
+				port: 0,
+				async fetch(request) {
+					if (!request.headers.get("content-type")?.startsWith("multipart/form-data;")) {
+						return Response.json({ error: { message: "Multipart image edit required" } }, { status: 415 });
+					}
+					const form = await request.formData();
+					const files = form.getAll(imageField);
+					const otherField = imageField === "image[]" ? "image" : "image[]";
+					if (files.length !== count || form.has(otherField)) {
+						return Response.json({ error: { message: "Invalid image array parameter" } }, { status: 400 });
+					}
+					for (let index = 0; index < files.length; index++) {
+						const file = files[index];
+						if (
+							!(file instanceof File) ||
+							!Buffer.from(await file.arrayBuffer()).equals(Buffer.from(inputs[index]!.data, "base64"))
+						) {
+							return Response.json({ error: { message: "Reference image bytes changed" } }, { status: 400 });
+						}
+					}
+					return imageResponse();
+				},
+			});
+			try {
+				const model = { ...imageModel("openai", modelId), baseUrl: `${server.url.href}v1` };
+				const result = await generateOpenAIImage(
+					model,
+					{ prompt: "Refine these references", inputImages: inputs },
+					{ apiKey: "fixture-key", signal: AbortSignal.timeout(5000) },
+				);
+				expect(result.images[0]?.data).toBe(IMAGE_DATA);
+			} finally {
+				await server.stop(true);
+			}
+		},
+	);
+});
