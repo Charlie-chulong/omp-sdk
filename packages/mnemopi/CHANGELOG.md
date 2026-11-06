@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed Node local embeddings failing on FastEmbed's private package manifest export. Resolve the public entry and its owning manifest while preserving the exact version check and paired ONNX dependency graph.
+
 ## [18.13.3] - 2026-10-28
 
 ### Changed
