@@ -1,11 +1,10 @@
 name: "Compose bazel cache config"
 description: >
-   Emits a bazelrc fragment wiring the vmon node's Bazel HTTP cache. Every
-   Bazel job runs on a vmon `omp-ci` sandbox (VMON_CI=1), whose template bakes
-   the repository/xwin caches at /opt/bazel-repo-cache, and whose node serves
+   Emits a bazelrc fragment for CI builds. vmon `omp-ci` sandboxes (VMON_CI=1)
+   bake repository/xwin caches at /opt/bazel-repo-cache, and their node serves
    a per-repository Bazel cache at $VMON_CACHE_URL/bazel: written by branch
-   and tag jobs, read-only for pull requests. Elsewhere the fragment carries
-   only --config=ci and the build runs uncached.
+   and tag jobs, read-only for pull requests. GitHub-hosted PR builds carry
+   only --config=ci and run without a remote cache.
 
 outputs:
    rc:
