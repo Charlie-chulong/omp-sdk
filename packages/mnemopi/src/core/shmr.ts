@@ -109,7 +109,8 @@ export function initSchema(db: Database): void {
 function hashEmbedding(text: string): Vector {
 	const out = new Float32Array(EMBEDDING_DIM);
 	const words = text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
-	const digest = new Uint8Array(20);
+	// Bun's generic CryptoHasher requires a 64-byte destination even for SHA-1.
+	const digest = new Uint8Array(64);
 	const hasher = new runtime.CryptoHasher("sha1");
 	for (const word of words) {
 		hasher.update(word).digest(digest);

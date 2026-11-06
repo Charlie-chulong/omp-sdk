@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
-import { __resetProxyCache } from "@oh-my-pi/pi-ai/utils/proxy";
+import { afterEach, describe, expect, it, vi } from "bun:test";
+import * as coworkTransport from "@oh-my-pi/pi-ai/providers/cowork-fetch";
 import { getBundledModel } from "@oh-my-pi/pi-catalog/models";
 import { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
@@ -8,7 +8,7 @@ import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import { TempDir } from "@oh-my-pi/pi-utils";
 import { requestBodyText } from "@oh-my-pi/pi-ai/utils/request-body";
-import { asGlobalFetch } from "./helpers/fetch-mock";
+import { mockFetch } from "./helpers/fetch-mock";
 
 interface MessagesRequest {
 	system?: unknown;
@@ -93,20 +93,8 @@ function withoutCacheControl(value: unknown): unknown {
 }
 
 describe("AgentSession Anthropic native compaction", () => {
-	const previousProxy = Bun.env.PI_PROXY_ANTHROPIC;
-
-	beforeEach(() => {
-		// A provider proxy moves first-party requests off the Cowork transport
-		// onto `globalThis.fetch`, where the spy below answers them.
-		Bun.env.PI_PROXY_ANTHROPIC = "http://proxy.example.test:8080";
-		__resetProxyCache();
-	});
-
 	afterEach(() => {
 		vi.restoreAllMocks();
-		if (previousProxy === undefined) delete Bun.env.PI_PROXY_ANTHROPIC;
-		else Bun.env.PI_PROXY_ANTHROPIC = previousProxy;
-		__resetProxyCache();
 	});
 
 	const captured = () =>
@@ -120,8 +108,9 @@ describe("AgentSession Anthropic native compaction", () => {
 		const model = getBundledModel("anthropic", "claude-opus-5-5");
 		if (!model) throw new Error("Expected bundled claude-opus-5-5");
 		const requests: MessagesRequest[] = [];
-		vi.spyOn(globalThis, "fetch").mockImplementation(
-			asGlobalFetch(async (input, init) => {
+		// Capture the selected transport; its portable fallback snapshots native fetch before this test.
+		vi.spyOn(coworkTransport, "coworkFetch").mockImplementation(
+			mockFetch(async (input, init) => {
 				if (!String(input).startsWith("https://api.anthropic.com/v1/messages")) {
 					throw new Error(`Unexpected request to ${String(input)}`);
 				}

@@ -191,6 +191,8 @@ jobs:
               cargo deny --locked --offline check licenses sources
          - name: Type check workspace
            run: bun run ci:check:full
+         - name: Check generated RPC wire bindings
+           run: bun run gen:rpc --check
          - name: Build collab web
            run: bun run collab:web:build
 
@@ -223,11 +225,8 @@ jobs:
               name: MODULE.bazel.lock
               path: MODULE.bazel.lock
 
-   # Rust validation (tests, clippy, rustfmt) runs on non-PR events only.
-   # Native-changing PRs are rare enough that they do not warrant PR-side
-   # Rust validation or a PR-side addon build (see native_addons): Rust is
-   # validated post-merge on main (vmon, node Bazel cache) and again at
-   # release. A skipped required check still satisfies branch protection.
+   # Full Rust workspace validation runs on non-PR events. PRs build the
+   # source-matched linux-x64 addons consumed by the TS suites below.
    rust_validate:
       name: Validate Rust workspace (bazel)
       if: github.event_name != 'pull_request'
@@ -266,23 +265,9 @@ jobs:
            run: bazelisk --bazelrc="${{ steps.cache.outputs.rc }}" build --config=rustfmt //crates/...
 
    # Provides the linux-x64 addon pair every downstream TS job installs.
-   #
-   # PRs never build. They restore the pair main built for the same native
-   # sources from actions/cache (key = hash of every native build input:
-   # toolchain and build settings plus crates/** and BUILD.bazel). With no
-   # exact entry (the PR changes native inputs, or main has not built this
-   # state yet) they take main's newest entry, and with no entry at all the
-   # latest npm release. The workspace loader skips its version sentinel for
-   # workspace loads, so any of these load under a newer checkout. Testing
-   # against main's build instead of the last release keeps merged-but-
-   # unreleased native fixes from failing every PR that did not touch Rust
-   # (a merged grep fix plus its TS test failed 75 PR runs against the
-   # 18.3.1 addon). Only main saves; see the save step for why.
-   #
-   # Main (vmon, node Bazel cache) builds only the pair here so the TS
-   # fan-out starts as soon as it links; native_addons_cross builds every
-   # other target in parallel. Job name says "bazel" for continuity
-   # with required checks.
+   # PRs may reuse only an exact native-input cache hit; otherwise they build
+   # the current checkout. Main builds the pair here so the TS fan-out starts
+   # as soon as it links; native_addons_cross builds the remaining targets.
    native_addons:
       name: Build native addons (bazel)
       runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-22.04' || 'vmon-large/from=omp-ci' }}
@@ -303,7 +288,7 @@ jobs:
               echo "prefix=natives-linux-x64-v1-" >> "$GITHUB_OUTPUT"
               echo "key=natives-linux-x64-v1-$NATIVE_INPUTS_HASH" >> "$GITHUB_OUTPUT"
 
-         # ---- PR path: main-built addons from actions/cache, else npm ----
+         # ---- PR path: exact source-matched cache, else build below ----
          # `ci-natives` is a plain workspace-relative path on purpose: the
          # cache version hashes the literal path list, so vmon (save) and
          # hosted (restore) must spell it identically, and upload-artifact
@@ -315,42 +300,26 @@ jobs:
            with:
               path: ci-natives
               key: ${{ steps.natives-key.outputs.key }}
-              restore-keys: |
-                 ${{ steps.natives-key.outputs.prefix }}
-         - name: Fetch release native addons (npm)
-           if: github.event_name == 'pull_request' && steps.natives-cache.outputs.cache-matched-key == ''
-           shell: bash
-           run: |
-              set -euo pipefail
-              tarball="$(npm view @oh-my-pi/pi-natives-linux-x64@latest dist.tarball)"
-              echo "Fetching $tarball"
-              curl -fsSL --retry 3 "$tarball" | tar -xz -C "$RUNNER_TEMP"
-              mkdir -p ci-natives/natives-linux-x64-baseline ci-natives/natives-linux-x64-modern
-              cp "$RUNNER_TEMP/package/pi_natives.linux-x64-baseline.node" ci-natives/natives-linux-x64-baseline/
-              cp "$RUNNER_TEMP/package/pi_natives.linux-x64-modern.node" ci-natives/natives-linux-x64-modern/
-         # Make the addon source visible whenever it is not source-matched,
-         # instead of leaving a reviewer to wonder which addons the tests ran.
+         # Report the source decision before a cache miss starts the build.
          - name: Report native addon source
            if: github.event_name == 'pull_request'
            shell: bash
            env:
               EXACT: ${{ steps.natives-cache.outputs.cache-hit }}
-              MATCHED: ${{ steps.natives-cache.outputs.cache-matched-key }}
+              CACHE_KEY: ${{ steps.natives-key.outputs.key }}
            run: |
               if [ "$EXACT" = true ]; then
-                echo "Using main's addons for this exact native source state ($MATCHED)."
-              elif [ -n "$MATCHED" ]; then
-                echo "::notice title=Native addons not source-matched::No main build matches this PR's native sources; testing against main's newest addon build ($MATCHED). Native changes are validated post-merge on main and at release."
+                echo "Using source-matched native addons ($CACHE_KEY)."
               else
-                echo "::notice title=Native addons from npm::No main-built addon cache entry is available; testing against the latest npm release addons."
+                echo "No source-matched native addon cache entry ($CACHE_KEY); building this checkout."
               fi
 
-         # ---- main path: bazel build of the linux-x64 pair ----
+         # ---- Bazel build: main runs and PR cache misses ----
          - id: cache
-           if: github.event_name != 'pull_request'
+           if: github.event_name != 'pull_request' || steps.natives-cache.outputs.cache-hit != 'true'
            uses: ./.github/actions/bazel-cache
          - name: Build linux-x64 native addons
-           if: github.event_name != 'pull_request'
+           if: github.event_name != 'pull_request' || steps.natives-cache.outputs.cache-hit != 'true'
            run: |
               set -eo pipefail
               if [ "$(ulimit -Sn)" != unlimited ] && [ "$(ulimit -Sn)" -lt 65536 ]; then ulimit -Sn 65536 || true; fi
@@ -373,7 +342,7 @@ jobs:
          # thousands of actions is the failure mode that made CI slow — make
          # it visible in the run summary instead of discovering it weeks in.
          - name: Report bazel cache stats
-           if: github.event_name != 'pull_request'
+           if: github.event_name != 'pull_request' || steps.natives-cache.outputs.cache-hit != 'true'
            shell: bash
            run: |
               # Bazel runs with --color=yes (config=ci); strip ANSI before
@@ -383,8 +352,8 @@ jobs:
               echo "::notice title=Bazel build summary::${summary:-no process summary found}"
 
          # ---- both paths ----
-         # A corrupt download or cache entry must fail here, not as a
-         # confusing dlopen error in every downstream test shard.
+         # Reject corrupt or incomplete addons before they reach every TS
+         # shard. Both targets are full builds with all optional engines.
          - name: Smoke native addons
            shell: bash
            run: |
@@ -393,11 +362,17 @@ jobs:
               # (exit 0 on a bogus addon); a script file enforces them in
               # both bun and node. Verified against a corrupt .node fixture.
               cat > "$RUNNER_TEMP/smoke-addons.js" <<'EOF'
+              const assert = require("node:assert/strict");
+              const requiredCapabilities = [
+               "smollm", "liveVoice", "wasmGrammars", "pdf",
+               "jujutsu", "snapcompact", "audio", "localAssistance",
+              ];
               for (const f of process.argv.slice(2)) {
                const m = require(f);
-               if (!m || Object.keys(m).length === 0) {
-               	console.error(`addon failed to load: ${f}`);
-               	process.exit(1);
+               assert.equal(typeof m.nativeCapabilities, "function", `missing nativeCapabilities: ${f}`);
+               const capabilities = m.nativeCapabilities();
+               for (const capability of requiredCapabilities) {
+                assert.equal(capabilities[capability], true, `missing full-build capability ${capability}: ${f}`);
                }
               }
               EOF
@@ -578,6 +553,11 @@ jobs:
       timeout-minutes: 20
       steps:
          - uses: actions/checkout@v4
+         - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+           with:
+              node-version: '24.14.0'
+         - name: Pin actual Node for subprocess contract tests
+           run: echo "OMP_NODE_EXECUTABLE=$(command -v node)" >> "$GITHUB_ENV"
          - uses: ./.github/actions/bun-install
          - uses: ./.github/actions/native-artifacts
            with:

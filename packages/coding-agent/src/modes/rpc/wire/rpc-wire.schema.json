@@ -441,6 +441,17 @@
 				"clientOmit": []
 			},
 			{
+				"name": "set_proxy_policy",
+				"doc": "Replace this session's provider network routing policy; returns the applied policy.",
+				"params": "SetProxyPolicyParams",
+				"result": "SetProxyPolicyResult",
+				"nullable": false,
+				"unwrap": "policy",
+				"timeoutMs": null,
+				"completion": null,
+				"clientOmit": []
+			},
+			{
 				"name": "cycle_model",
 				"doc": "Cycle to the next model.",
 				"params": null,
@@ -2305,6 +2316,69 @@
 				"yolo"
 			],
 			"type": "string"
+		},
+		"DirectProxyRoute": {
+			"type": "object",
+			"properties": {
+				"mode": {
+					"const": "direct"
+				}
+			},
+			"required": [
+				"mode"
+			]
+		},
+		"ServerProxyRoute": {
+			"type": "object",
+			"properties": {
+				"mode": {
+					"const": "proxy"
+				},
+				"url": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"mode",
+				"url"
+			]
+		},
+		"ProxyRoute": {
+			"anyOf": [
+				{
+					"$ref": "#/$defs/DirectProxyRoute"
+				},
+				{
+					"$ref": "#/$defs/ServerProxyRoute"
+				}
+			]
+		},
+		"ProxyPolicy": {
+			"type": "object",
+			"properties": {
+				"enabled": {
+					"type": "boolean"
+				},
+				"default": {
+					"$ref": "#/$defs/ProxyRoute"
+				},
+				"providers": {
+					"type": "object",
+					"properties": {},
+					"additionalProperties": {
+						"$ref": "#/$defs/ProxyRoute"
+					}
+				},
+				"noProxy": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					}
+				}
+			},
+			"required": [
+				"enabled"
+			]
 		},
 		"MessageUpdates": {
 			"enum": [
@@ -6819,6 +6893,28 @@
 			"required": [
 				"provider",
 				"modelId"
+			]
+		},
+		"SetProxyPolicyParams": {
+			"type": "object",
+			"properties": {
+				"policy": {
+					"$ref": "#/$defs/ProxyPolicy"
+				}
+			},
+			"required": [
+				"policy"
+			]
+		},
+		"SetProxyPolicyResult": {
+			"type": "object",
+			"properties": {
+				"policy": {
+					"$ref": "#/$defs/ProxyPolicy"
+				}
+			},
+			"required": [
+				"policy"
 			]
 		},
 		"GetAvailableModelsResult": {

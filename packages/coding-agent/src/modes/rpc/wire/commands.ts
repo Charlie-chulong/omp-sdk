@@ -265,6 +265,13 @@ export const rpcCommands: readonly RpcCommandSpec[] = [
 		params: { provider: "string", modelId: "string" },
 		result: "ModelInfo",
 	},
+	{
+		name: "set_proxy_policy",
+		doc: "Replace this session's provider network routing policy; returns the applied policy.",
+		params: { policy: "ProxyPolicy" },
+		result: { policy: "ProxyPolicy" },
+		unwrap: "policy",
+	},
 	{ name: "cycle_model", doc: "Cycle to the next model.", result: "ModelCycleResult", nullable: true },
 	{
 		name: "get_available_models",

@@ -216,6 +216,29 @@ previous session stays active. The event filter applies only to
 session events; responses, `prompt_result`, and UI/host frames always arrive,
 so `prompt_and_wait()` still completes when `agent_end` is filtered out.
 
+## Session Proxy Policy
+
+`set_proxy_policy()` replaces the current session's network-routing policy
+and returns the applied `ProxyPolicy`. Use `DirectProxyRoute` for providers
+that should bypass the default proxy.
+
+```python
+from omp_rpc import DirectProxyRoute, ProxyPolicy, RpcClient, ServerProxyRoute
+
+with RpcClient() as client:
+    applied = client.set_proxy_policy(
+        ProxyPolicy(
+            enabled=True,
+            default=ServerProxyRoute(url="http://proxy.example:8080"),
+            providers={"anthropic": DirectProxyRoute()},
+            no_proxy=("localhost", "127.0.0.1"),
+        )
+    )
+    print(applied.default)
+```
+
+Pass `ProxyPolicy(enabled=False)` to turn off the session's policy.
+
 ## Removing Queued Messages
 
 `remove_queued_message(message, queue)` removes one matching prompt from the

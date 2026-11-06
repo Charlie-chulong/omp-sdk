@@ -16,6 +16,15 @@ export const stateDefs = {
 	QueuedMessageQueue: "'steering' | 'followUp'",
 	CacheWarmingMode: "'off' | 'streaming' | 'idle'",
 	ApprovalMode: "'always-ask' | 'always-ask-cached' | 'write' | 'yolo'",
+	DirectProxyRoute: { mode: "'direct'" },
+	ServerProxyRoute: { mode: "'proxy'", url: "string" },
+	ProxyRoute: "DirectProxyRoute | ServerProxyRoute",
+	ProxyPolicy: {
+		enabled: "boolean",
+		"default?": "ProxyRoute",
+		"providers?": "Record<string, ProxyRoute>",
+		"noProxy?": "string[]",
+	},
 	MessageUpdates: doc(
 		"'full' | 'delta'",
 		"`set_event_filter` projection: `delta` replaces the accumulated snapshots with the block a start/end event touches.",

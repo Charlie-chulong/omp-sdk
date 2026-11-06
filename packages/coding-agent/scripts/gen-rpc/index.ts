@@ -1,7 +1,7 @@
 /**
  * `bun run gen:rpc`: regenerates every artifact derived from the RPC wire schema.
  *
- * Outputs (all committed; `test/rpc-wire/generated.test.ts` fails when stale):
+ * Outputs (all committed; `bun run gen:rpc --check` fails when stale):
  * - `src/modes/rpc/wire/rpc-wire.schema.json`: the language-neutral bundle
  * - `src/modes/rpc/wire/rpc-wire.generated.ts`: TypeScript wire types
  * - `sdk/python/omp-rpc/src/omp_rpc/_wire.py`: Python types, parsers, and client methods
@@ -34,8 +34,16 @@ export function generateRpcArtifacts(): Map<string, string> {
 }
 
 if (import.meta.main) {
+	const check = process.argv.includes("--check");
 	for (const [file, contents] of generateRpcArtifacts()) {
-		await Bun.write(file, contents);
-		console.log(`wrote ${path.relative(process.cwd(), file)}`);
+		if (check) {
+			if ((await Bun.file(file).text()) !== contents) {
+				console.error(`out of date: ${path.relative(process.cwd(), file)}; run bun run gen:rpc`);
+				process.exitCode = 1;
+			}
+		} else {
+			await Bun.write(file, contents);
+			console.log(`wrote ${path.relative(process.cwd(), file)}`);
+		}
 	}
 }

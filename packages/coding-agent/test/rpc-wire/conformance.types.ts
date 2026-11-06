@@ -14,6 +14,7 @@
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import type { CompactionResult } from "@oh-my-pi/pi-agent-core/compaction";
 import type { AssistantMessageEvent, ImageContent, Model, Usage } from "@oh-my-pi/pi-ai";
+import type { ProxyPolicy, ProxyRoute } from "@oh-my-pi/pi-ai/utils/proxy";
 import type { BashResult } from "@oh-my-pi/pi-coding-agent/exec/bash-executor";
 import type { GoalModeState } from "@oh-my-pi/pi-coding-agent/goals/state";
 import type { RpcGoalResult } from "@oh-my-pi/pi-coding-agent/modes/rpc/rpc-goal";
@@ -142,6 +143,8 @@ type ServerResult<K extends CommandName> =
 				: undefined
 			: undefined
 		: never;
+export type ProxyRouteShape = Assert<Same<Wire.ProxyRoute, ProxyRoute>>;
+export type ProxyPolicyShape = Assert<Same<Wire.ProxyPolicy, ProxyPolicy>>;
 
 export type CommandSet = Assert<Same<keyof Wire.RpcWireCommands, CommandName>>;
 export type CommandParams = Assert<

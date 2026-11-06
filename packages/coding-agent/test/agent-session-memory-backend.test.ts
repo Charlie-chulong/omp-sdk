@@ -407,7 +407,6 @@ describe("AgentSession memory backend lifecycle", () => {
 				"mnemopi.embeddingModel": "openai/text-embedding-3-small",
 				"mnemopi.llmMode": "none",
 			});
-			let originalPrompt: string[];
 			const current = createSession(
 				async () => (getMnemopiSessionState(current) ? [createTool("retain")] : []),
 				async () => {
@@ -420,7 +419,7 @@ describe("AgentSession memory backend lifecycle", () => {
 					return { systemPrompt: instructions ? [instructions] : originalPrompt };
 				},
 			);
-			originalPrompt = current.agent.state.systemPrompt;
+			const originalPrompt = current.agent.state.systemPrompt;
 			const started = Promise.withResolvers<void>();
 			const credentials = Promise.withResolvers<string | undefined>();
 			const notices: string[] = [];

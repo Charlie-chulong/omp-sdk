@@ -60,7 +60,8 @@ export async function runWorkerEntrypoint(arg: string | undefined): Promise<bool
 			pending.push(event);
 		};
 		scope.onmessage = buffer;
-		require("@oh-my-pi/omp-stats/sync-worker");
+		// The .js subpath is the package's unconditional export for synchronous loading.
+		require("@oh-my-pi/omp-stats/sync-worker.js");
 		const handler = scope.onmessage;
 		if (handler && handler !== buffer) {
 			for (const event of pending) handler.call(scope, event);

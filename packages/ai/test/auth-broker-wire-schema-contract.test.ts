@@ -116,6 +116,7 @@ const schemaNames = [
 	"clientUsageReportRequestSchema",
 	"clientUsageReportResponseSchema",
 	"clientUsageSummaryResponseSchema",
+	"credentialRefreshRequestSchema",
 	"credentialRefreshResponseSchema",
 	"credentialDisableRequestSchema",
 	"credentialDisableResponseSchema",
@@ -178,6 +179,7 @@ const validSamples: Record<SchemaName, unknown> = {
 			},
 		],
 	},
+	credentialRefreshRequestSchema: { proxyPolicy: { enabled: false } },
 	credentialRefreshResponseSchema: { entry: CREDENTIAL_ENTRY },
 	credentialDisableRequestSchema: {},
 	credentialDisableResponseSchema: { ok: true },
@@ -218,7 +220,7 @@ function reject(schema: unknown, input: unknown): void {
 }
 
 describe("auth-broker public wire schemas", () => {
-	test("exports all 32 real callable ArkType values with canonical behavior", () => {
+	test("exports callable wire schemas with canonical behavior", () => {
 		expect(Object.keys(wireSchemas).sort()).toEqual([...schemaNames].sort());
 		for (const name of schemaNames) {
 			const schema = wireSchemas[name];
@@ -237,6 +239,10 @@ describe("auth-broker public wire schemas", () => {
 		reject(wireSchemas.apiKeyCredentialSchema, { ...API_KEY, extra: true });
 		reject(wireSchemas.apiKeyCredentialSchema, { ...API_KEY, source: "environment" });
 		reject(wireSchemas.credentialUploadRequestSchema, { provider: "", credential: REAL_OAUTH });
+		accept(wireSchemas.credentialRefreshRequestSchema, { proxyPolicy: { enabled: true } });
+		reject(wireSchemas.credentialRefreshRequestSchema, {});
+		reject(wireSchemas.credentialRefreshRequestSchema, { proxyPolicy: "direct" });
+		reject(wireSchemas.credentialRefreshRequestSchema, { proxyPolicy: {}, extra: true });
 	});
 
 	test("preserves fixed envelopes, integer fields, discriminators, and block alias identity", () => {

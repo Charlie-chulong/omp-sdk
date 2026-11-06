@@ -1,11 +1,13 @@
 import { Database } from "@oh-my-pi/pi-utils/sqlite-driver";
 import { afterEach, describe, expect, it, type Mock, spyOn } from "bun:test";
+import { createHash } from "node:crypto";
 import { initBeam } from "@oh-my-pi/pi-mnemopi/core/beam";
 import * as embeddings from "@oh-my-pi/pi-mnemopi/core/embeddings";
 import {
 	clusterBySimilarity,
 	cosineSimilarity,
 	embed,
+	EMBEDDING_DIM,
 	getResonanceLog,
 	harmonize,
 	recallBeliefs,
@@ -49,9 +51,16 @@ describe("SHMR embedding integration", () => {
 
 	it("falls back to deterministic hash vectors when no provider is available", async () => {
 		stubNoProvider();
-		const a = await embed("dark mode preference");
-		const b = await embed("dark mode preference");
+		const a = await embed("Dark mode, dark mode preference!");
+		const b = await embed("dark mode dark mode preference");
 		const c = await embed("unrelated database migration");
+		// Preserve SHA-1 token buckets, repeated-word weights, and per-token hash reset.
+		const expected = new Float32Array(EMBEDDING_DIM);
+		for (const word of ["dark", "mode", "dark", "mode", "preference"]) {
+			const slot = createHash("sha1").update(word).digest().readUInt16BE(0) % EMBEDDING_DIM;
+			expected[slot] = (expected[slot] ?? 0) + 1;
+		}
+		expect(a).toEqual(expected);
 		expect(Array.from(a)).toEqual(Array.from(b));
 		expect(cosineSimilarity(a, b)).toBeGreaterThan(0.99);
 		const clusters = await clusterBySimilarity(
