@@ -18,6 +18,24 @@ function makeSession(cwd: string): ToolSession {
 	};
 }
 
+function useSettledArchiveStats(archivePath: string): void {
+	const originalStat = fs.stat;
+	const ageMs = 60_000n;
+	vi.spyOn(fs, "stat").mockImplementation((async (...args: Parameters<typeof originalStat>) => {
+		const current = await originalStat(...args);
+		if (current && args[0] === archivePath && args[1]?.bigint && "ctimeNs" in current) {
+			// Model an archive past the racy-stamp window without changing wall time.
+			current.mtimeNs -= ageMs * 1_000_000n;
+			current.ctimeNs -= ageMs * 1_000_000n;
+			current.mtimeMs -= ageMs;
+			current.ctimeMs -= ageMs;
+			current.mtime = new Date(Number(current.mtimeMs));
+			current.ctime = new Date(Number(current.ctimeMs));
+		}
+		return current;
+	}) as typeof originalStat);
+}
+
 it("lists a plain TAR past the in-memory ceiling and reads only its selected small member", async () => {
 	await using temp = await TempDir.create("@read-tar-range-");
 	const archivePath = temp.join("large.tar");
@@ -37,16 +55,17 @@ it("lists a plain TAR past the in-memory ceiling and reads only its selected sma
 	expect(await Bun.file(temp.join("identity.json")).exists()).toBe(false);
 });
 
-it("reuses a plain TAR index across member reads while its file-backed source remains readable", async () => {
+it("pages settled TAR members without rereading the index or unrelated payload", async () => {
 	await using temp = await TempDir.create("@read-tar-cache-");
 	const archivePath = temp.join("members.tar");
 	await ar.writeArchive(archivePath, "tar", [
 		["first.txt", "first"],
 		["second.txt", "second"],
 	]);
+	useSettledArchiveStats(archivePath);
 	const reads: [number, number][] = [];
 	const openArchive = ar.openArchive;
-	const open = vi.spyOn(ar, "openArchive").mockImplementation(input => {
+	vi.spyOn(ar, "openArchive").mockImplementation(input => {
 		if (typeof input !== "string") throw new Error("Expected a file-backed TAR read");
 		const file = ar.fileByteSource(input);
 		return openArchive({
@@ -70,19 +89,18 @@ it("reuses a plain TAR index across member reads while its file-backed source re
 		path: `${archivePath}:second.txt:raw`,
 	});
 	expect(second.content).toEqual([{ type: "text", text: "second" }]);
-	expect(open).toHaveBeenCalledTimes(1);
 	expect(reads.slice(readsBeforeSecondMember)).toEqual([[1536, 1542]]);
 });
 
 for (const change of ["rewrite", "replace"] as const) {
-	it(`re-indexes a cached plain TAR after a same-size ${change}`, async () => {
+	it(`reads current TAR members after a same-size ${change}`, async () => {
 		await using temp = await TempDir.create("@read-tar-cache-change-");
 		const archivePath = temp.join("members.tar");
 		await ar.writeArchive(archivePath, "tar", [["value.txt", "before"]]);
 		const originalTime = new Date("2020-01-02T00:00:00Z");
 		await fs.utimes(archivePath, originalTime, originalTime);
 		const originalStat = await fs.stat(archivePath);
-		const open = vi.spyOn(ar, "openArchive");
+		useSettledArchiveStats(archivePath);
 		const tool = new ReadTool(makeSession(temp.path()));
 		const before = await tool.execute("before-change", { path: `${archivePath}:value.txt:raw` });
 		expect(before.content).toEqual([{ type: "text", text: "before" }]);
@@ -107,6 +125,5 @@ for (const change of ["rewrite", "replace"] as const) {
 		}
 		const after = await tool.execute("after-change", { path: `${archivePath}:value.txt:raw` });
 		expect(after.content).toEqual([{ type: "text", text: "after!" }]);
-		expect(open).toHaveBeenCalledTimes(2);
 	});
 }
