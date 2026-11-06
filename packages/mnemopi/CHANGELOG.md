@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Fixed Node local embeddings failing on FastEmbed's private package manifest export. Resolve the public entry and its owning manifest while preserving the exact version check and paired ONNX dependency graph.
+- Fixed local embeddings failing to initialize in Node hosts ([#2](https://github.com/iris-cat-dev/omp-sdk/pull/2) by [@Charlie-chulong](https://github.com/Charlie-chulong)).
 
 ## [18.13.3] - 2026-10-28
 
