@@ -25,10 +25,12 @@ await proxyListening.promise;
 const proxyAddress = proxy.address();
 if (!proxyAddress || typeof proxyAddress === "string") throw new Error("proxy did not bind");
 
-setDefaultProxyPolicyController(new ProxyPolicyController({
-	enabled: true,
-	providers: { cursor: { mode: "proxy", url: `http://127.0.0.1:${proxyAddress.port}` } },
-}));
+setDefaultProxyPolicyController(
+	new ProxyPolicyController({
+		enabled: true,
+		providers: { cursor: { mode: "proxy", url: `http://127.0.0.1:${proxyAddress.port}` } },
+	}),
+);
 
 // TEST-NET-2 (RFC 5737) target: not local/metadata, so the proxy is not bypassed,
 // and unroutable so nothing actually connects past the proxy.

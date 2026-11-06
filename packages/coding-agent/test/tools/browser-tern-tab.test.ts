@@ -462,7 +462,9 @@ describe("TernTab screenshots", () => {
 		const shot = tab.screenshot();
 		const captureId = await captureAsked.promise;
 		await tab.setViewport({ width: 1200, height: 700, deviceScaleFactor: 2 });
-		daemon.answer(captureId, { ok: { data: encodeBase64(encodeRawPng(new Uint8Array(1200 * 700 * 3), 1200, 700, 3)) } });
+		daemon.answer(captureId, {
+			ok: { data: encodeBase64(encodeRawPng(new Uint8Array(1200 * 700 * 3), 1200, 700, 3)) },
+		});
 		await shot;
 		const text = output
 			.finish()

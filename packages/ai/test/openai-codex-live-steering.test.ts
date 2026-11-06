@@ -102,10 +102,9 @@ function createGpt6Model(): Model<"openai-codex-responses"> {
 }
 
 function createToken(): string {
-	const payload = encodeBase64(Buffer.from(
-		JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-		"utf8",
-	));
+	const payload = encodeBase64(
+		Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+	);
 	return `aaa.${payload}.bbb`;
 }
 

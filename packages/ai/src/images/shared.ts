@@ -1,5 +1,11 @@
 import type { FetchImpl, Model, Usage } from "@oh-my-pi/pi-catalog/types";
-import { encodeBase64, base64ImageDataFailureReason, isRecord, parseImageMetadata, USER_AGENT } from "@oh-my-pi/pi-utils";
+import {
+	encodeBase64,
+	base64ImageDataFailureReason,
+	isRecord,
+	parseImageMetadata,
+	USER_AGENT,
+} from "@oh-my-pi/pi-utils";
 import type { ApiKey } from "../auth-retry";
 import { withAuth } from "../auth-retry";
 import * as AIError from "../error";

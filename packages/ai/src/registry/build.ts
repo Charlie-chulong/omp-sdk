@@ -69,13 +69,26 @@ export function buildProviderDefinition(
 		...(policy.storeAs !== undefined ? { storeCredentialsAs: policy.storeAs } : {}),
 		...(policy.callbackPort !== undefined ? { callbackPort: policy.callbackPort } : {}),
 		...(policy.pasteCode ? { pasteCodeFlow: true } : {}),
-		...(login ? { login: (ctrl: OAuthController) => {
-			installProxyFetch();
-			return withProxyProvider(policy.id, () => login({ ...ctrl, fetch: ctrl.fetch ? wrapFetchForProxy(ctrl.fetch, policy.id) : proxyFetch(policy.id) }));
-		} } : {}),
-		...(refreshToken ? { refreshToken: (...args: Parameters<typeof refreshToken>) => {
-			installProxyFetch();
-			return withProxyProvider(policy.id, () => refreshToken(...args));
-		} } : {}),
+		...(login
+			? {
+					login: (ctrl: OAuthController) => {
+						installProxyFetch();
+						return withProxyProvider(policy.id, () =>
+							login({
+								...ctrl,
+								fetch: ctrl.fetch ? wrapFetchForProxy(ctrl.fetch, policy.id) : proxyFetch(policy.id),
+							}),
+						);
+					},
+				}
+			: {}),
+		...(refreshToken
+			? {
+					refreshToken: (...args: Parameters<typeof refreshToken>) => {
+						installProxyFetch();
+						return withProxyProvider(policy.id, () => refreshToken(...args));
+					},
+				}
+			: {}),
 	};
 }

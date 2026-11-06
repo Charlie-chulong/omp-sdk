@@ -50,20 +50,22 @@ function renderSession(entries: unknown[], leafId: string, subSessions?: Record<
 	});
 	const sessionData = document.getElementById("session-data");
 	if (!sessionData) throw new Error("Export template is missing session data");
-	sessionData.textContent = encodeBase64(Buffer.from(
-		JSON.stringify({
-			header: {
-				type: "session",
-				version: 3,
-				id: "assistant-ordering-test",
-				timestamp: "2026-01-01T00:00:00.000Z",
-				cwd: "/tmp",
-			},
-			entries,
-			leafId,
-			subSessions,
-		}),
-	));
+	sessionData.textContent = encodeBase64(
+		Buffer.from(
+			JSON.stringify({
+				header: {
+					type: "session",
+					version: 3,
+					id: "assistant-ordering-test",
+					timestamp: "2026-01-01T00:00:00.000Z",
+					cwd: "/tmp",
+				},
+				entries,
+				leafId,
+				subSessions,
+			}),
+		),
+	);
 	Object.defineProperty(window, "location", {
 		value: new URL("https://example.test/export.html"),
 		configurable: true,

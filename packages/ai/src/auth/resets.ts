@@ -164,7 +164,12 @@ export class ResetCredits implements ResetsApi {
 		options: { creditId?: string; baseUrl?: string; signal?: AbortSignal },
 	): Promise<ResetCreditRedeemOutcome> {
 		const identity = { provider, accountId: access.accountId, email: access.email, orgId: access.orgId };
-		const auth = { ...access, baseUrl: options.baseUrl, fetch: wrapFetchForProxy(this.#deps.usage.fetch, provider), signal: options.signal };
+		const auth = {
+			...access,
+			baseUrl: options.baseUrl,
+			fetch: wrapFetchForProxy(this.#deps.usage.fetch, provider),
+			signal: options.signal,
+		};
 		let creditId = options.creditId;
 		let result: ResetCreditRedeemOutcome;
 		let report: UsageReport | null = null;

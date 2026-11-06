@@ -377,9 +377,9 @@ describe("AssistantMessageComponent images", () => {
 	});
 
 	it("converts WebP tool images for Kitty terminal rendering", async () => {
-		const webpBase64 = encodeBase64(Buffer.from(
-			await Bun.file(path.join(import.meta.dir, "../../../../../assets/python.webp")).arrayBuffer(),
-		));
+		const webpBase64 = encodeBase64(
+			Buffer.from(await Bun.file(path.join(import.meta.dir, "../../../../../assets/python.webp")).arrayBuffer()),
+		);
 		setTerminalImageProtocol(ImageProtocol.Kitty);
 
 		const converted = Promise.withResolvers<void>();

@@ -110,7 +110,9 @@ describe("cell syntax error position", () => {
 
 	it("retains Bun's built-in TypeScript cell support", async () => {
 		expect(await runtime.run("const bunTypedValue: number = 42;\nbunTypedValue", undefined, hooks)).toBe(42);
-		expect(await runtime.run("import type { Missing } from './never-imported.js';\nreturn 42;", undefined, hooks)).toBe(42);
+		expect(
+			await runtime.run("import type { Missing } from './never-imported.js';\nreturn 42;", undefined, hooks),
+		).toBe(42);
 	});
 
 	it("does not mask a runtime error thrown by a cell that parses", async () => {

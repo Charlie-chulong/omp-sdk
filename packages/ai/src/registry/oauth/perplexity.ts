@@ -297,15 +297,18 @@ async function browserSsoLogin(ctrl: OAuthController): Promise<OAuthCredentials>
 	}
 
 	ctrl.onProgress?.("Validating Perplexity session...");
-	const response = await wrapFetchForProxy(ctrl.fetch ?? proxyFetch(), "perplexity")(`${PERPLEXITY_BASE_URL}/api/auth/session`, {
-		headers: {
-			Cookie: `${SESSION_COOKIE_NAME}=${token}`,
-			"User-Agent": APP_USER_AGENT,
-			"X-App-ApiVersion": API_VERSION,
+	const response = await wrapFetchForProxy(ctrl.fetch ?? proxyFetch(), "perplexity")(
+		`${PERPLEXITY_BASE_URL}/api/auth/session`,
+		{
+			headers: {
+				Cookie: `${SESSION_COOKIE_NAME}=${token}`,
+				"User-Agent": APP_USER_AGENT,
+				"X-App-ApiVersion": API_VERSION,
+			},
+			redirect: "error",
+			signal: ctrl.signal,
 		},
-		redirect: "error",
-		signal: ctrl.signal,
-	});
+	);
 	if (!response.ok) {
 		throw new AIError.ProviderHttpError(`Perplexity session validation failed (${response.status})`, response.status);
 	}
