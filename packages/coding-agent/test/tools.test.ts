@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "bun:test";
 import * as fs from "node:fs";
+import * as fsPromises from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as url from "node:url";
@@ -1835,22 +1836,40 @@ describe("Coding Agent Tools", () => {
 			expect(result.details?.isDirectory).toBe(true);
 		});
 
-		it("re-reads an archive rewritten in place with the same size and restored mtime", async () => {
+		it("re-reads an archive rewritten with the same size and restored mtime inside a coarse timestamp granule", async () => {
 			const archivePath = path.join(testDir, "rewritten.zip");
-			// A whole-second mtime round-trips exactly through utimes on every platform.
 			const pinnedMtime = new Date("2024-01-01T00:00:00Z");
 			fs.writeFileSync(archivePath, createZipArchive([{ path: "alpha.txt", content: "first\n" }]));
 			fs.utimesSync(archivePath, pinnedMtime, pinnedMtime);
-			expect(getTextOutput(await readTool.execute("test-call-zip-before", { path: archivePath }))).toContain(
-				"alpha.txt",
-			);
-
-			// Same-length name and content: the rewrite keeps the size; the mtime is put back.
-			fs.writeFileSync(archivePath, createZipArchive([{ path: "bravo.txt", content: "other\n" }]));
-			fs.utimesSync(archivePath, pinnedMtime, pinnedMtime);
-			const output = getTextOutput(await readTool.execute("test-call-zip-after", { path: archivePath }));
-			expect(output).toContain("bravo.txt");
-			expect(output).not.toContain("alpha.txt");
+			const originalStat = fsPromises.stat;
+			const now = Date.now();
+			const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+			const stat = vi.spyOn(fsPromises, "stat").mockImplementation((async (
+				filePath: fs.PathLike,
+				options?: fs.StatOptions,
+			) => {
+				const current = await originalStat(filePath, options);
+				if (current && filePath === archivePath && "ctimeNs" in current) {
+					// Model two real writes inside one filesystem timestamp granule.
+					current.ctimeNs = BigInt(now) * 1_000_000n;
+					current.ctimeMs = BigInt(now);
+					current.ctime = new Date(now);
+				}
+				return current;
+			}) as typeof originalStat);
+			try {
+				expect(getTextOutput(await readTool.execute("test-call-zip-before", { path: archivePath }))).toContain(
+					"alpha.txt",
+				);
+				fs.writeFileSync(archivePath, createZipArchive([{ path: "bravo.txt", content: "other\n" }]));
+				fs.utimesSync(archivePath, pinnedMtime, pinnedMtime);
+				const output = getTextOutput(await readTool.execute("test-call-zip-after", { path: archivePath }));
+				expect(output).toContain("bravo.txt");
+				expect(output).not.toContain("alpha.txt");
+			} finally {
+				stat.mockRestore();
+				clock.mockRestore();
+			}
 		});
 
 		it("should list zip archives without inflating member payloads", async () => {
