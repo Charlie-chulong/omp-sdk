@@ -364,6 +364,11 @@ export class IndexedSessionJournal {
 			const content = JSON.stringify(this.#index);
 			try {
 				await fs.promises.mkdir(path.dirname(destination), { recursive: true });
+			} catch (error) {
+				if (!unavailableCache(error)) throw error;
+				return;
+			}
+			try {
 				await fs.promises.writeFile(temp, content);
 				await fs.promises.rename(temp, destination);
 				if (revision === this.#revision) this.#dirty = false;

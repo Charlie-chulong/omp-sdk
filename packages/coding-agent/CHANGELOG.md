@@ -38,7 +38,7 @@
 - Fixed missing proxy-policy RPC wire declarations and generated client bindings.
 - Fixed relocated cold-history sessions reading or rewriting their old journal path and unnamed indexed headers exposing empty display metadata.
 - Fixed retained cold views reading a different session after their original journal path was atomically replaced.
-- Rebuildable session indexes now use the owning profile's private cache instead of being created beside transcripts and retained consultation artifacts.
+- Rebuildable session indexes now use the owning profile's private cache instead of being created beside transcripts and retained consultation artifacts; an unwritable cache no longer prevents reading an intact original transcript.
 - Malformed source-index digests now rebuild the derived index instead of rejecting an intact transcript.
 - Fixed new and cleared conversations retaining prior execution runtimes, and delayed shell calls borrowing the next conversation's persistent shell.
 - Fixed cached ZIP members returning stale content after same-size archive rewrites with restored modification times.
