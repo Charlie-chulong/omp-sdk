@@ -2,7 +2,12 @@ import * as path from "node:path";
 import type { Agent } from "@oh-my-pi/pi-agent-core";
 import { logger } from "@oh-my-pi/pi-utils";
 import type { Settings } from "../config/settings";
-import { type BashPtyOptions, type BashResult, executeBash as executeBashCommand } from "../exec/bash-executor";
+import {
+	type BashPtyOptions,
+	type BashResult,
+	executeBash as executeBashCommand,
+	stopShellSessions,
+} from "../exec/bash-executor";
 import type { ExtensionRunner } from "../extensibility/extensions";
 import { outputMeta } from "../tools/output-meta";
 import { clampTimeout } from "../tools/tool-timeouts";
@@ -58,6 +63,7 @@ export class BashRunner {
 	readonly #host: BashRunnerHost;
 	#abortControllers = new Set<AbortController>();
 	#stopGeneration = 0;
+	#runtimeGeneration = 0;
 	readonly #activeExecutions = new Set<Promise<unknown>>();
 	#pendingMessages: PendingBashMessage[] = [];
 	#sessionTarget: BashSessionTarget;
@@ -96,6 +102,7 @@ export class BashRunner {
 		let targetTransferred = false;
 		const excludeFromContext = options?.excludeFromContext === true;
 		const cwd = this.#host.sessionManager.getCwd();
+		const runtimeGeneration = this.#runtimeGeneration;
 		try {
 			const extensionRunner = this.#host.extensionRunner();
 			if (extensionRunner?.hasHandlers("user_bash")) {
@@ -137,8 +144,8 @@ export class BashRunner {
 					onChunk,
 					signal: abortController.signal,
 					sessionKey: this.#host.getKernelOwnerId(),
-					// Transcript branches move result destinations, never the live shell's owner.
-					isSessionCurrent: () => !this.#host.isDisposed(),
+					// Branches retain the runtime, but new/clear invalidate old setup.
+					isSessionCurrent: () => !this.#host.isDisposed() && runtimeGeneration === this.#runtimeGeneration,
 					cwd,
 					timeout: clampTimeout("bash", undefined, cfgToolsMaxTimeout.get(this.#host.settings)) * 1000,
 					onMinimizedSave: originalText => this.#saveOriginalArtifact(target, originalText),
@@ -155,6 +162,12 @@ export class BashRunner {
 		} finally {
 			if (!targetTransferred) await this.#releaseSessionTarget(target);
 		}
+	}
+
+	/** Drops conversation-owned shells without changing in-flight result destinations. */
+	async resetRuntime(): Promise<void> {
+		this.#runtimeGeneration++;
+		await stopShellSessions(this.#host.getKernelOwnerId());
 	}
 
 	/** Cancel setup as well as live shells, and retain the receipt until every execution exits. */

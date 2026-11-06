@@ -111,6 +111,37 @@ describe("SessionManager.moveTo", () => {
 		expect(hasAssistantEntry(entries)).toBe(true);
 	});
 
+	it("preserves lazily reopened history across relocation and subsequent writes", async () => {
+		const creator = SessionManager.create(cwdA);
+		creator.appendMessage({ role: "user", content: "retained question", timestamp: 1 });
+		creator.appendMessage(makeAssistantMessage());
+		await creator.close();
+		const oldFile = creator.getSessionFile()!;
+		const originalEntries = (await loadEntriesFromFile(oldFile)).filter(entry => entry.type !== "session");
+		const session = await SessionManager.open(oldFile);
+		try {
+			await session.moveTo(cwdB);
+			const movedFile = session.getSessionFile()!;
+			expect(fs.existsSync(oldFile)).toBe(false);
+			expect((await loadEntriesFromFile(movedFile)).filter(entry => entry.type !== "session")).toEqual(
+				originalEntries,
+			);
+			expect(session.buildSessionContext().messages).toHaveLength(2);
+			session.appendMessage({ role: "user", content: "after relocation", timestamp: 2 });
+			await session.flush();
+			expect((await loadEntriesFromFile(movedFile)).filter(entry => entry.type !== "session")).toEqual([
+				...originalEntries,
+				expect.objectContaining({
+					type: "message",
+					message: { role: "user", content: "after relocation", timestamp: 2 },
+				}),
+			]);
+			expect(fs.existsSync(oldFile)).toBe(false);
+		} finally {
+			await session.close();
+		}
+	});
+
 	it("moves a custom session and artifacts when rename crosses devices", async () => {
 		const session = SessionManager.create(cwdA, path.join(testAgentDir, "custom"));
 		await session.ensureOnDisk();
@@ -897,7 +928,7 @@ describe("SessionManager.moveTo", () => {
 
 		// Destination is a symlink.
 		await fsp.rmdir(homeArtifactsDir);
-		await fsp.symlink(elsewhere, homeArtifactsDir);
+		await fsp.symlink(elsewhere, homeArtifactsDir, process.platform === "win32" ? "junction" : "dir");
 		await expect(session.moveTo(cwdA)).rejects.toThrow();
 		expect(await fsp.readdir(elsewhere)).toEqual(["unrelated.md"]);
 		expect(session.getSessionFile()).toBe(awaySessionFile);
@@ -908,7 +939,7 @@ describe("SessionManager.moveTo", () => {
 		await fsp.mkdir(homeArtifactsDir);
 		await fsp.writeFile(path.join(homeArtifactsDir, "stale.md"), "already here");
 		await fsp.rename(awayArtifactsDir, path.join(testAgentDir, "moved-away"));
-		await fsp.symlink(elsewhere, awayArtifactsDir);
+		await fsp.symlink(elsewhere, awayArtifactsDir, process.platform === "win32" ? "junction" : "dir");
 		await expect(session.moveTo(cwdA)).rejects.toThrow();
 		expect(await fsp.readdir(elsewhere)).toEqual(["unrelated.md"]);
 		expect(await fsp.readdir(homeArtifactsDir)).toEqual(["stale.md"]);

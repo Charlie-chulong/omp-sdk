@@ -435,6 +435,7 @@ describe("AgentSession bash session ownership", () => {
 		await session.executeBash("PI_LEFT_SESSION_MARK=kept");
 
 		await session.newSession();
+		expect((await session.executeBash('printf "[%s]" "$PI_LEFT_SESSION_MARK"')).output).toBe("[]");
 		await session.switchSession(oldSessionFile);
 
 		expect(session.sessionId).toBe(oldSessionId);
@@ -455,8 +456,13 @@ describe("AgentSession bash session ownership", () => {
 		const pending = session.executeBash("PI_LEFT_SESSION_MARK=kept");
 
 		await session.newSession();
+		await session.executeBash("PI_CURRENT_SESSION_MARK=fresh");
 		hook.resolve(undefined);
 		await pending;
+		const currentResult = await session.executeBash(
+			'printf "[%s][%s]" "$PI_LEFT_SESSION_MARK" "$PI_CURRENT_SESSION_MARK"',
+		);
+		expect(currentResult.output).toBe("[][fresh]");
 		await session.switchSession(oldSessionFile);
 
 		const result = await session.executeBash('printf "[%s]" "$PI_LEFT_SESSION_MARK"');

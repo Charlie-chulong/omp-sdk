@@ -128,7 +128,10 @@ describe("session exit diagnostics", () => {
 			.find(entry => entry.type === "custom" && entry.customType === SESSION_EXIT_CUSTOM_TYPE);
 		await reopened.close();
 		if (exitEntry?.type !== "custom") throw new Error("Expected session exit marker");
-		expect(exitEntry.data).toMatchObject({
+		expect(typeof exitEntry.data).toBe("object");
+		expect(exitEntry.data).not.toBeNull();
+		// Materialize the indexed journal's lazy object before matcher traversal.
+		expect(JSON.parse(JSON.stringify(exitEntry.data))).toMatchObject({
 			reason: "dispose",
 			kind: "normal",
 			pendingToolCalls: [

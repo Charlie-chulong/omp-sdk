@@ -34,7 +34,7 @@ import {
 	resolveRetryFallbackChainKey,
 } from "@oh-my-pi/pi-coding-agent/session/retry-fallback-chains";
 import { getBundledModel } from "@oh-my-pi/pi-catalog/models";
-import { FileSessionStorage } from "@oh-my-pi/pi-coding-agent/session/session-storage";
+import { IndexedSessionJournal } from "@oh-my-pi/pi-coding-agent/session/indexed-session-journal";
 import * as executorModule from "@oh-my-pi/pi-coding-agent/task/executor";
 import { createPersistedSubagentReviverFactory } from "@oh-my-pi/pi-coding-agent/task/persisted-revive";
 import { buildWakeRelayBody } from "@oh-my-pi/pi-coding-agent/task/executor";
@@ -44,6 +44,7 @@ import { IrcBus } from "@oh-my-pi/pi-coding-agent/irc/bus";
 import { type IrcMessage } from "@oh-my-pi/pi-tui/tools/irc";
 import { TempDir } from "@oh-my-pi/pi-utils";
 import { createSessionDefaults } from "../helpers/session-defaults";
+import { createInMemoryAuthStorage } from "../helpers/agent-session-setup";
 
 import { cfgAdvisorEnabled } from "@oh-my-pi/pi-coding-agent/advisor/settings";
 
@@ -208,7 +209,12 @@ interface ReviveOwnerOptions {
 	settings?: Settings;
 }
 
+const factoryAuthStorages: AuthStorage[] = [];
+
 function createFactory(cwd: string, eventBus?: EventBus, owner: ReviveOwnerOptions = {}) {
+	const authStorage = owner.authStorage ?? owner.modelRegistry?.authStorage ?? createInMemoryAuthStorage();
+	if (!owner.authStorage && !owner.modelRegistry) factoryAuthStorages.push(authStorage);
+	const modelRegistry = owner.modelRegistry ?? new ModelRegistry(authStorage, path.join(cwd, "models.yml"));
 	const parentSession = {
 		sessionManager: {
 			getCwd: () => cwd,
@@ -233,8 +239,8 @@ function createFactory(cwd: string, eventBus?: EventBus, owner: ReviveOwnerOptio
 	} as unknown as AgentSession;
 	return createPersistedSubagentReviverFactory({
 		session: parentSession,
-		authStorage: owner.authStorage ?? ({} as never),
-		modelRegistry: owner.modelRegistry ?? ({ authStorage: {} } as ModelRegistry),
+		authStorage,
+		modelRegistry,
 		settings: owner.settings ?? Settings.isolated(),
 		enableLsp: true,
 		eventBus,
@@ -244,6 +250,7 @@ function createFactory(cwd: string, eventBus?: EventBus, owner: ReviveOwnerOptio
 afterEach(async () => {
 	vi.restoreAllMocks();
 	MCPManager.resetForTests();
+	for (const authStorage of factoryAuthStorages.splice(0)) authStorage.close();
 	await Promise.all(tempDirs.splice(0).map(dir => dir.remove()));
 });
 
@@ -1749,21 +1756,18 @@ describe("buildWakeRelayBody", () => {
 			// yet, so the reviver must fail closed on the fresh state instead
 			// of reviving stale history. Single-shot: only the snapshot read
 			// mutates, so the publish-time re-read observes the deletion.
-			const originalReadText = FileSessionStorage.prototype.readText;
-			const readTextSpy = vi.spyOn(FileSessionStorage.prototype, "readText").mockImplementationOnce(async function (
-				this: FileSessionStorage,
-				p: string,
-			) {
-				const text = await originalReadText.call(this, p);
-				await fs.promises.rm(p);
-				return text;
+			const originalOpen = IndexedSessionJournal.open;
+			const openSpy = vi.spyOn(IndexedSessionJournal, "open").mockImplementationOnce(async (...args) => {
+				const journal = await originalOpen(...args);
+				await fs.promises.rm(sessionFile);
+				return journal;
 			});
 			try {
 				await expect(reviver(ref)).rejects.toThrow(/ENOENT/);
 				// Fail closed without minting: the missing path stays missing.
 				expect(await Bun.file(sessionFile).exists()).toBe(false);
 			} finally {
-				readTextSpy.mockRestore();
+				openSpy.mockRestore();
 			}
 		});
 
