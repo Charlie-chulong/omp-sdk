@@ -27,6 +27,7 @@ const desktopModuleAliases = new Set([
 	`${codingAgentPrefix}/extensibility/host-api`,
 	`${codingAgentPrefix}/session/indexed-session-journal`,
 	"@oh-my-pi/pi-ai/providers/transform-messages",
+	"@oh-my-pi/pi-ai/auth-gateway",
 	"@oh-my-pi/pi-ai/utils/retry-after",
 	"@oh-my-pi/pi-ai/utils/tool-call-arguments",
 	"@oh-my-pi/pi-ai/utils/empty-completion-retry",

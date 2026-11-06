@@ -34,6 +34,7 @@
 
 - Fixed `ask` failing in Node SDK sessions before showing a question.
 - Fixed and re-enabled `debug` in Node SDK/Desktop sessions, including adapter launch, terminal execution, socket transports, and process cleanup without Bun.
+- Fixed Desktop Node SDK extensions failing to load the native auth gateway used for local model forwarding.
 - Fixed unavailable Mnemopi configurations in the Desktop/core SDK advertising working memory tools; startup now reports all configuration blockers without changing storage, retrieval mode, or remote-service choices ([#125](https://github.com/iris-cat-dev/omp/issues/125)).
 - Fixed conversation rewind leaving retained Python/JavaScript kernels in inventory but routing the next eval to empty replacement kernels; executor identity now follows the stable runtime owner and cwd rather than the branched transcript path.
 - Fixed retained queued steering emitting a terminal completion before the same run resumed; explicit owned-work Stop still clears the queue and finishes terminally.
