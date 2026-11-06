@@ -103,30 +103,6 @@ function armOrderLoop(
 
 class ExitFaultStorage extends FileSessionStorage {
 	failNextAtomicWrite = false;
-	#readGate:
-		| {
-				filePath: string;
-				started: ReturnType<typeof Promise.withResolvers<void>>;
-				release: ReturnType<typeof Promise.withResolvers<void>>;
-		  }
-		| undefined;
-
-	gateNextRead(filePath: string): { started: Promise<void>; release: () => void } {
-		const started = Promise.withResolvers<void>();
-		const release = Promise.withResolvers<void>();
-		this.#readGate = { filePath, started, release };
-		return { started: started.promise, release: release.resolve };
-	}
-
-	override async readText(filePath: string): Promise<string> {
-		const gate = this.#readGate;
-		if (gate?.filePath === filePath) {
-			this.#readGate = undefined;
-			gate.started.resolve();
-			await gate.release.promise;
-		}
-		return super.readText(filePath);
-	}
 
 	override async writeLinesAtomic(
 		filePath: string,
@@ -496,12 +472,28 @@ describe("InteractiveMode vibe mode toggle", () => {
 		const suspend = vi.spyOn(registry, "suspendScope");
 		const terminate = vi.spyOn(registry, "killAll");
 
-		const readGate = storage.gateNextRead(sessionFile);
+		const openStarted = Promise.withResolvers<void>();
+		const releaseOpen = Promise.withResolvers<void>();
+		const originalSetSessionFile = session.sessionManager.setSessionFile.bind(session.sessionManager);
+		vi.spyOn(session.sessionManager, "setSessionFile").mockImplementationOnce(async (...args) => {
+			openStarted.resolve();
+			await releaseOpen.promise;
+			return originalSetSessionFile(...args);
+		});
 		const switching = session.switchSession(sessionFile);
-		await readGate.started;
-		const suspendCallsBeforeRead = suspend.mock.calls.length;
-		readGate.release();
-		expect(suspendCallsBeforeRead).toBe(1);
+		await Promise.race([
+			openStarted.promise,
+			switching.then(() => {
+				throw new Error("Session switch completed without loading its session file");
+			}),
+		]);
+		try {
+			// Loading uses the indexed journal now, not FileSessionStorage.readText.
+			// Scope suspension must still precede the target's first read.
+			expect(suspend).toHaveBeenCalledTimes(1);
+		} finally {
+			releaseOpen.resolve();
+		}
 		expect(await switching).toBe(true);
 
 		expect(mode.vibeModeEnabled).toBe(true);

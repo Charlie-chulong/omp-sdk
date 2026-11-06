@@ -1,5 +1,10 @@
-import * as ffi from "bun:ffi";
+import type * as BunFfi from "bun:ffi";
+import { createRequire } from "node:module";
 import { spyOn } from "bun:test";
+
+// Spy on the same lazy CommonJS binding the title runtime uses. Bun's ESM
+// namespace wrapper is distinct, so spying on it leaves dlopen unmodified.
+const ffi = createRequire(import.meta.url)("bun:ffi") as typeof BunFfi;
 
 /** Controls the fake `SetConsoleTitleW`/`GetConsoleTitleW` pair installed for a test. */
 export interface WindowsConsoleTitleMock {
@@ -11,7 +16,7 @@ export interface WindowsConsoleTitleMock {
 	restore(): void;
 }
 
-function readWideTitle(pointer: ffi.Pointer): string {
+function readWideTitle(pointer: BunFfi.Pointer): string {
 	let title = "";
 	for (let offset = 0; ; offset += Uint16Array.BYTES_PER_ELEMENT) {
 		const unit = ffi.read.u16(pointer, offset);
@@ -20,7 +25,7 @@ function readWideTitle(pointer: ffi.Pointer): string {
 	}
 }
 
-function bindSymbol(symbols: object, name: string, callback: ffi.JSCallback): void {
+function bindSymbol(symbols: object, name: string, callback: BunFfi.JSCallback): void {
 	const definition: unknown = Reflect.get(symbols, name);
 	if (!definition || typeof definition !== "object") throw new Error(`${name} binding missing`);
 	Reflect.set(definition, "ptr", callback.ptr);
@@ -28,7 +33,7 @@ function bindSymbol(symbols: object, name: string, callback: ffi.JSCallback): vo
 
 /** Installs a type-safe `kernel32.dll` FFI double until {@link WindowsConsoleTitleMock.restore} runs. */
 export function mockWindowsConsoleTitle(): WindowsConsoleTitleMock {
-	const callbacks: ffi.JSCallback[] = [];
+	const callbacks: BunFfi.JSCallback[] = [];
 	const mock: WindowsConsoleTitleMock = {
 		titles: [],
 		current: "",
@@ -40,7 +45,7 @@ export function mockWindowsConsoleTitle(): WindowsConsoleTitleMock {
 	};
 	const dlopenSpy = spyOn(ffi, "dlopen").mockImplementation((_name, symbols) => {
 		const set = new ffi.JSCallback(
-			(pointer: ffi.Pointer) => {
+			(pointer: BunFfi.Pointer) => {
 				if (!mock.succeeds) return false;
 				mock.current = readWideTitle(pointer);
 				mock.titles.push(mock.current);
@@ -51,7 +56,7 @@ export function mockWindowsConsoleTitle(): WindowsConsoleTitleMock {
 		// Mirrors kernel32: copies at most `size - 1` units plus a NUL, returns
 		// the copied length, and 0 for an empty title.
 		const get = new ffi.JSCallback(
-			(pointer: ffi.Pointer, size: number) => {
+			(pointer: BunFfi.Pointer, size: number) => {
 				const length = Math.min(mock.current.length, size - 1);
 				const target = new Uint16Array(ffi.toArrayBuffer(pointer, 0, size * Uint16Array.BYTES_PER_ELEMENT));
 				for (let i = 0; i < length; i++) target[i] = mock.current.charCodeAt(i);

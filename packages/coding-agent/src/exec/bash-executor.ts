@@ -85,9 +85,9 @@ export interface BashExecutorOptions {
 	 */
 	onSessionShellBusy?: () => void;
 	/**
-	 * Asked once the run settles: `false` means the agent session that owns
-	 * `sessionKey` was left (new, fork, switch, branch) while the command ran,
-	 * so the persistent shell it used is dropped instead of kept for a next call.
+	 * Whether this execution still belongs to the current runtime. Checked
+	 * before borrowing a persistent shell and again when the run settles;
+	 * `false` selects an isolated shell or drops the persistent one.
 	 */
 	isSessionCurrent?: () => boolean;
 	/** Artifact path/id for full output storage */
@@ -808,8 +808,10 @@ export async function executeBash(command: string, options?: BashExecutorOptions
 	// persistent session; the rest degrade to isolated one-shot shells — the
 	// same path quarantined sessions take.
 	const sessionBusy = shellSessionsInUse.has(sessionKey);
-	let shellSession = persistentSessionBroken || sessionBusy ? undefined : shellSessions.get(sessionKey);
-	if (!shellSession && !persistentSessionBroken && !sessionBusy) {
+	const staleSession = options?.isSessionCurrent?.() === false;
+	let shellSession =
+		persistentSessionBroken || sessionBusy || staleSession ? undefined : shellSessions.get(sessionKey);
+	if (!shellSession && !persistentSessionBroken && !sessionBusy && !staleSession) {
 		shellSession = new Shell(shellOptions);
 		shellSessions.set(sessionKey, shellSession);
 	}

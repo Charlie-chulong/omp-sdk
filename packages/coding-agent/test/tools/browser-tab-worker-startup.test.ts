@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, spyOn } from "bun:test";
+import { Worker as NodeWorker } from "node:worker_threads";
 
 // Browser globals read inside page.evaluate callbacks; absent from bun-types.
 declare const devicePixelRatio: number;
@@ -728,24 +729,34 @@ describe("browser tabs whose renderer crashed", () => {
 				await watcher.detach();
 				await crashRenderer(browser, url);
 				tab.targetId = popupId;
-				// Commit the popup's load only after the new worker has looked the target up. The worker lists
-				// Puppeteer's targets in the same turn it reports `setup`, so that report releases the load.
-				const RealWorker = globalThis.Worker;
-				globalThis.Worker = class SetupReportingWorker extends RealWorker {
-					constructor(...args: ConstructorParameters<typeof Worker>) {
-						super(...args);
-						this.addEventListener("message", event => {
-							if ((event.data as WorkerOutbound).type === "setup") loadGate.resolve();
-						});
+				// The supervisor uses node:worker_threads, not the global Web Worker.
+				// Observe its real setup message before releasing the pending navigation.
+				const postMessage = NodeWorker.prototype.postMessage;
+				const setupObservers: (() => void)[] = [];
+				const initSpy = spyOn(NodeWorker.prototype, "postMessage").mockImplementation(function (
+					this: NodeWorker,
+					...args
+				) {
+					const message: unknown = args[0];
+					if (message && typeof message === "object" && Reflect.get(message, "type") === "init") {
+						const onMessage = (message: WorkerOutbound) => {
+							if (message.type !== "setup") return;
+							this.off("message", onMessage);
+							loadGate.resolve();
+						};
+						this.on("message", onMessage);
+						setupObservers.push(() => this.off("message", onMessage));
 					}
-				};
+					return postMessage.apply(this, args);
+				});
 				let failure: unknown;
 				try {
 					failure = await runInTab(name, { code: "return 1;", timeoutMs: 10_000, session }).catch(
 						(error: unknown) => error,
 					);
 				} finally {
-					globalThis.Worker = RealWorker;
+					initSpy.mockRestore();
+					for (const removeObserver of setupObservers) removeObserver();
 				}
 				expect(String(failure)).toContain("its page reloaded");
 				// The worker that looked the page up adopted it; an inline fallback would retry after the load committed.

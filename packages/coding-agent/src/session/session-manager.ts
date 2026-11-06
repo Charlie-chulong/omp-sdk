@@ -2799,6 +2799,9 @@ export class SessionManager {
 							await moveFileAcrossDevices(oldSessionFile, newSessionFile);
 						}
 						sessionMoved = true;
+						// Cold bodies must follow the durable file before any subsequent
+						// append or header rewrite tries to read their indexed records.
+						this.#journal?.invalidate(newSessionFile);
 					}
 
 					if (artifactPathChanged) {
@@ -2834,6 +2837,7 @@ export class SessionManager {
 								if (!isFsError(error) || error.code !== "EXDEV") throw error;
 								await moveFileAcrossDevices(newSessionFile, oldSessionFile);
 							}
+							this.#journal?.invalidate(oldSessionFile);
 						} catch (rollbackErr) {
 							throw new Error(
 								`Failed to move session file and rollback: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`,

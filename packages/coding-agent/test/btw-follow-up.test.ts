@@ -685,7 +685,7 @@ describe("BTW follow-up lifecycle", () => {
 		const file = h.manager.getSessionFile()!;
 		const journal = await Bun.file(file).text();
 		const leaf = h.manager.getLeafId();
-		const context = JSON.stringify(h.manager.buildSessionContext());
+		const context = JSON.parse(JSON.stringify(h.manager.buildSessionContext()));
 		const root = await h.root("Selected root question", "Selected root answer");
 		const originalPrompt = h.requests[0]!.args.promptText;
 		const originalConversationKey = h.requests[0]!.args.conversationKey;
@@ -756,7 +756,7 @@ describe("BTW follow-up lifecycle", () => {
 		]);
 		expect(await Bun.file(file).text()).toBe(journal);
 		expect(reopened.getLeafId()).toBe(leaf);
-		expect(JSON.stringify(reopened.buildSessionContext())).toBe(context);
+		expect(JSON.parse(JSON.stringify(reopened.buildSessionContext()))).toEqual(context);
 	});
 
 	it("keeps earlier answers after a streamed follow-up errors and copies the latest completed answer", async () => {

@@ -121,6 +121,51 @@ it("keeps shell, Python and JavaScript state usable across a real branch, then r
 	).toContain("undefined");
 }, 60_000);
 
+it.each(["new", "clear"] as const)(
+	"releases conversation-owned shell, Python and JavaScript state on %s while retaining the stable owner",
+	async transition => {
+		const { session, manager, root, settings } = await createSession();
+		const owner = session.getEvalKernelOwnerId();
+		const evalTool = new EvalTool({
+			cwd: root.path(),
+			hasUI: false,
+			settings,
+			getSessionFile: () => manager.getSessionFile() ?? null,
+			getSessionSpawns: () => null,
+			getEvalSessionId: () => session.getEvalSessionId(),
+			getEvalKernelOwnerId: () => session.getEvalKernelOwnerId(),
+			trackEvalExecution: (execution, controller) => session.trackEvalExecution(execution, controller),
+		});
+		expect((await session.executeBash("export OMP_BOUNDARY_MARKER=kept")).exitCode).toBe(0);
+		expect((await session.executePython("marker = 42")).exitCode).toBe(0);
+		expect(
+			(await evalTool.execute("boundary-js-create", { language: "js", code: "var marker = 42; print(marker);" }))
+				.details?.cells?.[0]?.output,
+		).toContain("42");
+		const resources = await session.getRuntimeResources();
+		expect(resources.filter(item => item.kind.endsWith("_kernel"))).toHaveLength(2);
+		expect(resources.some(item => item.kind === "shell")).toBe(true);
+		for (const resource of resources.filter(item => item.kind.endsWith("_kernel"))) {
+			if (!resource.pid) throw new Error("Expected real conversation-owned kernel subprocess");
+		}
+
+		if (transition === "new") expect(await session.newSession()).toBe(true);
+		else expect(await session.resetSessionContext()).toBeDefined();
+
+		expect(session.getEvalKernelOwnerId()).toBe(owner);
+		expect(await session.getRuntimeResources()).toEqual([]);
+		for (const resource of resources.filter(item => item.kind.endsWith("_kernel")))
+			expect(() => process.kill(resource.pid!, 0)).toThrow();
+		expect((await session.executeBash('printf "%s" "${OMP_BOUNDARY_MARKER-unset}"')).output).toBe("unset");
+		expect((await session.executePython("print('marker' in globals())")).output).toContain("False");
+		expect(
+			(await evalTool.execute("boundary-js-read", { language: "js", code: "print(typeof marker);" })).details
+				?.cells?.[0]?.output,
+		).toContain("undefined");
+	},
+	60_000,
+);
+
 it("releases a real JavaScript subprocess, clears its variables and preserves an unrelated kernel", async () => {
 	const one = await createSession();
 	const two = await createSession();

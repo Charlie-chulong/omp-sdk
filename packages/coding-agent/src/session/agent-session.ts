@@ -6652,6 +6652,7 @@ export class AgentSession implements SettingsScope {
 		this.#promptGeneration++;
 		await this.#cancelPostPromptTasks();
 		this.#cancelOwnAsyncJobs();
+		await Promise.all([this.#bash.resetRuntime(), this.#eval.disposeKernels()]);
 
 		// Drop the conversation: messages, queued steers/follow-ups, pending tool
 		// calls, and error state. agent.reset() keeps the model and system prompt.
@@ -11581,6 +11582,7 @@ export class AgentSession implements SettingsScope {
 			} finally {
 				this.#bash.finishSessionTransition(bashTransition, sessionTransitioned);
 			}
+			await Promise.all([this.#bash.resetRuntime(), this.#eval.disposeKernels()]);
 
 			this.#clearSessionScopedToolState();
 			this.#clearCheckpointRuntimeState();

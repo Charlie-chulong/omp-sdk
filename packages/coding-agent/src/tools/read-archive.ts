@@ -1,3 +1,4 @@
+import * as fs from "node:fs/promises";
 import { runtime } from "@oh-my-pi/pi-utils/runtime";
 import type { AgentToolResult } from "@oh-my-pi/pi-agent-core";
 import type { TextContent } from "@oh-my-pi/pi-ai";
@@ -52,11 +53,11 @@ const CACHEABLE_ARCHIVE_FORMATS: Partial<Record<ArchiveFormat, true>> = { tar: t
 
 interface CachedArchiveReader {
 	reader: ArchiveReader;
-	ino: number;
-	mtimeMs: number;
-	/** Change time: moves on every write and permission change and cannot be set back, unlike mtime. */
-	ctimeMs: number;
-	size: number;
+	ino: bigint;
+	mtimeNs: bigint;
+	/** Native-precision change time cannot be restored with utimes, unlike mtime. */
+	ctimeNs: bigint;
+	size: bigint;
 	entryCount: number;
 }
 
@@ -74,17 +75,14 @@ const archiveReaderCache = new LRUCache<string, CachedArchiveReader>({
 
 async function openArchiveCached(absolutePath: string): Promise<ArchiveReader> {
 	// A vanished or unreadable archive is reported by the opener, as it always has been.
-	const stat = await runtime
-		.file(absolutePath)
-		.stat()
-		.catch(() => null);
+	const stat = await fs.stat(absolutePath, { bigint: true }).catch(() => null);
 	if (!stat) return openArchive(absolutePath);
 	const cached = archiveReaderCache.get(absolutePath);
 	if (
 		cached &&
 		cached.ino === stat.ino &&
-		cached.mtimeMs === stat.mtimeMs &&
-		cached.ctimeMs === stat.ctimeMs &&
+		cached.mtimeNs === stat.mtimeNs &&
+		cached.ctimeNs === stat.ctimeNs &&
 		cached.size === stat.size
 	) {
 		return cached.reader;
@@ -99,8 +97,8 @@ async function openArchiveCached(absolutePath: string): Promise<ArchiveReader> {
 	archiveReaderCache.set(absolutePath, {
 		reader,
 		ino: stat.ino,
-		mtimeMs: stat.mtimeMs,
-		ctimeMs: stat.ctimeMs,
+		mtimeNs: stat.mtimeNs,
+		ctimeNs: stat.ctimeNs,
 		size: stat.size,
 		entryCount,
 	});

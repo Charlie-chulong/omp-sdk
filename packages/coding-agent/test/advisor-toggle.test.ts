@@ -919,7 +919,9 @@ describe("AgentSession advisor toggle", () => {
 		// conversation continues under a new file and its spend continues with it.
 		expect(sessionManager.getSessionFile()).not.toBe(previousSessionFile);
 		expect(session.getAdvisorCost()).toBeCloseTo(0.5, 8);
-		expect(advisor.state.messages).toContainEqual(advisorMessage(0.5, 1));
+		expect(advisor.state.messages.map(message => Object.fromEntries(Object.entries(message)))).toContainEqual(
+			advisorMessage(0.5, 1),
+		);
 		const forkedSessionFile = sessionManager.getSessionFile();
 		if (!forkedSessionFile) throw new Error("Expected the forked session to be persisted");
 		await session.dispose();

@@ -241,7 +241,10 @@ describe("AgentSession /prewalk off", () => {
 		).toBe(false);
 		const rebuilt = fixture.sessionManager.buildSessionContext().messages;
 		expect(rebuilt.filter(isContinuation)).toEqual(delivered);
-		expect(convertToLlm(fixture.agent.state.messages)).toEqual(convertToLlm(rebuilt));
+		// Provider-visible JSON survives replay; private runtime Symbol metadata does not persist.
+		expect(JSON.parse(JSON.stringify(convertToLlm(fixture.agent.state.messages)))).toEqual(
+			JSON.parse(JSON.stringify(convertToLlm(rebuilt))),
+		);
 		expect(rebuilt).not.toContainEqual(pendingContinuation);
 		expect(fixture.session.model).toEqual(activeModel);
 		expect(fixture.session.thinkingLevel).toBe(thinkingLevel);

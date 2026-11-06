@@ -8,6 +8,7 @@ import type { PythonKernel as PythonKernelInstance } from "@oh-my-pi/pi-coding-a
 import * as pythonKernel from "@oh-my-pi/pi-coding-agent/eval/py/kernel";
 import { AgentRegistry } from "@oh-my-pi/pi-coding-agent/registry/agent-registry";
 import { createAgentSession, type ExtensionFactory, type WorkspaceTree } from "@oh-my-pi/pi-coding-agent/sdk";
+import type { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import { AgentStorage } from "@oh-my-pi/pi-coding-agent/session/agent-storage";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import { Snowflake, TempDir } from "@oh-my-pi/pi-utils";
@@ -167,6 +168,22 @@ const createMockKernel = () => {
 		}),
 	};
 };
+
+// Independent AgentSessions intentionally use isolated owner-scoped keys. Exercise
+// the supported shared-key executor API explicitly while retaining SDK disposal tracking.
+function executeSharedPython(session: AgentSession, cwd: string, code: string) {
+	const controller = new AbortController();
+	return session.trackEvalExecution(
+		pythonExecutor.executePython(code, {
+			cwd,
+			sessionId: `shared-cleanup:${cwd}`,
+			kernelOwnerId: session.getEvalKernelOwnerId(),
+			kernelMode: "session",
+			signal: controller.signal,
+		}),
+		controller,
+	);
+}
 
 describe("AgentSession python cleanup", () => {
 	const tempDirs: TempDir[] = [];
@@ -338,6 +355,37 @@ describe("AgentSession python cleanup", () => {
 		expect(unrelatedKernel.execute).toHaveBeenCalledTimes(2);
 	});
 
+	it("isolates independent SDK sessions in the same working directory", async () => {
+		const { tempDir, cwd } = createTempProject();
+		tempDirs.push(tempDir);
+		const firstKernel = new FakeKernel();
+		const secondKernel = new FakeKernel();
+		vi.spyOn(pythonKernel, "checkPythonKernelAvailability").mockResolvedValue({ ok: true });
+		const startSpy = vi
+			.spyOn(pythonKernel.PythonKernel, "start")
+			.mockResolvedValueOnce(firstKernel as unknown as PythonKernelInstance)
+			.mockResolvedValueOnce(secondKernel as unknown as PythonKernelInstance);
+		const firstSession = await createSession(tempDir, cwd);
+		const secondSession = await createSession(tempDir, cwd);
+		try {
+			await firstSession.executePython("print('first owner')");
+			await secondSession.executePython("print('second owner')");
+			expect(startSpy).toHaveBeenCalledTimes(2);
+			await firstSession.dispose();
+			expect(firstKernel.alive).toBe(false);
+			expect(secondKernel.alive).toBe(true);
+			await secondSession.executePython("print('still owned')");
+			expect(startSpy).toHaveBeenCalledTimes(2);
+			expect(firstKernel.executeCalls).toEqual(["print('first owner')"]);
+			expect(secondKernel.executeCalls).toEqual(["print('second owner')", "print('still owned')"]);
+		} finally {
+			await firstSession.dispose();
+			await secondSession.dispose();
+		}
+		expect(firstKernel.shutdownCalls).toBe(1);
+		expect(secondKernel.shutdownCalls).toBe(1);
+	});
+
 	it("waits for active SDK session Python work before releasing a shared retained kernel", async () => {
 		const { tempDir, cwd } = createTempProject();
 		tempDirs.push(tempDir);
@@ -367,7 +415,7 @@ describe("AgentSession python cleanup", () => {
 		let firstDisposed = false;
 
 		try {
-			const firstExecution = firstSession.executePython("print('first')");
+			const firstExecution = executeSharedPython(firstSession, cwd, "print('first')");
 			let firstExecutionSettled = false;
 			const observedFirstExecution = firstExecution.finally(() => {
 				firstExecutionSettled = true;
@@ -384,7 +432,7 @@ describe("AgentSession python cleanup", () => {
 			expect(blockedExecutionSettled).toBe(false);
 			expect(firstExecutionSettled).toBe(false);
 
-			const secondExecution = secondSession.executePython("print('second')");
+			const secondExecution = executeSharedPython(secondSession, cwd, "print('second')");
 			await Bun.sleep(0);
 
 			expect(firstDisposed).toBe(false);
@@ -399,7 +447,7 @@ describe("AgentSession python cleanup", () => {
 			expect(kernel.shutdownCalls).toBe(0);
 			expect(kernel.executeCalls).toEqual(["print('first')", "print('second')"]);
 
-			await secondSession.executePython("print('third')");
+			await executeSharedPython(secondSession, cwd, "print('third')");
 
 			expect(startSpy).toHaveBeenCalledTimes(1);
 			expect(kernel.executeCalls).toEqual(["print('first')", "print('second')", "print('third')"]);
@@ -496,8 +544,8 @@ describe("AgentSession python cleanup", () => {
 		const firstSession = await createSession(tempDir, cwd);
 		const secondSession = await createSession(tempDir, cwd);
 
-		await secondSession.executePython("print('owner-b warmup')");
-		const firstExecution = firstSession.executePython("print('blocked')");
+		await executeSharedPython(secondSession, cwd, "print('owner-b warmup')");
+		const firstExecution = executeSharedPython(firstSession, cwd, "print('blocked')");
 		await blockedExecutionStarted.promise;
 		let firstExecutionSettled = false;
 		void firstExecution.finally(() => {
@@ -525,7 +573,7 @@ describe("AgentSession python cleanup", () => {
 			cancelled: true,
 			stdinRequested: false,
 		});
-		await secondSession.executePython("print('owner-b after detach')");
+		await executeSharedPython(secondSession, cwd, "print('owner-b after detach')");
 		expect(startSpy).toHaveBeenCalledTimes(1);
 		expect(kernel.executeCalls).toEqual([
 			"print('owner-b warmup')",

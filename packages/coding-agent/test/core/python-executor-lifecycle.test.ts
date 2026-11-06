@@ -57,7 +57,7 @@ describe("executePython lifecycle", () => {
 		expect(kernelNext.execute).toHaveBeenCalledTimes(1);
 	});
 
-	it("restarts dead retained sessions even when shutdown confirmation is missing", async () => {
+	it("refuses replacement until retained kernel shutdown is confirmed, then recovers", async () => {
 		const kernel = new FakeKernel(OK_RESULT);
 		const kernelNext = new FakeKernel(OK_RESULT);
 		kernel.alive = false;
@@ -68,13 +68,17 @@ describe("executePython lifecycle", () => {
 			.mockResolvedValueOnce(kernel as unknown as pythonKernel.PythonKernel)
 			.mockResolvedValueOnce(kernelNext as unknown as pythonKernel.PythonKernel);
 
-		await executePython("1 + 1", { kernelMode: "session", sessionId: "retry-dead-session", cwd: getProjectDir() });
-		await executePython("2 + 2", { kernelMode: "session", sessionId: "retry-dead-session", cwd: getProjectDir() });
-
-		expect(startSpy).toHaveBeenCalledTimes(2);
+		const options = { kernelMode: "session" as const, sessionId: "retry-dead-session", cwd: getProjectDir() };
+		await expect(executePython("1 + 1", options)).rejects.toThrow("shutdown not confirmed");
+		expect(startSpy).toHaveBeenCalledTimes(1);
 		expect(kernel.shutdown).toHaveBeenCalledTimes(1);
-		expect(kernel.execute).toHaveBeenCalledTimes(0);
-		expect(kernelNext.execute).toHaveBeenCalledTimes(2);
+		expect(kernel.execute).not.toHaveBeenCalled();
+		expect(kernelNext.execute).not.toHaveBeenCalled();
+
+		expect((await executePython("2 + 2", options)).exitCode).toBe(0);
+		expect(startSpy).toHaveBeenCalledTimes(2);
+		expect(kernel.shutdown).toHaveBeenCalledTimes(2);
+		expect(kernelNext.execute).toHaveBeenCalledTimes(1);
 	});
 
 	it("coalesces concurrent reset requests instead of throwing 'reset already in progress'", async () => {

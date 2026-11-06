@@ -33,7 +33,11 @@
 ### Fixed
 
 - Fixed CLI stats sync worker startup through the shared worker host.
+- Fixed CLI startup loading native capability and proxy modules before worker dispatch or profile bootstrap.
 - Fixed missing proxy-policy RPC wire declarations and generated client bindings.
+- Fixed relocated cold-history sessions reading or rewriting their old journal path and unnamed indexed headers exposing empty display metadata.
+- Fixed new and cleared conversations retaining prior execution runtimes, and delayed shell calls borrowing the next conversation's persistent shell.
+- Fixed cached ZIP members returning stale content after same-size archive rewrites with restored modification times.
 - Fixed `ask` failing in Node SDK sessions before showing a question.
 - Fixed and re-enabled `debug` in Node SDK/Desktop sessions, including adapter launch, terminal execution, socket transports, and process cleanup without Bun.
 - Fixed Desktop Node SDK extensions failing to load the native auth gateway used for local model forwarding.

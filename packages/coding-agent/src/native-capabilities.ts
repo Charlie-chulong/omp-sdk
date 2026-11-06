@@ -1,4 +1,4 @@
-import * as native from "@oh-my-pi/pi-natives";
+import type * as Native from "@oh-my-pi/pi-natives";
 
 /** Optional features compiled into the loaded native addon, independent of SDK profile. */
 export interface NativeCapabilities {
@@ -28,6 +28,9 @@ let compiledCapabilities: NativeCapabilities | undefined;
 /** Query the addon itself; an old addon must be rebuilt, not guessed to support a feature. */
 export function readNativeCapabilities(): NativeCapabilities {
 	if (compiledCapabilities) return compiledCapabilities;
+	// Capability guards are imported by the CLI bootstrap and worker dispatcher.
+	// Load the addon only when a feature actually asks for its capabilities.
+	const native: typeof Native = require("@oh-my-pi/pi-natives");
 	const query = (native as typeof native & { nativeCapabilities?: () => NativeCapabilities }).nativeCapabilities;
 	if (typeof query !== "function") {
 		throw new Error(

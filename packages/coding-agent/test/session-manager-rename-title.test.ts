@@ -102,6 +102,20 @@ describe("SessionManager.renameSessionTitle", () => {
 		expect(sessionFiles(tempDir.path())).toHaveLength(1);
 	});
 
+	it("reopens an untitled session without exposing the empty physical title slot", async () => {
+		using tempDir = TempDir.createSync("@omp-rename-session-title-empty-");
+		const sessionFile = await createSession(tempDir);
+		const manager = await reopen(sessionFile, tempDir);
+		try {
+			expect(manager.getSessionName()).toBeUndefined();
+			expect(manager.getHeader()?.title).toBeUndefined();
+			expect(manager.getHeader()?.titleSource).toBeUndefined();
+			expect(manager.getEntries().filter(entry => entry.type === "title_change")).toHaveLength(0);
+		} finally {
+			await manager.close();
+		}
+	});
+
 	it("returns the title as stored, not the input", async () => {
 		using tempDir = TempDir.createSync("@omp-rename-session-title-canonical-");
 		const sessionFile = await createSession(tempDir);

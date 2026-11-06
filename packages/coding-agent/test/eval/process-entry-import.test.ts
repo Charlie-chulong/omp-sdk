@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { TempDir } from "@oh-my-pi/pi-utils";
 
-it("imports the CLI entry graph without loading dotenv before profile bootstrap", async () => {
+it("imports the CLI entry graph without loading addons or dotenv before profile bootstrap", async () => {
 	using tempDir = TempDir.createSync("@omp-js-process-import-");
 	await Bun.write(path.join(tempDir.path(), ".env"), "OMP_PROCESS_ENTRY_ENV_PROBE=loaded-too-early\n");
 	const env = Object.fromEntries(
@@ -12,7 +12,7 @@ it("imports the CLI entry graph without loading dotenv before profile bootstrap"
 	delete env.OMP_PROCESS_ENTRY_ENV_PROBE;
 	env.HOME = tempDir.path();
 	const fixture = path.resolve(import.meta.dir, "../fixtures/js-process-entry-import.ts");
-	const proc = Bun.spawn([process.execPath, fixture], {
+	const proc = Bun.spawn([process.execPath, "--no-addons", fixture], {
 		env,
 		stdout: "pipe",
 		stderr: "pipe",
@@ -49,20 +49,21 @@ async function pingComputerWorker(
 	}
 }
 
-it("starts ordinary CLI paths without loading the native computer addon", async () => {
+it("starts ordinary CLI paths while keeping unrelated native capabilities lazy", async () => {
 	const cliPath = path.resolve(import.meta.dir, "../../src/cli.ts");
-	for (const args of [
-		["--no-addons", cliPath, "--version"],
-		[cliPath, "--help"],
-	]) {
-		const proc = Bun.spawn([process.execPath, ...args], {
-			stdout: "pipe",
+	for (const args of [["--version"], ["--help"], ["stats", "--help"]]) {
+		// Windows help loads the selected profile's environment and expands the
+		// project path with GetLongPathNameW. Version needs no native path helper;
+		// on other platforms neither help path needs an addon.
+		const runtimeArgs = process.platform === "win32" && args[0] !== "--version" ? [] : ["--no-addons"];
+		const proc = Bun.spawn([process.execPath, ...runtimeArgs, cliPath, ...args], {
+			stdout: "ignore",
 			stderr: "pipe",
 		});
 		const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
 		expect(exitCode, `${args.at(-1)}: ${stderr}`).toBe(0);
 	}
-	// Two cold CLI spawns (`--version`, `--help`) per run; the assertion is the exit
+	// Cold CLI spawns per run; the assertion is the exit
 	// code, not the wall time.
 }, 30_000);
 

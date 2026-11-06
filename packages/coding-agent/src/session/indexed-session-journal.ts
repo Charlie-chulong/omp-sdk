@@ -396,8 +396,10 @@ export class IndexedSessionJournal {
 				this.#index.header = entry as unknown as SessionHeader;
 				const slot = this.#index.titleSlot;
 				if (slot) {
-					this.#index.header.title = slot.title;
-					this.#index.header.titleSource = slot.source;
+					if (slot.title) this.#index.header.title = slot.title;
+					else delete this.#index.header.title;
+					if (slot.source) this.#index.header.titleSource = slot.source;
+					else delete this.#index.header.titleSource;
 				}
 			} else
 				this.#index.entries.push(

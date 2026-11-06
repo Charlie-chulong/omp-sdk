@@ -106,7 +106,7 @@ describe("AgentSession.fork(entryId)", () => {
 
 		expect(emit).toHaveBeenCalledWith({ type: "session_before_branch", reason: "fork", entryId: forkAt });
 		expect(session.sessionFile).toBe(sourceFile);
-		expect(session.messages).toEqual(sourceMessages);
+		expect(session.messages.map(message => Object.fromEntries(Object.entries(message)))).toEqual(sourceMessages);
 		expect(await Bun.file(sourceFile).text()).toBe(sourceRaw);
 		expect((await fs.readdir(path.dirname(sourceFile))).filter(name => name.endsWith(".jsonl"))).toEqual([
 			path.basename(sourceFile),
