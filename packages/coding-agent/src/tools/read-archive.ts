@@ -55,17 +55,20 @@ interface CachedArchiveReader {
 	reader: ArchiveReader;
 	ino: bigint;
 	mtimeNs: bigint;
-	/** Native-precision change time cannot be restored with utimes, unlike mtime. */
+	/** Change time also needs a racy-stamp window on coarse-timestamp filesystems. */
 	ctimeNs: bigint;
 	size: bigint;
 	entryCount: number;
 }
 
+// Match grep's racy-clean window: separate writes can share the same stat stamp.
+const RACY_STAMP_WINDOW_NS = 2_000_000_000n;
+
 /**
  * Recently opened archives, so paging through members does not re-read and
  * re-index the archive per read. Bounded by count and by total indexed entries;
  * an entry is reused only while the file's identity (inode, mtime, ctime, size)
- * holds, so a rewrite or a permission change reopens the archive.
+ * holds and its write timestamp has settled outside the filesystem granule.
  */
 const archiveReaderCache = new LRUCache<string, CachedArchiveReader>({
 	max: 4,
@@ -77,7 +80,9 @@ async function openArchiveCached(absolutePath: string): Promise<ArchiveReader> {
 	// A vanished or unreadable archive is reported by the opener, as it always has been.
 	const stat = await fs.stat(absolutePath, { bigint: true }).catch(() => null);
 	if (!stat) return openArchive(absolutePath);
-	const cached = archiveReaderCache.get(absolutePath);
+	const changedNs = stat.mtimeNs > stat.ctimeNs ? stat.mtimeNs : stat.ctimeNs;
+	const settledStamp = BigInt(Date.now()) * 1_000_000n - changedNs >= RACY_STAMP_WINDOW_NS;
+	const cached = settledStamp ? archiveReaderCache.get(absolutePath) : undefined;
 	if (
 		cached &&
 		cached.ino === stat.ino &&
@@ -88,7 +93,7 @@ async function openArchiveCached(absolutePath: string): Promise<ArchiveReader> {
 		return cached.reader;
 	}
 	const reader = await openArchive(absolutePath);
-	if (!CACHEABLE_ARCHIVE_FORMATS[reader.format]) {
+	if (!settledStamp || !CACHEABLE_ARCHIVE_FORMATS[reader.format]) {
 		archiveReaderCache.delete(absolutePath);
 		return reader;
 	}

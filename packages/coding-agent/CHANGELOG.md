@@ -41,7 +41,7 @@
 - Rebuildable session indexes now use the owning profile's private cache instead of being created beside transcripts and retained consultation artifacts; an unwritable cache no longer prevents reading an intact original transcript.
 - Malformed source-index digests now rebuild the derived index instead of rejecting an intact transcript.
 - Fixed new and cleared conversations retaining prior execution runtimes, and delayed shell calls borrowing the next conversation's persistent shell.
-- Fixed cached ZIP members returning stale content after same-size archive rewrites with restored modification times.
+- Fixed cached ZIP members returning stale content after same-size archive rewrites with restored modification times, including coarse timestamp collisions; freshly modified archives bypass reader caching until their timestamps settle.
 - Fixed temporary subagent transcripts being removed while their kept-alive sessions still needed to persist exit records.
 - Fixed `ask` failing in Node SDK sessions before showing a question.
 - Fixed and re-enabled `debug` in Node SDK/Desktop sessions, including adapter launch, terminal execution, socket transports, and process cleanup without Bun.
