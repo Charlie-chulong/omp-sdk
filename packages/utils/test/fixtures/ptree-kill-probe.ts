@@ -1,15 +1,29 @@
+import { mock } from "bun:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { Process, ProcessStatus } from "@oh-my-pi/pi-natives";
+import * as nativeModule from "@oh-my-pi/pi-natives";
+import type { Process } from "@oh-my-pi/pi-natives";
 import { spawn, TimeoutError } from "../../src/ptree";
+
+const actualNative = { ...nativeModule };
+const { ProcessStatus } = actualNative;
+const nativeFromPid = actualNative.Process.fromPid.bind(actualNative.Process);
+let lookupProcess = nativeFromPid;
+
+// NAPI methods can be read-only. Replace this probe's isolated module binding,
+// retaining real handles and native behavior for every uncontrolled lookup.
+class ProbeProcess {
+	static fromPid(pid: number) {
+		return lookupProcess(pid);
+	}
+}
+mock.module("@oh-my-pi/pi-natives", () => ({ ...actualNative, Process: ProbeProcess }));
 
 const STUBBORN_CHILD = 'process.on("SIGTERM", () => {}); console.log("ready"); setInterval(() => {}, 1000);';
 
 async function checkNativeHandleFailure(mode: "lookup-throws" | "termination-rejects"): Promise<void> {
 	using child = spawn([process.execPath, "-e", STUBBORN_CHILD]);
-	const originalFromPid = Process.fromPid;
-	const nativeFromPid = originalFromPid.bind(Process);
 	try {
 		const reader = child.stdout.getReader();
 		try {
@@ -19,7 +33,7 @@ async function checkNativeHandleFailure(mode: "lookup-throws" | "termination-rej
 			reader.releaseLock();
 		}
 		// Fault injection belongs to this probe's own process and its one child.
-		Process.fromPid = pid => {
+		lookupProcess = pid => {
 			if (pid !== child.pid) return nativeFromPid(pid);
 			if (mode === "lookup-throws") throw new Error("Value is not an instance of class `Process`");
 			return { terminate: () => Promise.reject(new Error("terminate failed")) } as unknown as Process;
@@ -28,7 +42,7 @@ async function checkNativeHandleFailure(mode: "lookup-throws" | "termination-rej
 		await child.exited;
 		assert.equal(child.proc.signalCode, "SIGKILL");
 	} finally {
-		Process.fromPid = originalFromPid;
+		lookupProcess = nativeFromPid;
 		child.kill();
 		await child.proc.exited;
 	}
@@ -41,8 +55,6 @@ async function checkSubreaperRace(testRoot: string): Promise<void> {
 		signal: controller.signal,
 		subreaper: true,
 	});
-	const originalFromPid = Process.fromPid;
-	const nativeFromPid = originalFromPid.bind(Process);
 	const cleanupProcesses: Process[] = [];
 	try {
 		const subreaper = nativeFromPid(child.pid);
@@ -102,7 +114,7 @@ async function checkSubreaperRace(testRoot: string): Promise<void> {
 			killTree: () => killOnly(subreaper.pid),
 			terminate: () => Promise.resolve(killOnly(subreaper.pid) > 0),
 		} as unknown as Process;
-		Process.fromPid = pid => (pid === child.pid ? controlledSubreaper : nativeFromPid(pid));
+		lookupProcess = pid => (pid === child.pid ? controlledSubreaper : nativeFromPid(pid));
 		child.kill(new TimeoutError(1, ""), -1);
 		controller.abort("concurrent abort");
 
@@ -114,7 +126,7 @@ async function checkSubreaperRace(testRoot: string): Promise<void> {
 			assert.notEqual(handle.status(), ProcessStatus.Running, `process ${handle.pid} survived cleanup`);
 		}
 	} finally {
-		Process.fromPid = originalFromPid;
+		lookupProcess = nativeFromPid;
 		for (const handle of cleanupProcesses.reverse()) handle.killTree(9);
 		child.kill();
 		await child.proc.exited;
