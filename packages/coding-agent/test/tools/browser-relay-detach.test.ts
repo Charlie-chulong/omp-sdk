@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, spyOn } from "bun:test";
+import * as workerThreads from "node:worker_threads";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import * as rewriteImports from "@oh-my-pi/pi-coding-agent/eval/js/shared/rewrite-imports";
 import * as toolBridge from "@oh-my-pi/pi-coding-agent/eval/js/tool-bridge";
@@ -340,7 +341,7 @@ describe("relay tabs Chrome detaches omp from", () => {
 	/** Runs `fn` while worker threads cannot start, so every tab worker it spawns falls back to an inline one. */
 	async function withoutWorkerThreads<T>(fn: () => Promise<T>): Promise<T> {
 		// `Worker` is typed as a constructor, which a throwing mock implementation does not satisfy.
-		const unavailable = spyOn(globalThis, "Worker").mockImplementation((() => {
+		const unavailable = spyOn(workerThreads, "Worker").mockImplementation((() => {
 			throw new Error("Worker threads unavailable");
 		}) as never);
 		try {
@@ -526,7 +527,7 @@ describe("relay tabs Chrome detaches omp from", () => {
 		"releases the tab without re-adopting it when the user cancels Chrome's debugging bar",
 		async () => {
 			const ext = await openRelayTab();
-			const respawn = spyOn(globalThis, "Worker");
+			const respawn = spyOn(workerThreads, "Worker");
 			try {
 				const evaluating = ext.hanging();
 				const stalled = invoke({ action: "run", ...HANG }).catch((error: unknown) => error);

@@ -14,6 +14,7 @@ try {
  * CLI entry point — registers all commands explicitly and delegates to the
  * lightweight CLI runner from pi-utils.
  */
+import { installProxyFetch } from "@oh-my-pi/pi-ai/utils/proxy";
 import type * as Postmortem from "@oh-my-pi/pi-utils/postmortem";
 import type { CliConfig, CommandMetadata } from "@oh-my-pi/pi-utils/cli";
 import {
@@ -258,12 +259,7 @@ export async function runCli(argv: string[]): Promise<void> {
 		resolvedArgv[0] === "--version" ||
 		resolvedArgv[0] === "-v" ||
 		resolvedArgv[0] === "help";
-	if (!helpOrVersion) {
-		// Proxy transport initialization reads the agent environment. Keep it
-		// behind profile bootstrap, outside help/version and worker imports.
-		const { installProxyFetch } = await import("@oh-my-pi/pi-ai/utils/proxy");
-		installProxyFetch();
-	}
+	if (!helpOrVersion) installProxyFetch();
 	await setFullProcessName();
 
 	if (resolvedArgv[0] === "--smoke-test") {

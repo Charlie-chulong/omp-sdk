@@ -599,6 +599,7 @@ export async function loadSessionFile(
 			isEnoent(caught) &&
 			process.platform === "win32" &&
 			storage instanceof FileSessionStorage &&
+			!storage.existsSync(filePath) &&
 			(await hasFileAsPathComponent(filePath))
 				? enotdir(filePath)
 				: caught;

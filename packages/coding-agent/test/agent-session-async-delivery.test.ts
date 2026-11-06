@@ -54,6 +54,7 @@ function observeAsyncResultEnqueue(session: AgentSession): Promise<void> {
 describe("AgentSession owner-routed async delivery", () => {
 	let session: AgentSession;
 	const authStorages: AuthStorage[] = [];
+	const resumableTempDirs: TempDir[] = [];
 
 	afterEach(async () => {
 		if (session) {
@@ -62,6 +63,7 @@ describe("AgentSession owner-routed async delivery", () => {
 		for (const authStorage of authStorages.splice(0)) {
 			authStorage.close();
 		}
+		for (const tempDir of resumableTempDirs.splice(0)) tempDir.removeSync();
 		AsyncJobManager.resetForTests();
 	});
 
@@ -1058,6 +1060,8 @@ describe("AgentSession owner-routed async delivery", () => {
 		mock: MockModel;
 		targetSessionFile: string;
 	}> {
+		// afterEach disposes the session before deleting its durable transcript.
+		resumableTempDirs.push(tempDir);
 		const model = getBundledModel("anthropic", "claude-sonnet-4-5")!;
 		const mock = createMockModel({ handler: () => ({ content: ["Done"] }) });
 		const agent = new Agent({
@@ -1108,7 +1112,7 @@ describe("AgentSession owner-routed async delivery", () => {
 	}
 
 	it("Stop waits for owned background cleanup, fences late work and resumes only for a new prompt", async () => {
-		using tempDir = TempDir.createSync("@pi-user-stop-jobs-");
+		const tempDir = TempDir.createSync("@pi-user-stop-jobs-");
 		const { manager, mock } = await startResumableSession(tempDir);
 		const aborted = Promise.withResolvers<void>();
 		const cleaned = Promise.withResolvers<void>();
@@ -1155,7 +1159,7 @@ describe("AgentSession owner-routed async delivery", () => {
 	});
 
 	it("ordinary abort preserves owned background execution", async () => {
-		using tempDir = TempDir.createSync("@pi-ordinary-abort-jobs-");
+		const tempDir = TempDir.createSync("@pi-ordinary-abort-jobs-");
 		const { manager } = await startResumableSession(tempDir);
 		const done = Promise.withResolvers<string>();
 		manager.register("bash", "background work", () => done.promise, { id: "ordinary-abort-job", ownerId: "Main" });
@@ -1167,7 +1171,7 @@ describe("AgentSession owner-routed async delivery", () => {
 	});
 
 	it("cancels the outgoing session's background jobs when resuming another session", async () => {
-		using tempDir = TempDir.createSync("@pi-resume-async-jobs-");
+		const tempDir = TempDir.createSync("@pi-resume-async-jobs-");
 		const { manager, mock, targetSessionFile } = await startResumableSession(tempDir);
 		const gate = Promise.withResolvers<void>();
 		manager.register(
@@ -1198,7 +1202,7 @@ describe("AgentSession owner-routed async delivery", () => {
 	});
 
 	it("keeps background jobs running across a same-session reload", async () => {
-		using tempDir = TempDir.createSync("@pi-reload-async-jobs-");
+		const tempDir = TempDir.createSync("@pi-reload-async-jobs-");
 		const { manager } = await startResumableSession(tempDir);
 		const gate = Promise.withResolvers<void>();
 		manager.register(
@@ -1218,7 +1222,7 @@ describe("AgentSession owner-routed async delivery", () => {
 	});
 
 	it("does not start a turn for an outgoing job that finishes while the resumed session loads", async () => {
-		using tempDir = TempDir.createSync("@pi-resume-mid-switch-");
+		const tempDir = TempDir.createSync("@pi-resume-mid-switch-");
 		const { manager, mock, targetSessionFile } = await startResumableSession(tempDir);
 		const gate = Promise.withResolvers<void>();
 		manager.register(
@@ -1253,7 +1257,7 @@ describe("AgentSession owner-routed async delivery", () => {
 	});
 
 	it("keeps background jobs when the resumed session's cwd is rejected", async () => {
-		using tempDir = TempDir.createSync("@pi-resume-cwd-reject-");
+		const tempDir = TempDir.createSync("@pi-resume-cwd-reject-");
 		const { manager, targetSessionFile } = await startResumableSession(tempDir);
 		const target = await SessionManager.open(targetSessionFile);
 		target.setCwdWithoutRelocation(tempDir.join("other-project"));
@@ -1279,7 +1283,7 @@ describe("AgentSession owner-routed async delivery", () => {
 	});
 
 	it("keeps a job that a session_switch hook starts for the resumed session", async () => {
-		using tempDir = TempDir.createSync("@pi-resume-hook-job-");
+		const tempDir = TempDir.createSync("@pi-resume-hook-job-");
 		const gate = Promise.withResolvers<void>();
 		const { manager, targetSessionFile } = await startResumableSession(tempDir, {
 			extension: (pi, jobs) => {

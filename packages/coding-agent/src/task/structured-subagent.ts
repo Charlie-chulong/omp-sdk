@@ -671,13 +671,6 @@ function buildExecutorOptions(
 		parentArtifactManager: preparedSession ? undefined : (session.getArtifactManager?.() ?? undefined),
 		parentHindsightSessionState: session.getHindsightSessionState?.(),
 		parentMnemopiSessionState: session.getMnemopiSessionState?.(),
-		onRelease:
-			preparedSession !== undefined && lease.temporary
-				? async () => {
-						await fs.rm(lease.artifactsDir, { recursive: true, force: true });
-						lease.unregister?.();
-					}
-				: undefined,
 		parentTelemetry: session.getTelemetry?.(),
 		parentAgentId: session.getAgentId?.() ?? MAIN_AGENT_ID,
 		parentPromptCacheKey: session.getPromptCacheKey?.(),
@@ -833,6 +826,13 @@ export async function runStructuredSubagent(request: StructuredSubagentRequest):
 	let completedSuccessfully = false;
 	let hasValidStructuredOutput = false;
 	let deferredCleanup: Promise<void> | undefined;
+	let lifecycleOwnsArtifacts = false;
+	let lifecycleReleased = false;
+	let cleanupOnLifecycleRelease = policy.preparedSession !== undefined;
+	const cleanupArtifacts = async (): Promise<void> => {
+		await fs.rm(lease.artifactsDir, { recursive: true, force: true });
+		lease.unregister?.();
+	};
 	// Set once the child returns: every later step (structured-output
 	// metadata, isolation merge, nested patch apply) can still throw, and the
 	// failure must carry the exit status and artifact the child produced.
@@ -849,6 +849,16 @@ export async function runStructuredSubagent(request: StructuredSubagentRequest):
 		});
 		if (policy.preparedSession === undefined) await refreshSkillsForAutoload(request.session, policy.agent);
 		const baseOptions = buildExecutorOptions(request, policy, lease, id);
+		if (lease.temporary) {
+			baseOptions.onLifecycleAdopted = () => {
+				lifecycleOwnsArtifacts = true;
+			};
+			baseOptions.onRelease = async () => {
+				// The executor/lifecycle owner calls this only after session disposal.
+				lifecycleReleased = true;
+				if (cleanupOnLifecycleRelease) await cleanupArtifacts();
+			};
+		}
 		baseOptions.onCleanupDeferred = completion => {
 			deferredCleanup = completion;
 		};
@@ -976,12 +986,12 @@ export async function runStructuredSubagent(request: StructuredSubagentRequest):
 				(completedSuccessfully || hasValidStructuredOutput)) ||
 			(policy.isIsolated && (!policy.applyChanges || changesApplied === false || requiresRecoveryArtifacts));
 		const shouldCleanup = lease.temporary && !shouldRetainArtifacts;
-		const cleanupArtifacts = async (): Promise<void> => {
-			await fs.rm(lease.artifactsDir, { recursive: true, force: true });
-			lease.unregister?.();
-		};
 		if (shouldCleanup) {
-			if (deferredCleanup) {
+			if (lifecycleOwnsArtifacts && !lifecycleReleased) {
+				// Adoption is an irreversible ownership receipt, including while
+				// release is in flight and the live session is still persisting its exit.
+				cleanupOnLifecycleRelease = true;
+			} else if (deferredCleanup) {
 				trackLateCleanup(deferredCleanup.then(cleanupArtifacts), {
 					resource: "artifacts",
 					artifactsDir: lease.artifactsDir,

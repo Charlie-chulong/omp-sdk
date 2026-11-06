@@ -26,6 +26,8 @@ import * as planHandoff from "@oh-my-pi/pi-coding-agent/plan-mode/plan-handoff";
 import { AgentLifecycleManager } from "@oh-my-pi/pi-coding-agent/registry/agent-lifecycle";
 import { AgentRegistry } from "@oh-my-pi/pi-coding-agent/registry/agent-registry";
 import { AgentStorage } from "@oh-my-pi/pi-coding-agent/session/agent-storage";
+import { SESSION_EXIT_CUSTOM_TYPE } from "@oh-my-pi/pi-coding-agent/session/exit-diagnostics";
+import type { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 
 import { TaskTool } from "@oh-my-pi/pi-coding-agent/task";
 import * as discoveryModule from "@oh-my-pi/pi-coding-agent/task/discovery";
@@ -816,6 +818,72 @@ describe("structured subagent primitive", () => {
 		}
 	});
 
+	it("keeps temporary artifacts when lifecycle release starts before result cleanup finishes", async () => {
+		mockDiscovery();
+		const disposalStarted = Promise.withResolvers<void>();
+		const finishDisposal = Promise.withResolvers<void>();
+		let release: Promise<boolean> | undefined;
+		let sessionFile = "";
+		let exitPersisted = false;
+		const child = {
+			prepareForHeadlessAdvisorDrain() {},
+			async waitForAdvisorCatchup() {},
+			async dispose() {
+				disposalStarted.resolve();
+				await finishDisposal.promise;
+				await fs.appendFile(
+					sessionFile,
+					`${JSON.stringify({ type: "custom", customType: SESSION_EXIT_CUSTOM_TYPE })}\n`,
+				);
+				exitPersisted = true;
+			},
+		} as unknown as AgentSession;
+		vi.spyOn(executorModule, "runSubprocess").mockImplementation(async options => {
+			if (!options.artifactsDir) throw new Error("Expected a temporary artifacts lease");
+			sessionFile = path.join(options.artifactsDir, `${options.id}.jsonl`);
+			await Bun.write(sessionFile, `${JSON.stringify({ type: "header" })}\n`);
+			const registry = AgentRegistry.global();
+			registry.register({
+				id: options.id,
+				displayName: options.id,
+				kind: "sub",
+				session: child,
+				sessionFile,
+				status: "running",
+			});
+			await executorModule.finalizeSubagentLifecycle({
+				id: options.id,
+				session: child,
+				aborted: false,
+				keepAlive: true,
+				isolated: false,
+				agentIdleTtlMs: 0,
+				reviveSession: async () => child,
+				onRelease: options.onRelease,
+				onLifecycleAdopted: options.onLifecycleAdopted,
+			});
+			const ref = registry.get(options.id);
+			if (!ref) throw new Error("Expected the adopted agent");
+			release = AgentLifecycleManager.global().release(options.id, ref);
+			await disposalStarted.promise;
+			expect(AgentLifecycleManager.global().has(options.id, ref)).toBe(false);
+			return { ...result(), id: options.id };
+		});
+		try {
+			const settled = await runStructuredSubagent(request({ keepAlive: true }));
+			expect(await Bun.file(sessionFile).exists()).toBe(true);
+			expect(artifactsDirsFromRegistry()).toContain(settled.artifactsDir);
+			finishDisposal.resolve();
+			await release;
+			expect(exitPersisted).toBe(true);
+			expect(await Bun.file(sessionFile).exists()).toBe(false);
+			expect(artifactsDirsFromRegistry()).not.toContain(settled.artifactsDir);
+		} finally {
+			finishDisposal.resolve();
+			await release;
+		}
+	});
+
 	it("runs the remaining permitted scout when a plan-mode task omits its agent", async () => {
 		const root = await fs.mkdtemp(path.join(os.tmpdir(), "omp-plan-default-scout-"));
 		const cwd = path.join(root, "project");
@@ -825,7 +893,6 @@ describe("structured subagent primitive", () => {
 		const sourceId = "plan-default-scout-regression";
 		registerMockApi(sourceId);
 		const agentId = "PlanModeDefaultScout";
-		let artifactDir: string | undefined;
 		try {
 			const report = "The permitted plan-mode scout returned this answer.";
 			const model = createMockModel({
@@ -878,20 +945,55 @@ describe("structured subagent primitive", () => {
 				solutionSpace: "The requested agent choice is a single permitted alternative.",
 			});
 
-			artifactDir = AgentRegistry.global().get(agentId)?.sessionFile
-				? path.dirname(AgentRegistry.global().get(agentId)!.sessionFile!)
-				: undefined;
+			const ref = AgentRegistry.global().get(agentId);
+			const sessionFile = ref?.sessionFile;
+			if (!ref || !sessionFile) throw new Error("Expected a retained scout session");
+			expect(AgentLifecycleManager.global().has(agentId, ref)).toBe(true);
+			expect(await Bun.file(sessionFile).exists()).toBe(true);
 			expect(result.details?.results).toHaveLength(1);
 			expect(result.details?.results[0]?.agent).toBe("scout");
 			expect(result.content.map(part => (part.type === "text" ? part.text : "")).join("\n")).toContain(report);
+			const child = ref.session;
+			if (!child) throw new Error("Expected a live adopted scout session");
+			const dispose = child.dispose.bind(child);
+			const disposalStarted = Promise.withResolvers<void>();
+			const finishDisposal = Promise.withResolvers<void>();
+			let persisted: unknown[] = [];
+			vi.spyOn(child, "dispose").mockImplementation(async () => {
+				disposalStarted.resolve();
+				await finishDisposal.promise;
+				await dispose();
+				persisted = (await Bun.file(sessionFile).text())
+					.trim()
+					.split("\n")
+					.map(line => JSON.parse(line));
+			});
+			const release = AgentLifecycleManager.global().release(agentId, ref);
+			try {
+				await disposalStarted.promise;
+				// release has retired the adoption, but still owns the transcript
+				// until the live session finishes persisting its normal exit.
+				expect(AgentLifecycleManager.global().has(agentId, ref)).toBe(false);
+				expect(await Bun.file(sessionFile).exists()).toBe(true);
+			} finally {
+				finishDisposal.resolve();
+				await release;
+			}
+			expect(persisted).toContainEqual(
+				expect.objectContaining({
+					type: "custom",
+					customType: SESSION_EXIT_CUSTOM_TYPE,
+					data: expect.objectContaining({ kind: "normal" }),
+				}),
+			);
+			expect(await Bun.file(sessionFile).exists()).toBe(false);
 		} finally {
 			const ref = AgentRegistry.global().get(agentId);
 			try {
-				await ref?.session?.dispose();
+				await AgentLifecycleManager.global().release(agentId, ref);
 			} finally {
 				try {
 					AgentRegistry.global().unregister(agentId);
-					if (artifactDir) await fs.rm(artifactDir, { recursive: true, force: true });
 				} finally {
 					unregisterCustomApis(sourceId);
 					authStorage.close();

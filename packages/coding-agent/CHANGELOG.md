@@ -26,6 +26,7 @@
 - Node SDK plugins, custom tools/commands, and eval now execute JavaScript only, removing the runtime TypeScript compiler dependency; TS/TSX/JSX extensions must be precompiled. Bun CLI TypeScript support and source-file read/write/edit remain unchanged.
 - File-backed history now uses bounded lazy entry facades, 8 MiB hot-body retention and an 8 MiB body LRU with persisted-source rereads; complete `File` bodies remain persisted without generic tool-text truncation, preserving image externalization and private-field stripping.
 - Cold history can reuse the selected Node build's indexed-session-journal export without launching an SDK host. Initial index/catalog scanning and warm small-page I/O are distinct costs; absent dynamic metadata snapshots remain explicitly unavailable.
+- Windows cold journals use process-private, content-addressed disk snapshots to preserve displaced source records without blocking standard file replacement. A new snapshot owner rereads records even when offset metadata is cached; same-owner reopens reuse snapshots. Normal exit or owner collection removes these copies; forced termination can leave cache directories.
 - Safe unload preserves active/admitted work, unconfirmed content, permissions, background dependencies and retained variables: inventory, persistence drain, inventory again, then a synchronous admission guard. Desktop's stable `desktop:<agentId>` owner survives rewind; idle eligibility remains five minutes with a 30-second recheck. Retained-entry release is terminal and only follows disposal.
 - Body accounting budgets are not JavaScript heap, macOS `phys_footprint`, or Windows process commit measurements and do not enlarge the compressed 4 GiB V8 cage or establish native-platform qualification.
 - Browser Relay no longer automatically replaces existing services; compatible older relays are reused and incompatible services remain under their owner's control ([#120](https://github.com/iris-cat-dev/omp/issues/120)).
@@ -33,11 +34,15 @@
 ### Fixed
 
 - Fixed CLI stats sync worker startup through the shared worker host.
-- Fixed CLI startup loading native capability and proxy modules before worker dispatch or profile bootstrap.
+- Fixed CLI worker imports loading native addons and TLS helpers reading the default profile's environment before profile selection.
 - Fixed missing proxy-policy RPC wire declarations and generated client bindings.
 - Fixed relocated cold-history sessions reading or rewriting their old journal path and unnamed indexed headers exposing empty display metadata.
+- Fixed retained cold views reading a different session after their original journal path was atomically replaced.
+- Rebuildable session indexes now use the owning profile's private cache instead of being created beside transcripts and retained consultation artifacts.
+- Malformed source-index digests now rebuild the derived index instead of rejecting an intact transcript.
 - Fixed new and cleared conversations retaining prior execution runtimes, and delayed shell calls borrowing the next conversation's persistent shell.
 - Fixed cached ZIP members returning stale content after same-size archive rewrites with restored modification times.
+- Fixed temporary subagent transcripts being removed while their kept-alive sessions still needed to persist exit records.
 - Fixed `ask` failing in Node SDK sessions before showing a question.
 - Fixed and re-enabled `debug` in Node SDK/Desktop sessions, including adapter launch, terminal execution, socket transports, and process cleanup without Bun.
 - Fixed Desktop Node SDK extensions failing to load the native auth gateway used for local model forwarding.

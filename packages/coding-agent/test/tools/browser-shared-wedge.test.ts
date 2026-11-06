@@ -41,6 +41,7 @@ import { getTabsMapForTest, releaseTab, runInTab } from "@oh-my-pi/pi-coding-age
 import type { TabSession } from "@oh-my-pi/pi-coding-agent/tools/browser/tab-supervisor";
 import type { ToolSession } from "@oh-my-pi/pi-coding-agent/tools/index";
 import type { DaemonSnapshot } from "@oh-my-pi/pi-tui/tools/daemon";
+import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 
 const DAEMON_NAME = "omp.browser.headless";
 /** The target id the incident log names for the tab whose close never landed. */
@@ -251,13 +252,20 @@ describe("browser cleanup — timed-out target close in a shared browser", () =>
 		// The check proves the whole browser gone: the target that could not be
 		// closed died with it, so its record must not linger until this process
 		// exits and be rewritten on every later write.
-		const healthCheck = spyOn(sharedDaemon, "stopSharedBrowserIfUnreachable").mockResolvedValue(true);
+		const stopped = Promise.withResolvers<boolean>();
+		const healthCheck = spyOn(sharedDaemon, "stopSharedBrowserIfUnreachable").mockReturnValue(stopped.promise);
 		await recordSharedTarget(scope, TARGET_ID);
 		getTabsMapForTest().set("logos-b2b", makeWedgeTab(scope, { close: "fail" }));
 
-		await expect(releaseTab("logos-b2b", { timeoutMs: 60 })).resolves.toBe(true);
+		await expect(releaseTab("logos-b2b", { timeoutMs: 60 })).rejects.toBeInstanceOf(ToolError);
 
 		expect(healthCheck).toHaveBeenCalledTimes(1);
+		expect(healthCheck.mock.calls[0]?.[0]).toEqual(scope);
+		expect(getTabsMapForTest().has("logos-b2b")).toBe(false);
+		// A requested stop is not confirmation: retain the target until the
+		// health check proves that the whole browser has ended.
+		expect(await ownedTargets(scope)).toEqual([TARGET_ID]);
+		stopped.resolve(true);
 		expect(await ownedTargets(scope)).toEqual([]);
 	});
 
@@ -387,10 +395,12 @@ describe("browser cleanup — timed-out target close in a shared browser", () =>
 		await recordSharedTarget(scope, TARGET_ID);
 		getTabsMapForTest().set("logos-b2b", makeWedgeTab(scope, { close: "fail" }));
 
-		await expect(releaseTab("logos-b2b", { timeoutMs: 60 })).resolves.toBe(true);
+		await expect(releaseTab("logos-b2b", { timeoutMs: 60 })).rejects.toBeInstanceOf(ToolError);
 
 		expect(await ownedTargets(scope)).toEqual([TARGET_ID]);
 		expect(healthCheck).toHaveBeenCalledTimes(1);
+		expect(healthCheck.mock.calls[0]?.[0]).toEqual(scope);
+		expect(getTabsMapForTest().has("logos-b2b")).toBe(false);
 	});
 });
 
