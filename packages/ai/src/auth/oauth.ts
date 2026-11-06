@@ -80,15 +80,17 @@ export class OAuthAccounts implements OAuthApi {
 			throw new AIError.ConfigurationError(`Unknown OAuth provider: ${provider}`);
 		}
 		installProxyFetch();
-		const result = await withProxyProvider(provider, () => def.login!({
-			onAuth: ctrl.onAuth,
-			onProgress: ctrl.onProgress,
-			onPrompt: ctrl.onPrompt,
-			onManualCodeInput: ctrl.onManualCodeInput ?? manualCodeInput,
-			onBrowserSession: ctrl.onBrowserSession,
-			signal: ctrl.signal,
-			fetch: ctrl.fetch ? wrapFetchForProxy(ctrl.fetch, provider) : proxyFetch(provider),
-		}));
+		const result = await withProxyProvider(provider, () =>
+			def.login!({
+				onAuth: ctrl.onAuth,
+				onProgress: ctrl.onProgress,
+				onPrompt: ctrl.onPrompt,
+				onManualCodeInput: ctrl.onManualCodeInput ?? manualCodeInput,
+				onBrowserSession: ctrl.onBrowserSession,
+				signal: ctrl.signal,
+				fetch: ctrl.fetch ? wrapFetchForProxy(ctrl.fetch, provider) : proxyFetch(provider),
+			}),
+		);
 		if (typeof result === "string") {
 			// Some flows (e.g. ollama) return "" to signal that no key was entered.
 			if (!result) {

@@ -258,16 +258,15 @@ async function sendCoworkRequest(
  */
 export const coworkFetch: FetchImpl = async (input, init) => {
 	init = withProxyInit(input, init, getProxyForProvider("anthropic"));
-	if (
-		input instanceof Request ||
-		!isHeaderRecord(init.headers) ||
-		("proxy" in init && Boolean(init.proxy))
-	) {
+	if (input instanceof Request || !isHeaderRecord(init.headers) || ("proxy" in init && Boolean(init.proxy))) {
 		// Reason is logged because the switch changes both the TLS fingerprint and
 		// who applies the proxy.
-		const reason = input instanceof Request
-			? "request-object-input"
-			: !isHeaderRecord(init.headers) ? "headers-not-record" : "proxy-configured";
+		const reason =
+			input instanceof Request
+				? "request-object-input"
+				: !isHeaderRecord(init.headers)
+					? "headers-not-record"
+					: "proxy-configured";
 		logger.debug("cowork transport bypassed", { url: logTarget(input), reason, proxy: initProxy(init) });
 		return fallbackFetch(input, init);
 	}

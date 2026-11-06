@@ -332,11 +332,15 @@ export class AuthBrokerClient {
 	): Promise<CredentialRefreshResponse> {
 		const suffix = reason === "auth-recovery" ? "?reason=auth-recovery" : "";
 		const body: CredentialRefreshRequest = { proxyPolicy: getProxyPolicyController().getPolicy() };
-		return this.#request<CredentialRefreshResponse>("POST", `/v1/credential/${id}/refresh-with-proxy-policy${suffix}`, {
-			schema: "credentialRefreshResponseSchema",
-			signal,
-			body,
-		});
+		return this.#request<CredentialRefreshResponse>(
+			"POST",
+			`/v1/credential/${id}/refresh-with-proxy-policy${suffix}`,
+			{
+				schema: "credentialRefreshResponseSchema",
+				signal,
+				body,
+			},
+		);
 	}
 
 	async disableCredential(id: number, cause: string, signal?: AbortSignal): Promise<CredentialDisableResponse> {

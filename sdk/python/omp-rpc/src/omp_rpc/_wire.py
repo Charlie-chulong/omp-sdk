@@ -555,6 +555,25 @@ class ModelInfo:
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
+class DirectProxyRoute:
+    mode: Literal["direct"] = "direct"
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class ServerProxyRoute:
+    mode: Literal["proxy"] = "proxy"
+    url: str
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class ProxyPolicy:
+    enabled: bool
+    default: ProxyRoute | None = None
+    providers: dict[str, ProxyRoute] | None = None
+    no_proxy: tuple[str, ...] | None = None
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
 class RuntimeResource:
     id: str
     kind: Literal["python_kernel", "javascript_kernel", "shell", "helper"]
@@ -1695,6 +1714,9 @@ AssistantMessageEvent: TypeAlias = AssistantStartEvent | AssistantTextStartEvent
 """Streaming update for one assistant message, discriminated by `type`."""
 
 
+ProxyRoute: TypeAlias = DirectProxyRoute | ServerProxyRoute
+
+
 UsageLimitState: TypeAlias = UsageLimitLowPriority | UsageLimitWrapUp
 """Provider-neutral state of an account past its usage limit, discriminated by `stage`."""
 
@@ -1913,6 +1935,31 @@ def parse_model_info(value: object, path: str = "ModelInfo") -> ModelInfo:
         priority=optional(payload, "priority", decode_int, path),
         thinking=optional(payload, "thinking", parse_thinking_config, path),
         compat=optional(payload, "compat", decode_json_object, path),
+    )
+
+
+def parse_direct_proxy_route(value: object, path: str = "DirectProxyRoute") -> DirectProxyRoute:
+    payload = expect_object(value, path)
+    required(payload, "mode", cast('Decoder[Literal["direct"]]', literal(frozenset({"direct"}))), path)
+    return DirectProxyRoute(
+    )
+
+
+def parse_server_proxy_route(value: object, path: str = "ServerProxyRoute") -> ServerProxyRoute:
+    payload = expect_object(value, path)
+    required(payload, "mode", cast('Decoder[Literal["proxy"]]', literal(frozenset({"proxy"}))), path)
+    return ServerProxyRoute(
+        url=required(payload, "url", decode_str, path),
+    )
+
+
+def parse_proxy_policy(value: object, path: str = "ProxyPolicy") -> ProxyPolicy:
+    payload = expect_object(value, path)
+    return ProxyPolicy(
+        enabled=required(payload, "enabled", decode_bool, path),
+        default=optional(payload, "default", parse_proxy_route, path),
+        providers=optional(payload, "providers", record(parse_proxy_route), path),
+        no_proxy=optional(payload, "noProxy", array(decode_str), path),
     )
 
 
@@ -3183,6 +3230,10 @@ def parse_logout_result(value: object, path: str = "LogoutResult") -> LogoutResu
     )
 
 
+def parse_proxy_route(value: object, path: str = "ProxyRoute") -> ProxyRoute:
+    return dispatch("mode", _PROXY_ROUTE_CASES)(value, path)
+
+
 def parse_usage_limit_state(value: object, path: str = "UsageLimitState") -> UsageLimitState:
     return dispatch("stage", _USAGE_LIMIT_STATE_CASES)(value, path)
 
@@ -3198,6 +3249,12 @@ def parse_notification(value: object, path: str = "notification") -> RpcNotifica
     if not isinstance(tag, str) or tag not in _RPC_NOTIFICATION_CASES:
         return UnknownNotification(decode_json_object(payload, path))
     return _RPC_NOTIFICATION_CASES[tag](payload, tag)
+
+
+_PROXY_ROUTE_CASES: Final[dict[str, Decoder[ProxyRoute]]] = {
+        "direct": parse_direct_proxy_route,
+        "proxy": parse_server_proxy_route,
+}
 
 
 _USAGE_LIMIT_STATE_CASES: Final[dict[str, Decoder[UsageLimitState]]] = {
@@ -4068,6 +4125,7 @@ __all__ = [
     "DictationEndEvent",
     "DictationStateEvent",
     "DictationTranscriptEvent",
+    "DirectProxyRoute",
     "EditorUiRequest",
     "Effort",
     "ExtensionError",
@@ -4125,6 +4183,8 @@ __all__ = [
     "PromptError",
     "PromptResultEvent",
     "PromptStatus",
+    "ProxyPolicy",
+    "ProxyRoute",
     "PythonExecutionMessage",
     "QueueMode",
     "QueueUpdateEvent",
@@ -4142,6 +4202,7 @@ __all__ = [
     "RuntimeResource",
     "SelectOptionDetail",
     "SelectUiRequest",
+    "ServerProxyRoute",
     "SessionCredits",
     "SessionEntries",
     "SessionInfoUpdateEvent",
@@ -4259,6 +4320,7 @@ __all__ = [
     "parse_dictation_end_event",
     "parse_dictation_state_event",
     "parse_dictation_transcript_event",
+    "parse_direct_proxy_route",
     "parse_editor_ui_request",
     "parse_extension_error",
     "parse_extension_ui_request",
@@ -4306,6 +4368,8 @@ __all__ = [
     "parse_prompt_ack",
     "parse_prompt_error",
     "parse_prompt_result_event",
+    "parse_proxy_policy",
+    "parse_proxy_route",
     "parse_python_execution_message",
     "parse_queue_update_event",
     "parse_queued_messages_state",
@@ -4320,6 +4384,7 @@ __all__ = [
     "parse_runtime_resource",
     "parse_select_option_detail",
     "parse_select_ui_request",
+    "parse_server_proxy_route",
     "parse_session_credits",
     "parse_session_entries",
     "parse_session_info_update_event",

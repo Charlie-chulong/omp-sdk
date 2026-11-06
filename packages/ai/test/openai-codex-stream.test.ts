@@ -25,7 +25,12 @@ import type {
 	ModelSpec,
 	ProviderSessionState,
 } from "@oh-my-pi/pi-ai/types";
-import { getProxyPolicyController, ProxyPolicyController, setDefaultProxyPolicyController, withProxyPolicy } from "@oh-my-pi/pi-ai/utils/proxy";
+import {
+	getProxyPolicyController,
+	ProxyPolicyController,
+	setDefaultProxyPolicyController,
+	withProxyPolicy,
+} from "@oh-my-pi/pi-ai/utils/proxy";
 import { extractProviderRetryHint } from "@oh-my-pi/pi-ai/utils/retry-after";
 import { validateToolArguments } from "@oh-my-pi/pi-ai/utils/validation";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
@@ -73,21 +78,22 @@ afterEach(() => {
 });
 
 function createCodexTestToken(accountId = "acc_test"): string {
-	const payload = encodeBase64(Buffer.from(
-		JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: accountId } }),
-		"utf8",
-	));
+	const payload = encodeBase64(
+		Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: accountId } }), "utf8"),
+	);
 	return `aaa.${payload}.bbb`;
 }
 
 /** Token of a region-pinned enterprise workspace (`chatgpt_data_residency`). */
 function createCodexResidencyToken(residency: string, accountId = "acc_test"): string {
-	const payload = encodeBase64(Buffer.from(
-		JSON.stringify({
-			"https://api.openai.com/auth": { chatgpt_account_id: accountId, chatgpt_data_residency: residency },
-		}),
-		"utf8",
-	));
+	const payload = encodeBase64(
+		Buffer.from(
+			JSON.stringify({
+				"https://api.openai.com/auth": { chatgpt_account_id: accountId, chatgpt_data_residency: residency },
+			}),
+			"utf8",
+		),
+	);
 	return `aaa.${payload}.bbb`;
 }
 
@@ -1991,30 +1997,63 @@ describe("openai-codex streaming", () => {
 					started.resolve();
 					return;
 				}
-				this.emitCodexResponse({ messageId: `msg_${sockets.length}`, responseId: `resp_${sockets.length}`, text: "next" });
+				this.emitCodexResponse({
+					messageId: `msg_${sockets.length}`,
+					responseId: `resp_${sockets.length}`,
+					text: "next",
+				});
 			}
 		}
 		global.WebSocket = PolicySocket as unknown as typeof WebSocket;
 		const model = { ...createCodexTestModel("https://chatgpt.com/backend-api"), provider: "codex-proxy-test" };
-		const controller = new ProxyPolicyController({ enabled: true, providers: {
-			"codex-proxy-test": { mode: "proxy", url: "http://127.0.0.1:7890/" },
-		} });
+		const controller = new ProxyPolicyController({
+			enabled: true,
+			providers: {
+				"codex-proxy-test": { mode: "proxy", url: "http://127.0.0.1:7890/" },
+			},
+		});
 		const providerSessionState = new Map<string, ProviderSessionState>();
-		const options = { apiKey: createCodexTestToken(), sessionId: "ws-policy-session", providerSessionState, preferWebsockets: true };
+		const options = {
+			apiKey: createCodexTestToken(),
+			sessionId: "ws-policy-session",
+			providerSessionState,
+			preferWebsockets: true,
+		};
 		try {
-			const first = withProxyPolicy(controller, () => streamOpenAICodexResponses(model, createCodexTestContext(), options).result());
+			const first = withProxyPolicy(controller, () =>
+				streamOpenAICodexResponses(model, createCodexTestContext(), options).result(),
+			);
 			await started.promise;
-			controller.setPolicy({ enabled: true, providers: { "codex-proxy-test": { mode: "proxy", url: "http://127.0.0.1:7891/" } } });
+			controller.setPolicy({
+				enabled: true,
+				providers: { "codex-proxy-test": { mode: "proxy", url: "http://127.0.0.1:7891/" } },
+			});
 			await withProxyPolicy(controller, () => prewarmOpenAICodexResponses(model, options));
 			expect(sockets).toHaveLength(1);
 			expect(sockets[0].readyState).toBe(MockWebSocket.OPEN);
 			sockets[0].emitCodexResponse({ messageId: "msg_1", responseId: "resp_1", text: "active response" });
 			expect((await first).stopReason).not.toBe("error");
-			expect((await withProxyPolicy(controller, () => streamOpenAICodexResponses(model, createCodexTestContext(), options).result())).stopReason).not.toBe("error");
+			expect(
+				(
+					await withProxyPolicy(controller, () =>
+						streamOpenAICodexResponses(model, createCodexTestContext(), options).result(),
+					)
+				).stopReason,
+			).not.toBe("error");
 			expect(sockets[0].readyState).toBe(MockWebSocket.CLOSED);
 			controller.setPolicy({ ...controller.getPolicy(), enabled: false });
-			expect((await withProxyPolicy(controller, () => streamOpenAICodexResponses(model, createCodexTestContext(), options).result())).stopReason).not.toBe("error");
-			expect(sockets.map(socket => socket.options?.proxy)).toEqual(["http://127.0.0.1:7890/", "http://127.0.0.1:7891/", ""]);
+			expect(
+				(
+					await withProxyPolicy(controller, () =>
+						streamOpenAICodexResponses(model, createCodexTestContext(), options).result(),
+					)
+				).stopReason,
+			).not.toBe("error");
+			expect(sockets.map(socket => socket.options?.proxy)).toEqual([
+				"http://127.0.0.1:7890/",
+				"http://127.0.0.1:7891/",
+				"",
+			]);
 		} finally {
 			for (const state of providerSessionState.values()) state.close();
 		}
@@ -2032,12 +2071,20 @@ describe("openai-codex streaming", () => {
 		global.WebSocket = DirectPolicySocket as unknown as typeof WebSocket;
 		Bun.env.HTTPS_PROXY = "http://127.0.0.1:7899/";
 		Bun.env.ALL_PROXY = "http://127.0.0.1:7899/";
-		const controller = new ProxyPolicyController({ enabled: true, default: { mode: "proxy", url: "http://127.0.0.1:7890/" }, noProxy: ["chatgpt.com:443"] });
+		const controller = new ProxyPolicyController({
+			enabled: true,
+			default: { mode: "proxy", url: "http://127.0.0.1:7890/" },
+			noProxy: ["chatgpt.com:443"],
+		});
 		const providerSessionState = new Map<string, ProviderSessionState>();
 		try {
-			await withProxyPolicy(controller, () => prewarmOpenAICodexResponses(createCodexTestModel("https://chatgpt.com/backend-api"), {
-				apiKey: createCodexTestToken(), sessionId: "ws-bypass-policy", providerSessionState,
-			}));
+			await withProxyPolicy(controller, () =>
+				prewarmOpenAICodexResponses(createCodexTestModel("https://chatgpt.com/backend-api"), {
+					apiKey: createCodexTestToken(),
+					sessionId: "ws-bypass-policy",
+					providerSessionState,
+				}),
+			);
 			expect(proxies).toEqual([""]);
 		} finally {
 			for (const state of providerSessionState.values()) state.close();
@@ -2119,10 +2166,9 @@ describe("openai-codex streaming", () => {
 		const tempDir = TempDir.createSync("@pi-codex-stream-");
 		setAgentDir(tempDir.path());
 
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 
 		const textSignature = JSON.stringify({ v: 1, id: "msg_1", phase: "commentary" });
@@ -2247,10 +2293,9 @@ describe("openai-codex streaming", () => {
 		const tempDir = TempDir.createSync("@pi-codex-stream-");
 		setAgentDir(tempDir.path());
 
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 		let capturedBody: Record<string, unknown> | undefined;
 		let capturedHeaders: Headers | undefined;
@@ -2306,10 +2351,9 @@ describe("openai-codex streaming", () => {
 		const tempDir = TempDir.createSync("@pi-codex-stream-");
 		setAgentDir(tempDir.path());
 
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 
 		const sse = `${[
@@ -2354,10 +2398,9 @@ describe("openai-codex streaming", () => {
 		const tempDir = TempDir.createSync("@pi-codex-stream-");
 		setAgentDir(tempDir.path());
 
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 
 		const sse = `${[
@@ -2523,10 +2566,9 @@ describe("openai-codex streaming", () => {
 		const tempDir = TempDir.createSync("@pi-codex-stream-");
 		setAgentDir(tempDir.path());
 
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 
 		const sse = `${[
@@ -2627,10 +2669,9 @@ describe("openai-codex streaming", () => {
 		const tempDir = TempDir.createSync("@pi-codex-stream-");
 		setAgentDir(tempDir.path());
 
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 		const sse = `${[
 			`data: ${JSON.stringify({ type: "response.output_item.added", item: { type: "message", id: "msg_1", role: "assistant", status: "in_progress", content: [] } })}`,
@@ -2674,10 +2715,9 @@ describe("openai-codex streaming", () => {
 		const tempDir = TempDir.createSync("@pi-codex-stream-");
 		setAgentDir(tempDir.path());
 
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 
 		const fetchMock = vi.fn(async (input: string | URL) => {
@@ -2766,10 +2806,9 @@ describe("openai-codex streaming", () => {
 		setAgentDir(tempDir.path());
 		vi.spyOn(scheduler, "wait").mockResolvedValue(undefined);
 
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 		let requestCount = 0;
 
@@ -3167,10 +3206,9 @@ describe("openai-codex streaming", () => {
 		const tempDir = TempDir.createSync("@pi-codex-stream-");
 		setAgentDir(tempDir.path());
 
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 
 		const sse = `${[
@@ -3431,10 +3469,9 @@ describe("openai-codex streaming", () => {
 		const tempDir = TempDir.createSync("@pi-codex-stream-");
 		setAgentDir(tempDir.path());
 
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 
 		const sse = `${[
@@ -3528,10 +3565,9 @@ describe("openai-codex streaming", () => {
 		const tempDir = TempDir.createSync("@pi-codex-stream-");
 		setAgentDir(tempDir.path());
 
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 
 		const sse = `${[
@@ -3613,10 +3649,9 @@ describe("openai-codex streaming", () => {
 	it("falls back to SSE when websocket connect fails", async () => {
 		const tempDir = TempDir.createSync("@pi-codex-stream-");
 		setAgentDir(tempDir.path());
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 		const sse = `${[
 			`data: ${JSON.stringify({ type: "response.content_part.added", part: { type: "output_text", text: "" } })}`,
@@ -3794,10 +3829,9 @@ describe("openai-codex streaming", () => {
 		const tempDir = TempDir.createSync("@pi-codex-stream-");
 		setAgentDir(tempDir.path());
 
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 
 		const sse = `${[
@@ -3883,10 +3917,9 @@ describe("openai-codex streaming", () => {
 		const tempDir = TempDir.createSync("@pi-codex-stream-");
 		setAgentDir(tempDir.path());
 
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 
 		const sse = `${[
@@ -4218,10 +4251,9 @@ describe("openai-codex streaming", () => {
 		const tempDir = TempDir.createSync("@pi-codex-stream-");
 		setAgentDir(tempDir.path());
 
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 		const sentRequests: Array<Record<string, unknown>> = [];
 
@@ -4577,10 +4609,9 @@ describe("openai-codex streaming", () => {
 	it("records websocket delta request and usage diagnostics", async () => {
 		const tempDir = TempDir.createSync("@pi-codex-stream-");
 		setAgentDir(tempDir.path());
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 		const sentRequests: Array<Record<string, unknown>> = [];
 		const fetchMock = vi.fn(async () => {
@@ -5927,10 +5958,9 @@ describe("openai-codex streaming", () => {
 		const tempDir = TempDir.createSync("@pi-codex-stream-");
 		setAgentDir(tempDir.path());
 
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 
 		const fetchMock = vi.fn(async () => {
@@ -6552,10 +6582,9 @@ describe("openai-codex streaming", () => {
 		const tempDir = TempDir.createSync("@pi-codex-stream-");
 		setAgentDir(tempDir.path());
 
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 		const fetchMock = vi.fn(async () => {
 			throw new Error("SSE fallback should not be called");
@@ -6679,10 +6708,9 @@ describe("openai-codex streaming", () => {
 		const tempDir = TempDir.createSync("@pi-codex-stream-");
 		setAgentDir(tempDir.path());
 
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 
 		const sse = `${[
@@ -6757,10 +6785,9 @@ describe("openai-codex streaming", () => {
 		const tempDir = TempDir.createSync("@pi-codex-stream-");
 		setAgentDir(tempDir.path());
 
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 
 		const sseTurnStates: Array<string | null> = [];
@@ -6864,10 +6891,9 @@ describe("openai-codex streaming", () => {
 		const tempDir = TempDir.createSync("@pi-codex-stream-");
 		setAgentDir(tempDir.path());
 
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 
 		const fetchMock = vi.fn(async () => {
@@ -7148,10 +7174,9 @@ describe("openai-codex streaming", () => {
 		const tempDir = TempDir.createSync("@pi-codex-stream-");
 		setAgentDir(tempDir.path());
 
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 
 		const requestTurnStates: Array<string | null> = [];
@@ -7607,10 +7632,9 @@ describe("openai-codex streaming", () => {
 		const tempDir = TempDir.createSync("@pi-codex-stream-");
 		setAgentDir(tempDir.path());
 
-		const payload = encodeBase64(Buffer.from(
-			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
-			"utf8",
-		));
+		const payload = encodeBase64(
+			Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }), "utf8"),
+		);
 		const token = `aaa.${payload}.bbb`;
 
 		const fetchMock = vi.fn(async () => {

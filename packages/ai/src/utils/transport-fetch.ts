@@ -28,9 +28,13 @@ export function transportFetch(model: Model<Api>, fetchImpl: FetchImpl | undefin
 	const previous = given?.[TRANSPORT_FETCH];
 	if (previous?.model === model) return given!;
 	const source = previous ? previous.source : given;
-	const base = wrapFetchForProxy(portableFetch(
-		source ?? (model.provider === "anthropic" && model.api === "anthropic-messages" ? coworkFetch : globalThis.fetch),
-	), model.provider);
+	const base = wrapFetchForProxy(
+		portableFetch(
+			source ??
+				(model.provider === "anthropic" && model.api === "anthropic-messages" ? coworkFetch : globalThis.fetch),
+		),
+		model.provider,
+	);
 
 	const fetch: TransportFetch = async (input, init) => {
 		if ((init?.method ?? (input instanceof Request ? input.method : "GET")) === "POST") {

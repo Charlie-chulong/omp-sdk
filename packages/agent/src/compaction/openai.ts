@@ -1094,7 +1094,9 @@ export async function requestRemoteCompaction(
 			}
 		: { systemPrompt: request.systemPrompt, prompt: request.prompt, maxTokens: request.maxTokens };
 
-	const fetchImpl = opts?.model ? transportFetch(opts.model, opts.fetch) : wrapFetchForProxy(opts?.fetch ?? proxyFetch());
+	const fetchImpl = opts?.model
+		? transportFetch(opts.model, opts.fetch)
+		: wrapFetchForProxy(opts?.fetch ?? proxyFetch());
 	const response = await fetchImpl(endpoint, {
 		method: "POST",
 		headers,

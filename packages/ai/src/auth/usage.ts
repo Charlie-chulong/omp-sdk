@@ -276,11 +276,13 @@ export class UsageService implements UsageApi {
 			const previousReport = this.#deps.cache.getStale<UsageReport | null>(
 				this.#deps.cache.reportKey(request),
 			)?.value;
-			const report = await withProxyProvider(request.provider, () => providerImpl.fetchUsage(params, {
-				fetch: wrapFetchForProxy(this.fetch, request.provider),
-				logger: this.logger,
-				...(previousReport ? { previousReport } : {}),
-			}));
+			const report = await withProxyProvider(request.provider, () =>
+				providerImpl.fetchUsage(params, {
+					fetch: wrapFetchForProxy(this.fetch, request.provider),
+					logger: this.logger,
+					...(previousReport ? { previousReport } : {}),
+				}),
+			);
 			// Attribute the report to the credential's organization. The orgId and
 			// orgName fallbacks apply independently: Claude's usage endpoint stamps
 			// orgId from the `anthropic-organization-id` response header but never

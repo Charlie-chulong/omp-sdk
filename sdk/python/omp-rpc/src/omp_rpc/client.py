@@ -20,10 +20,13 @@ from ._wire import (
     AgentStartEvent,
     AskAnswer,
     AssistantMessage,
+    DirectProxyRoute,
     ExtensionUiRequest,
     ImageContent,
     MessageEndEvent,
     PromptResultEvent,
+    ProxyPolicy,
+    ProxyRoute,
     ReadyEvent,
     RpcAgentEvent,
     RpcNotification,
@@ -36,6 +39,7 @@ from ._wire import (
     WireClient,
     parse_agent_message,
     parse_notification,
+    parse_proxy_policy,
     parse_todo_phase,
 )
 from ._wire_runtime import (
@@ -284,6 +288,12 @@ def _clone_json_object(value: object) -> JsonObject:
     if not isinstance(value, dict):
         raise RpcError("RPC response payload must be an object")
     return cast(JsonObject, _clone_json_value(value))
+
+
+def _proxy_route_json(route: ProxyRoute) -> JsonObject:
+    if isinstance(route, DirectProxyRoute):
+        return {"mode": "direct"}
+    return {"mode": "proxy", "url": route.url}
 
 
 class RpcError(RuntimeError):
@@ -957,6 +967,23 @@ class RpcClient(WireClient):
         if timed_out:
             payload["timedOut"] = True
         self._send_notification(payload)
+
+    def set_proxy_policy(self, policy: ProxyPolicy) -> ProxyPolicy:
+        """Replace this session's routing policy and return the applied policy."""
+        payload: JsonObject = {"enabled": policy.enabled}
+        if policy.default is not None:
+            payload["default"] = _proxy_route_json(policy.default)
+        if policy.providers is not None:
+            payload["providers"] = {
+                provider: _proxy_route_json(route)
+                for provider, route in policy.providers.items()
+            }
+        if policy.no_proxy is not None:
+            payload["noProxy"] = list(policy.no_proxy)
+        data = self._command("set_proxy_policy", {"policy": payload})
+        return required(
+            expect_object(data, "set_proxy_policy"), "policy", parse_proxy_policy, "set_proxy_policy"
+        )
 
     def get_todos(self) -> tuple[TodoPhase, ...]:
         return self.get_state().todo_phases

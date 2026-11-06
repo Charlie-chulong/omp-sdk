@@ -1306,7 +1306,9 @@ export class RemoteAuthCredentialStore implements AuthCredentialStore {
 		reason?: OAuthRefreshReason,
 	): Promise<OAuthCredentials> {
 		this.#noteActivity();
-		const refreshed = await withProxyProvider(provider, () => this.#refreshThroughBroker(credentialId, signal, reason));
+		const refreshed = await withProxyProvider(provider, () =>
+			this.#refreshThroughBroker(credentialId, signal, reason),
+		);
 		if (!this.#streamingActive) {
 			await this.refreshSnapshot().catch(error => {
 				logger.debug("auth-broker snapshot refresh after credential refresh failed", { error: String(error) });

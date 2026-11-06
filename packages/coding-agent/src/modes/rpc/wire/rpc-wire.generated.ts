@@ -381,6 +381,24 @@ export type CacheWarmingMode = "off" | "streaming" | "idle";
 
 export type ApprovalMode = "always-ask" | "always-ask-cached" | "write" | "yolo";
 
+export interface DirectProxyRoute {
+	mode: "direct";
+}
+
+export interface ServerProxyRoute {
+	mode: "proxy";
+	url: string;
+}
+
+export type ProxyRoute = DirectProxyRoute | ServerProxyRoute;
+
+export interface ProxyPolicy {
+	enabled: boolean;
+	default?: ProxyRoute;
+	providers?: Record<string, ProxyRoute>;
+	noProxy?: string[];
+}
+
 /** `set_event_filter` projection: `delta` replaces the accumulated snapshots with the block a start/end event touches. */
 export type MessageUpdates = "full" | "delta";
 
@@ -1756,6 +1774,14 @@ export interface SetModelParams {
 	modelId: string;
 }
 
+export interface SetProxyPolicyParams {
+	policy: ProxyPolicy;
+}
+
+export interface SetProxyPolicyResult {
+	policy: ProxyPolicy;
+}
+
 export interface GetAvailableModelsResult {
 	models: ModelInfo[];
 }
@@ -1975,6 +2001,7 @@ export interface RpcWireCommands {
 	dictation_start: { params: DictationStartParams; result: undefined };
 	dictation_stop: { params: undefined; result: DictationStopResult };
 	set_model: { params: SetModelParams; result: ModelInfo };
+	set_proxy_policy: { params: SetProxyPolicyParams; result: SetProxyPolicyResult };
 	cycle_model: { params: undefined; result: ModelCycleResult | null };
 	get_available_models: { params: undefined; result: GetAvailableModelsResult };
 	set_thinking_level: { params: SetThinkingLevelParams; result: undefined };

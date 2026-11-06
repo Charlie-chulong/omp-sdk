@@ -17,6 +17,7 @@ import {
 	startAuthBroker,
 } from "@oh-my-pi/pi-ai/auth-broker";
 import * as oauthUtils from "@oh-my-pi/pi-ai/registry/oauth";
+import { oauthCredentialSchema } from "@oh-my-pi/pi-ai/auth-broker/wire-schemas";
 import { ProxyPolicyController, proxyFetch, withProxyPolicy } from "@oh-my-pi/pi-ai/utils/proxy";
 import { logger } from "@oh-my-pi/pi-utils";
 import { removeWithRetries } from "../../utils/src/temp";
@@ -538,7 +539,9 @@ describe("auth-broker wire surface", () => {
 					return;
 				}
 				exchanges++;
-				socket.end(`HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: ${payload.length}\r\n\r\n${payload}`);
+				socket.end(
+					`HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: ${payload.length}\r\n\r\n${payload}`,
+				);
 			});
 		});
 		const listening = Promise.withResolvers<void>();
@@ -548,24 +551,31 @@ describe("auth-broker wire surface", () => {
 		const address = proxy.address();
 		if (!address || typeof address === "string") throw new Error("Expected proxy listener");
 		vi.spyOn(oauthUtils, "refreshOAuthToken").mockImplementation(async provider => {
-			const response = await proxyFetch(provider)("http://oauth-provider.invalid/token", { signal: AbortSignal.timeout(1_500) });
-			return response.json();
+			const response = await proxyFetch(provider)("http://oauth-provider.invalid/token", {
+				signal: AbortSignal.timeout(1_500),
+			});
+			return oauthCredentialSchema.omit("type").assert(await response.json());
 		});
 		const client = new AuthBrokerClient({ url: handle!.url, token });
 		const snapshot = await client.fetchSnapshot();
 		if (snapshot.status !== 200) throw new Error("Expected snapshot");
-		const controller = new ProxyPolicyController({ enabled: true, providers: {
-			anthropic: { mode: "proxy", url: `http://127.0.0.1:${address.port}` },
-		} });
+		const controller = new ProxyPolicyController({
+			enabled: true,
+			providers: {
+				anthropic: { mode: "proxy", url: `http://127.0.0.1:${address.port}` },
+			},
+		});
 		try {
-			const result = await withProxyPolicy(controller, () => client.refreshCredential(snapshot.snapshot.credentials[0].id));
+			const result = await withProxyPolicy(controller, () =>
+				client.refreshCredential(snapshot.snapshot.credentials[0].id),
+			);
 			expect(exchanges).toBe(1);
 			expect(result.entry.credential.type === "oauth" && result.entry.credential.access).toBe("proxied-access");
 			expect(store!.getOAuth("anthropic")?.refresh).toBe("proxied-refresh");
 		} finally {
 			for (const socket of sockets) socket.destroy();
 			const closed = Promise.withResolvers<void>();
-			proxy.close(error => error ? closed.reject(error) : closed.resolve());
+			proxy.close(error => (error ? closed.reject(error) : closed.resolve()));
 			await closed.promise;
 		}
 	});

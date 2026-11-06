@@ -18,6 +18,7 @@ from unittest import mock
 from omp_rpc import (
     AgentEndEvent,
     AskAnswer,
+    DirectProxyRoute,
     HostTool,
     HostToolCompletedEvent,
     AvailableCommandsUpdateEvent,
@@ -26,12 +27,14 @@ from omp_rpc import (
     LivePhaseEvent,
     OpenSessionResult,
     PromptResultEvent,
+    ProxyPolicy,
     QueueUpdateEvent,
     RpcClient,
     RpcCommandError,
     RpcConcurrencyError,
     RpcError,
     RpcTimeoutError,
+    ServerProxyRoute,
     SubagentLifecycleEvent,
     host_tool,
 )
@@ -1224,6 +1227,83 @@ class RpcClientTests(unittest.TestCase):
             )
         task = phases[0].tasks[0]
         self.assertEqual((task.status, task.blocker), ("blocked", "waiting on review"))
+
+    def test_set_proxy_policy_encodes_routes_and_decodes_applied_policy(self) -> None:
+        client = self.make_client()
+        policy = ProxyPolicy(
+            enabled=False,
+            default=ServerProxyRoute(url="http://proxy.example:8080"),
+            providers={
+                "anthropic": DirectProxyRoute(),
+                "other-provider": ServerProxyRoute(url="https://other.example:8443"),
+            },
+            no_proxy=("internal.example",),
+        )
+        with mock.patch.object(
+            client,
+            "_command",
+            return_value={
+                "policy": {
+                    "enabled": False,
+                    "default": {"mode": "proxy", "url": "http://proxy.example:8080/"},
+                    "providers": {
+                        "anthropic": {"mode": "direct"},
+                        "other-provider": {"mode": "proxy", "url": "https://other.example:8443/"},
+                    },
+                    "noProxy": ["internal.example"],
+                }
+            },
+        ) as command:
+            applied = client.set_proxy_policy(policy)
+        command.assert_called_once_with(
+            "set_proxy_policy",
+            {
+                "policy": {
+                    "enabled": False,
+                    "default": {"mode": "proxy", "url": "http://proxy.example:8080"},
+                    "providers": {
+                        "anthropic": {"mode": "direct"},
+                        "other-provider": {"mode": "proxy", "url": "https://other.example:8443"},
+                    },
+                    "noProxy": ["internal.example"],
+                }
+            },
+        )
+        self.assertFalse(applied.enabled)
+        self.assertEqual(applied.default, ServerProxyRoute(url="http://proxy.example:8080/"))
+        self.assertEqual(
+            applied.providers,
+            {
+                "anthropic": DirectProxyRoute(),
+                "other-provider": ServerProxyRoute(url="https://other.example:8443/"),
+            },
+        )
+        self.assertEqual(applied.no_proxy, ("internal.example",))
+
+    def test_set_proxy_policy_omits_absent_options_without_losing_disabled(self) -> None:
+        client = self.make_client()
+        with mock.patch.object(
+            client, "_command", return_value={"policy": {"enabled": False}}
+        ) as command:
+            applied = client.set_proxy_policy(ProxyPolicy(enabled=False))
+        command.assert_called_once_with("set_proxy_policy", {"policy": {"enabled": False}})
+        self.assertFalse(applied.enabled)
+        self.assertIsNone(applied.default)
+        self.assertIsNone(applied.providers)
+        self.assertIsNone(applied.no_proxy)
+
+    def test_set_proxy_policy_rejects_incomplete_or_unknown_applied_routes(self) -> None:
+        client = self.make_client()
+        for response in (
+            {},
+            {"policy": {}},
+            {"policy": {"enabled": True, "default": {"mode": "proxy"}}},
+            {"policy": {"enabled": True, "providers": {"anthropic": {"mode": "ambient"}}}},
+        ):
+            with self.subTest(response=response):
+                with mock.patch.object(client, "_command", return_value=response):
+                    with self.assertRaises(ValueError):
+                        client.set_proxy_policy(ProxyPolicy(enabled=True))
 
     def test_predict_word_outlasts_request_timeout(self) -> None:
         with self.make_client(request_timeout=0.3) as client:

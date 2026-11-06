@@ -123,7 +123,11 @@ export async function loginCursorHook(callbacks: OAuthController): Promise<OAuth
 		url => callbacks.onAuth?.({ url }),
 		callbacks.onProgress ? () => callbacks.onProgress?.("Waiting for browser authentication...") : undefined,
 	);
-	return withCursorAccountEmail(credentials, wrapFetchForProxy(callbacks.fetch ?? proxyFetch(), "cursor"), callbacks.signal);
+	return withCursorAccountEmail(
+		credentials,
+		wrapFetchForProxy(callbacks.fetch ?? proxyFetch(), "cursor"),
+		callbacks.signal,
+	);
 }
 
 export async function refreshCursorToken(refreshToken: string, signal?: AbortSignal): Promise<OAuthCredentials> {

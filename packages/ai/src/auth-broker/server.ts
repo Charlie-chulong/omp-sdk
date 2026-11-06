@@ -948,11 +948,13 @@ export async function startAuthBroker(opts: AuthBrokerServerOptions): Promise<Au
 						return json(400, { error: error instanceof Error ? error.message : "Invalid proxy policy" });
 					}
 					try {
-						const entry = await withProxyPolicy(controller, () => opts.storage.oauth.refresh(
-							id,
-							req.signal,
-							authRecovery ? AUTH_RECOVERY_REFRESH_OPTIONS : undefined,
-						));
+						const entry = await withProxyPolicy(controller, () =>
+							opts.storage.oauth.refresh(
+								id,
+								req.signal,
+								authRecovery ? AUTH_RECOVERY_REFRESH_OPTIONS : undefined,
+							),
+						);
 						const body: CredentialRefreshResponse = { entry };
 						logger.info("auth-broker credential refreshed", {
 							id,

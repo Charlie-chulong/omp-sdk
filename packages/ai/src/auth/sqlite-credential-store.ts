@@ -354,9 +354,10 @@ function extractOAuthTokenIdentifiers(token: string | undefined): string[] | und
 	const parts = token.split(".");
 	if (parts.length !== 3) return undefined;
 	try {
-		const payload = JSON.parse(
-			new TextDecoder("utf-8").decode(decodeBase64Bytes(parts[1], "base64url")),
-		) as Record<string, unknown>;
+		const payload = JSON.parse(new TextDecoder("utf-8").decode(decodeBase64Bytes(parts[1], "base64url"))) as Record<
+			string,
+			unknown
+		>;
 		const identifiers = new Set<string>();
 		const directEmail = normalizeStoredEmail(typeof payload.email === "string" ? payload.email : undefined);
 		if (directEmail) identifiers.add(`email:${directEmail}`);

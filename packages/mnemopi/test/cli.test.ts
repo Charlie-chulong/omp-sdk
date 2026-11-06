@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cmdRecall, cmdRemember, cmdStats, runCli } from "@oh-my-pi/pi-mnemopi/cli";
 import { BeamMemory } from "@oh-my-pi/pi-mnemopi/core/beam";
+import type { JsonRpcResponse } from "@oh-my-pi/pi-mnemopi/mcp-server";
+import { readJsonl } from "@oh-my-pi/pi-utils/stream";
 
 function tempRoot(): string {
 	return mkdtempSync(join(tmpdir(), "mnemopi-ts-cli-"));
@@ -106,38 +108,39 @@ describe("CLI command handlers", () => {
 		}
 	});
 
-	it("awaits the MCP server until stdin closes", async () => {
-		const originalStream = Bun.stdin.stream;
-		const ready = Promise.withResolvers<void>();
-		let controller: ReadableStreamDefaultController<Uint8Array<ArrayBuffer>> | undefined;
-		let closed = false;
-		const input = new ReadableStream<Uint8Array<ArrayBuffer>>({
-			start(streamController) {
-				controller = streamController;
-				ready.resolve();
-			},
+	it("serves MCP requests while stdin is open and exits cleanly on EOF", async () => {
+		const root = tempRoot();
+		const child = Bun.spawn([process.execPath, join(import.meta.dir, "../src/cli.ts"), "mcp"], {
+			env: { ...process.env, MNEMOPI_DATA_DIR: root },
+			stdin: "pipe",
+			stdout: "pipe",
+			stderr: "pipe",
+			timeout: 5_000,
 		});
-		Bun.stdin.stream = () => input;
+		const responses = readJsonl<JsonRpcResponse>(child.stdout);
+		const errors = new Response(child.stderr).text();
 		try {
-			let resolved = false;
-			const cliPromise = runCli(["mcp"]).then(code => {
-				resolved = true;
-				return code;
+			await child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" })}\n`);
+			await child.stdin.flush();
+			const response = await responses.next();
+			expect(response.done).toBe(false);
+			expect(response.value).toMatchObject({
+				jsonrpc: "2.0",
+				id: 1,
+				result: { capabilities: { tools: {} } },
 			});
-			await ready.promise;
-			await Promise.resolve();
-			expect(resolved).toBe(false);
-			const activeController = controller;
-			if (activeController === undefined) throw new Error("expected stdin stream controller");
-			activeController.close();
-			closed = true;
-			expect(await cliPromise).toBe(0);
-			expect(resolved).toBe(true);
+			expect(child.exitCode).toBeNull();
+			await child.stdin.end();
+			expect(await child.exited).toBe(0);
+			expect((await responses.next()).done).toBe(true);
+			expect(await errors).toBe("");
 		} finally {
-			Bun.stdin.stream = originalStream;
-			if (!closed) controller?.close();
+			child.kill();
+			await child.exited;
+			await responses.return(undefined);
+			rmSync(root, { recursive: true, force: true });
 		}
-	});
+	}, 10_000);
 
 	it("manages scratchpad and banks in the configured data directory", async () => {
 		const root = tempRoot();

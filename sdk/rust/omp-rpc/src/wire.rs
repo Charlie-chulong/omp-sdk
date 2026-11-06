@@ -2710,6 +2710,60 @@ impl ApprovalMode {
 	}
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DirectProxyRoute {}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ServerProxyRoute {
+	pub url: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ProxyRoute {
+	Direct(DirectProxyRoute),
+	Proxy(ServerProxyRoute),
+}
+
+impl ProxyRoute {
+	/// Decodes from JSON, dispatching on `mode`.
+	pub fn from_value(value: Value) -> Result<Self, serde_json::Error> {
+		let decode: fn(Value) -> Result<Self, serde_json::Error> = match value.get("mode").and_then(Value::as_str) {
+			Some("direct") => |value| serde_json::from_value(value).map(Self::Direct),
+			Some("proxy") => |value| serde_json::from_value(value).map(Self::Proxy),
+			other => {
+				return Err(serde_json::Error::custom(format!("unknown ProxyRoute mode {other:?}")));
+			}
+		};
+		decode(value)
+	}
+}
+
+impl Serialize for ProxyRoute {
+	fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+		match self {
+			Self::Direct(member) => serialize_tagged(member, &[("mode", "direct")], serializer),
+			Self::Proxy(member) => serialize_tagged(member, &[("mode", "proxy")], serializer),
+		}
+	}
+}
+
+impl<'de> Deserialize<'de> for ProxyRoute {
+	fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+		Self::from_value(Value::deserialize(deserializer)?).map_err(D::Error::custom)
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProxyPolicy {
+	pub enabled: bool,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub default: Option<ProxyRoute>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub providers: Option<BTreeMap<String, ProxyRoute>>,
+	#[serde(rename = "noProxy", default, skip_serializing_if = "Option::is_none")]
+	pub no_proxy: Option<Vec<String>>,
+}
+
 /// `set_event_filter` projection: `delta` replaces the accumulated snapshots with the block a start/end event touches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MessageUpdates {
@@ -5499,6 +5553,16 @@ pub struct SetModelParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SetProxyPolicyParams {
+	pub policy: ProxyPolicy,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SetProxyPolicyResult {
+	pub policy: ProxyPolicy,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GetAvailableModelsResult {
 	pub models: Vec<ModelInfo>,
 }
@@ -6897,6 +6961,22 @@ impl Command for SetModelCommand {
 
 	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
 		serde_json::from_value::<ModelInfo>(data.unwrap_or_else(|| Value::Object(Map::new())))
+	}
+}
+
+/// Replace this session's provider network routing policy; returns the applied policy.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SetProxyPolicyCommand {
+	pub policy: ProxyPolicy,
+}
+
+impl Command for SetProxyPolicyCommand {
+	const NAME: &'static str = "set_proxy_policy";
+	const TIMEOUT_MS: Option<u64> = None;
+	type Output = ProxyPolicy;
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		serde_json::from_value::<SetProxyPolicyResult>(data.unwrap_or_else(|| Value::Object(Map::new()))).map(|result| result.policy)
 	}
 }
 

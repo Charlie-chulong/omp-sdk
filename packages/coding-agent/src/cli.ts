@@ -77,7 +77,6 @@ async function setFullProcessName(): Promise<void> {
 	setProcessName(APP_NAME);
 }
 
-
 // Worker-host entry declaration (Worker threads and worker subprocesses
 // re-enter `Bun.main` with a hidden argv selector instead of loading separate
 // worker entrypoints) happens inside `runCli` after profile bootstrap:

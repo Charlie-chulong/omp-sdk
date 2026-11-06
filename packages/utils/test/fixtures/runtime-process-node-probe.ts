@@ -244,7 +244,14 @@ if (process.argv[2] === "unref-probe") {
 			assert.ok(detachedPid > 0);
 		} finally {
 			unref.kill("SIGKILL");
-			if (detachedPid) process.kill(detachedPid, "SIGKILL");
+			if (detachedPid) {
+				try {
+					process.kill(detachedPid, "SIGKILL");
+				} catch (error) {
+					// The unreferenced child may already exit when its parent's IPC channel closes.
+					if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error;
+				}
+			}
 		}
 		const ref = spawn([process.execPath, script, "ref-probe"], { stdout: "pipe", stderr: "pipe", timeout: 2_000 });
 		try {

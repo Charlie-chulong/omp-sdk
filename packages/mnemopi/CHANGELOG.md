@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed deterministic SHMR hash embeddings failing with Bun's SHA-1 digest buffer requirements.
+
 ## [18.13.3] - 2026-10-28
 
 ### Changed

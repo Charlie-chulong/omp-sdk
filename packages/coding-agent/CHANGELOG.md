@@ -32,6 +32,8 @@
 
 ### Fixed
 
+- Fixed CLI stats sync worker startup through the shared worker host.
+- Fixed missing proxy-policy RPC wire declarations and generated client bindings.
 - Fixed `ask` failing in Node SDK sessions before showing a question.
 - Fixed and re-enabled `debug` in Node SDK/Desktop sessions, including adapter launch, terminal execution, socket transports, and process cleanup without Bun.
 - Fixed Desktop Node SDK extensions failing to load the native auth gateway used for local model forwarding.

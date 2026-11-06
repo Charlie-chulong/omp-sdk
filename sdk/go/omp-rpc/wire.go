@@ -1976,6 +1976,120 @@ func (v *ApprovalMode) UnmarshalJSON(data []byte) error {
 	return unknownValue("ApprovalMode", s)
 }
 
+type DirectProxyRoute struct{}
+
+func (v *DirectProxyRoute) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "DirectProxyRoute", v.decodeFrom)
+}
+
+func (v *DirectProxyRoute) decodeFrom(raw map[string]json.RawMessage) error {
+	var out DirectProxyRoute
+	d := fieldDecoder{raw: raw, owner: "DirectProxyRoute"}
+	d.constant("mode", "direct")
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
+func (v DirectProxyRoute) MarshalJSON() ([]byte, error) {
+	type plain DirectProxyRoute
+	return encodeObject(plain(v), `"mode":"direct"`, nil)
+}
+
+type ServerProxyRoute struct {
+	URL string `json:"url"`
+}
+
+func (v *ServerProxyRoute) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "ServerProxyRoute", v.decodeFrom)
+}
+
+func (v *ServerProxyRoute) decodeFrom(raw map[string]json.RawMessage) error {
+	var out ServerProxyRoute
+	d := fieldDecoder{raw: raw, owner: "ServerProxyRoute"}
+	d.constant("mode", "proxy")
+	d.required("url", &out.URL)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
+func (v ServerProxyRoute) MarshalJSON() ([]byte, error) {
+	type plain ServerProxyRoute
+	return encodeObject(plain(v), `"mode":"proxy"`, nil)
+}
+
+type ProxyRoute struct {
+	// Value holds one variant, chosen by "mode" on decode.
+	Value ProxyRouteVariant
+}
+
+// ProxyRouteVariant is implemented by the types ProxyRoute can hold.
+type ProxyRouteVariant interface {
+	isProxyRoute()
+}
+
+func (DirectProxyRoute) isProxyRoute() {}
+func (ServerProxyRoute) isProxyRoute() {}
+
+func (v ProxyRoute) MarshalJSON() ([]byte, error) {
+	return encodeVariant("ProxyRoute", v.Value)
+}
+
+func (v *ProxyRoute) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "ProxyRoute", v.decodeFrom)
+}
+
+func (v *ProxyRoute) decodeFrom(raw map[string]json.RawMessage) error {
+	tag, err := unionTag(raw, "ProxyRoute", "mode")
+	if err != nil {
+		return err
+	}
+	var value ProxyRouteVariant
+	switch tag {
+	case "direct":
+		value, err = decodeVariant[DirectProxyRoute](raw)
+	case "proxy":
+		value, err = decodeVariant[ServerProxyRoute](raw)
+	default:
+		return unknownValue("ProxyRoute.mode", tag)
+	}
+	if err != nil {
+		return err
+	}
+	v.Value = value
+	return nil
+}
+
+type ProxyPolicy struct {
+	Enabled   bool                  `json:"enabled"`
+	Default   *ProxyRoute           `json:"default,omitempty"`
+	Providers map[string]ProxyRoute `json:"providers,omitempty"`
+	NoProxy   []string              `json:"noProxy,omitempty"`
+}
+
+func (v *ProxyPolicy) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "ProxyPolicy", v.decodeFrom)
+}
+
+func (v *ProxyPolicy) decodeFrom(raw map[string]json.RawMessage) error {
+	var out ProxyPolicy
+	d := fieldDecoder{raw: raw, owner: "ProxyPolicy"}
+	d.required("enabled", &out.Enabled)
+	d.optional("default", &out.Default)
+	d.optional("providers", &out.Providers)
+	d.optional("noProxy", &out.NoProxy)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
 // `set_event_filter` projection: `delta` replaces the accumulated snapshots with the block a start/end event touches.
 type MessageUpdates string
 
@@ -7550,6 +7664,25 @@ func (v *DictationStopResult) decodeFrom(raw map[string]json.RawMessage) error {
 	return nil
 }
 
+type SetProxyPolicyResult struct {
+	Policy ProxyPolicy `json:"policy"`
+}
+
+func (v *SetProxyPolicyResult) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "SetProxyPolicyResult", v.decodeFrom)
+}
+
+func (v *SetProxyPolicyResult) decodeFrom(raw map[string]json.RawMessage) error {
+	var out SetProxyPolicyResult
+	d := fieldDecoder{raw: raw, owner: "SetProxyPolicyResult"}
+	d.required("policy", &out.Policy)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
 type GetAvailableModelsResult struct {
 	Models []ModelInfo `json:"models"`
 }
@@ -8270,6 +8403,18 @@ func (c Commands) SetModel(ctx context.Context, p SetModelCommand) (ModelInfo, e
 	var out ModelInfo
 	err := c.call(ctx, "set_model", p, 0, &out)
 	return out, err
+}
+
+// SetProxyPolicyCommand holds the parameters of "set_proxy_policy".
+type SetProxyPolicyCommand struct {
+	Policy ProxyPolicy `json:"policy"`
+}
+
+// SetProxyPolicy sends "set_proxy_policy": Replace this session's provider network routing policy; returns the applied policy.
+func (c Commands) SetProxyPolicy(ctx context.Context, p SetProxyPolicyCommand) (ProxyPolicy, error) {
+	var out SetProxyPolicyResult
+	err := c.call(ctx, "set_proxy_policy", p, 0, &out)
+	return out.Policy, err
 }
 
 // CycleModel sends "cycle_model": Cycle to the next model.

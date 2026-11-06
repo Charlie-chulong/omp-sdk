@@ -14,10 +14,9 @@ afterEach(() => {
 });
 
 function createCodexTestToken(accountId: string): string {
-	const payload = encodeBase64(Buffer.from(
-		JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: accountId } }),
-		"utf8",
-	));
+	const payload = encodeBase64(
+		Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: accountId } }), "utf8"),
+	);
 	return `aaa.${payload}.bbb`;
 }
 

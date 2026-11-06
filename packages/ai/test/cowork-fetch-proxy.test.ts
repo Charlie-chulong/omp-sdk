@@ -22,25 +22,36 @@ describe("coworkFetch policy routing", () => {
 		await listening.promise;
 		const address = server.address();
 		if (!address || typeof address === "string") throw new Error("Expected TCP listener");
-		const controller = new ProxyPolicyController({ enabled: true, providers: {
-			anthropic: { mode: "proxy", url: `http://127.0.0.1:${address.port}` },
-		} });
+		const controller = new ProxyPolicyController({
+			enabled: true,
+			providers: {
+				anthropic: { mode: "proxy", url: `http://127.0.0.1:${address.port}` },
+			},
+		});
 		try {
 			await withProxyPolicy(controller, async () => {
 				await coworkFetch("https://provider.invalid/v1/messages", {
-					method: "POST", headers: { "content-type": "application/json" }, body: "{}", signal: AbortSignal.timeout(1_500),
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: "{}",
+					signal: AbortSignal.timeout(1_500),
 				}).catch(() => undefined);
-				await coworkFetch(new Request("https://provider.invalid/v1/messages", { signal: AbortSignal.timeout(1_500) })).catch(() => undefined);
+				await coworkFetch(
+					new Request("https://provider.invalid/v1/messages", { signal: AbortSignal.timeout(1_500) }),
+				).catch(() => undefined);
 				controller.setPolicy({ ...controller.getPolicy(), enabled: false });
-				await expect(coworkFetch("https://provider.invalid/v1/messages", {
-					headers: { accept: "*/*" }, signal: AbortSignal.timeout(1_500),
-				})).rejects.toThrow();
+				await expect(
+					coworkFetch("https://provider.invalid/v1/messages", {
+						headers: { accept: "*/*" },
+						signal: AbortSignal.timeout(1_500),
+					}),
+				).rejects.toThrow();
 			});
 			expect(targets).toEqual(["CONNECT provider.invalid:443 HTTP/1.1", "CONNECT provider.invalid:443 HTTP/1.1"]);
 		} finally {
 			for (const socket of sockets) socket.destroy();
 			const closed = Promise.withResolvers<void>();
-			server.close(error => error ? closed.reject(error) : closed.resolve());
+			server.close(error => (error ? closed.reject(error) : closed.resolve()));
 			await closed.promise;
 		}
 	});

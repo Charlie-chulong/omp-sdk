@@ -523,10 +523,9 @@ describe("SessionManager cross-process rewrite freshness", () => {
 			const errors: Error[] = [];
 			ours.onPersistenceNotice(notice => notices.push(notice));
 			ours.onPersistenceError(error => errors.push(error));
-			let laterArtifactId: string | undefined;
 			await firstWrite(ours);
 			// Saved right after the move, while the background artifact copy may still run.
-			laterArtifactId = await ours.saveArtifact("output after the move", "bash");
+			const laterArtifactId = await ours.saveArtifact("output after the move", "bash");
 			for (const turn of ourTurnsAfter) ours.appendMessage(userTurn(turn));
 			await ours.flush();
 
