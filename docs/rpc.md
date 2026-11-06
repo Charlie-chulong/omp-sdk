@@ -127,9 +127,9 @@ Important edge behavior from runtime:
 
 ### Prompting
 
-- `{ id?, type: "prompt", message: string, images?: ImageContent[], streamingBehavior?: "steer" | "followUp" }`
-- `{ id?, type: "steer", message: string, images?: ImageContent[] }`
-- `{ id?, type: "follow_up", message: string, images?: ImageContent[] }`
+- `{ id?, type: "prompt", message: string, images?: ImageContent[], streamingBehavior?: "steer" | "followUp", clientMessageId?: string }`
+- `{ id?, type: "steer", message: string, images?: ImageContent[], clientMessageId?: string }`
+- `{ id?, type: "follow_up", message: string, images?: ImageContent[], clientMessageId?: string }`
 - `{ id?, type: "remove_queued_message", message: string, queue: "steering" | "followUp" }`
 - `{ id?, type: "promote_queued_message", message: string }`
 - `{ id?, type: "abort" }`
@@ -240,10 +240,12 @@ correlate it via `id`. Ordering across concurrent commands is not guaranteed
 - `{ id?, type: "navigate_tree", entryId: string, summarize?: boolean, customInstructions?: string }` → `data: { cancelled: boolean, aborted?: true, editorText?: string }`
 - `{ id?, type: "abort_branch_summary" }`
 - `{ id?, type: "set_label", entryId: string, label?: string }`
-- `{ id?, type: "get_branch_messages" }`
+- `{ id?, type: "get_branch_messages", activeBranchOnly?: boolean }`
 - `{ id?, type: "get_last_assistant_text" }`
 - `{ id?, type: "set_session_name", name: string }`
 - `{ id?, type: "handoff", customInstructions?: string }`
+
+`get_branch_messages` returns user-message `entryId`, `text`, and optional `clientMessageId`. Set `activeBranchOnly: true` to restrict targets to the active branch; omission preserves the default query over all stored entries in the current session.
 
 `handoff` fails while a response is streaming. On success, its payload is `{ savedPath? }` or `null` when no handoff was produced. Session transitions (`new_session`, `switch_session`, `branch`, `fork`, `open_session`) report cancellation when an extension prevents the transition.
 
@@ -340,6 +342,8 @@ Data payloads are command-specific and defined in `rpc-types.ts`.
 `prompt` is acknowledged once the message is admitted — an idle turn has started for it, it has been pushed onto the steer/follow-up/aside queue while the agent is busy, or it has been routed to a registered extension command (before that command's handler runs) — not after a model turn finishes. Admission runs any image normalization first (and, for a text-only model with vision description enabled, the vision-description call), so those complete before the acknowledgement. The vision-description call is capped at 20 seconds, which keeps the acknowledgement inside the bundled clients' 30-second request timeout; past the cap the image is still saved and the model is told its description is unavailable. The same applies to a `/skill:` invocation sent through `prompt`. A prompt that settles without ever being admitted (dropped by an `abort`, or failing first) is acknowledged once it settles. Gating the acknowledgement does not change completion: the prompt still completes exactly once, through `data.agentInvoked: false` or its `prompt_result` (below).
 
 `prompt` starts after previously received ordinary commands, such as `new_session` or `set_model`, have completed. Its admission then runs in the background: the RPC server keeps handling later commands — `abort`, `steer`, `follow_up`, `get_state`, and so on — without waiting for slow image normalization or vision description. An `abort` that lands while a prompt's images are still being prepared cancels the vision-description call and drops the prompt, whether it would have started an idle turn or been queued with `streamingBehavior`.
+
+The optional `clientMessageId` on `prompt`, `steer`, and `follow_up` identifies the submitted input across template expansion, queues, native user-message events, and persisted history. It is host metadata, not model input. A command acknowledgement confirms admission; use the user-message record's native identity to select a rewind target.
 
 ```json
 {

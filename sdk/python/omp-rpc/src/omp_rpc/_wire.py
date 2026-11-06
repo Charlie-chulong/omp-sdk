@@ -291,6 +291,7 @@ class UserMessage(TypedDict):
     liveSteered: NotRequired[bool]
     historyRewriteAt: NotRequired[float]
     attribution: NotRequired[Attribution]
+    clientMessageId: NotRequired[str]
     providerPayload: NotRequired[JsonObject]
 
 
@@ -776,6 +777,7 @@ class RestoredQueuedMessage:
     """Queued user content withdrawn from the queue, as the editor would restore it."""
     text: str
     images: tuple[ImageContent, ...] | None = None
+    client_message_id: str | None = None
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -793,6 +795,7 @@ class AbortAndRestoreQueueResult:
 class BranchMessage:
     entry_id: str
     text: str
+    client_message_id: str | None = None
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -2155,6 +2158,7 @@ def parse_restored_queued_message(value: object, path: str = "RestoredQueuedMess
     return RestoredQueuedMessage(
         text=required(payload, "text", decode_str, path),
         images=optional(payload, "images", array(parse_image_content), path),
+        client_message_id=optional(payload, "clientMessageId", decode_str, path),
     )
 
 
@@ -2173,6 +2177,7 @@ def parse_branch_message(value: object, path: str = "BranchMessage") -> BranchMe
     return BranchMessage(
         entry_id=required(payload, "entryId", decode_str, path),
         text=required(payload, "text", decode_str, path),
+        client_message_id=optional(payload, "clientMessageId", decode_str, path),
     )
 
 
@@ -3308,20 +3313,24 @@ class WireClient:
     def _listen(self, frame_type: str, listener: Callable[..., None]) -> Callable[[], None]:
         raise NotImplementedError
 
-    def steer(self, message: str, *, images: Sequence[ImageContent] | None = None) -> None:
+    def steer(self, message: str, *, images: Sequence[ImageContent] | None = None, client_message_id: str | None = None) -> None:
         """Queue a steering message."""
         params: dict[str, object] = {}
         params["message"] = message
         if images is not None:
             params["images"] = list(images)
+        if client_message_id is not None:
+            params["clientMessageId"] = client_message_id
         self._command("steer", params)
 
-    def follow_up(self, message: str, *, images: Sequence[ImageContent] | None = None) -> None:
+    def follow_up(self, message: str, *, images: Sequence[ImageContent] | None = None, client_message_id: str | None = None) -> None:
         """Queue a follow-up message."""
         params: dict[str, object] = {}
         params["message"] = message
         if images is not None:
             params["images"] = list(images)
+        if client_message_id is not None:
+            params["clientMessageId"] = client_message_id
         self._command("follow_up", params)
 
     def remove_queued_message(self, message: str, queue: QueuedMessageQueue) -> RemoveQueuedMessageResult:
@@ -3674,9 +3683,11 @@ class WireClient:
             params["label"] = label
         self._command("set_label", params)
 
-    def get_branch_messages(self) -> tuple[BranchMessage, ...]:
+    def get_branch_messages(self, active_branch_only: bool | None = None) -> tuple[BranchMessage, ...]:
         """List user messages that can be branched from."""
         params: dict[str, object] = {}
+        if active_branch_only is not None:
+            params["activeBranchOnly"] = active_branch_only
         return required(expect_object(self._command("get_branch_messages", params), "get_branch_messages"), "messages", array(parse_branch_message), "get_branch_messages")
 
     def get_last_assistant_text(self) -> str | None:

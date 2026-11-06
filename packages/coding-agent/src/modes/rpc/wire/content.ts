@@ -92,6 +92,7 @@ export const messageDefs = {
 		"liveSteered?": "boolean",
 		"historyRewriteAt?": "number",
 		"attribution?": "Attribution",
+		"clientMessageId?": "string",
 		"providerPayload?": JSON_OBJECT,
 		timestamp: "number",
 	},

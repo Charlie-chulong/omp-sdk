@@ -1904,7 +1904,7 @@ export class AgentSession implements SettingsScope {
 		const queuedContinuation =
 			canDrain &&
 			!this.#queuedMessageDrainBlocked &&
-			this.#canAutoContinueForFollowUp() &&
+			this.#canResumeQueuedMessages() &&
 			this.agent.hasQueuedMessages();
 		const ircContinuation =
 			canDrain &&
@@ -8376,6 +8376,7 @@ export class AgentSession implements SettingsScope {
 			const queued = await this.#queueUserMessage(expandedText, options?.images, streamingBehavior, {
 				timestamp: submittedAt,
 				attribution: promptAttribution,
+				clientMessageId: options?.clientMessageId,
 				prependMessages: prependNotices,
 				rawText: typedText,
 				onPromptQueued: options?.onPromptQueued,
@@ -8452,6 +8453,7 @@ export class AgentSession implements SettingsScope {
 			await this.#queueUserMessage(expandedText, options?.images, streamingBehavior, {
 				timestamp: submittedAt,
 				attribution: promptAttribution,
+				clientMessageId: options?.clientMessageId,
 				prependMessages: prependNotices,
 				rawText: typedText,
 				preprocessed: {
@@ -8480,7 +8482,13 @@ export class AgentSession implements SettingsScope {
 					synthetic: true,
 					userInitiated: options?.userInitiated === true ? true : undefined,
 				}
-			: { role: "user" as const, content: userContent, attribution: promptAttribution, timestamp: submittedAt };
+			: {
+					role: "user" as const,
+					content: userContent,
+					attribution: promptAttribution,
+					...(options?.clientMessageId ? { clientMessageId: options.clientMessageId } : {}),
+					timestamp: submittedAt,
+				};
 
 		const preludeMessages: AgentMessage[] = [];
 		if (eagerTodoPrelude) {
@@ -9360,6 +9368,7 @@ export class AgentSession implements SettingsScope {
 		await this.#queueUserMessage(expandedText, images, "steer", {
 			timestamp: submittedAt,
 			attribution: options?.attribution,
+			clientMessageId: options?.clientMessageId,
 			rawText: text,
 			onPromptQueued: options?.onPromptQueued,
 		});
@@ -9386,6 +9395,7 @@ export class AgentSession implements SettingsScope {
 			await this.#queueUserMessage(expandedText, images, "followUp", {
 				timestamp: submittedAt,
 				attribution: options?.attribution,
+				clientMessageId: options?.clientMessageId,
 				rawText: text,
 				onPromptQueued: options?.onPromptQueued,
 			});
@@ -9543,6 +9553,7 @@ export class AgentSession implements SettingsScope {
 		options?: {
 			timestamp?: number;
 			attribution?: MessageAttribution;
+			clientMessageId?: string;
 			prependMessages?: readonly CustomMessage[];
 			/** Text the caller originally submitted, before slash/custom-command
 			 *  rewriting, prompt-template expansion, or `^model` mention substitution.
@@ -9645,7 +9656,13 @@ export class AgentSession implements SettingsScope {
 			if (await this.#sessionGenerationChanged(sessionGeneration)) return false;
 			const records: AgentMessage[] = [...prependMessages, ...attachmentSourceNotices];
 			if (imageDescriptionNotice) records.push(imageDescriptionNotice);
-			const userMessage: AgentMessage = { role: "user", content, attribution, timestamp: timestamp ?? Date.now() };
+			const userMessage: AgentMessage = {
+				role: "user",
+				content,
+				attribution,
+				timestamp: timestamp ?? Date.now(),
+				...(options?.clientMessageId ? { clientMessageId: options.clientMessageId } : {}),
+			};
 			this.#queuedMessageRawText.set(userMessage, rawText);
 			records.push(userMessage);
 			this.#irc.queueAside(records);
@@ -9670,6 +9687,7 @@ export class AgentSession implements SettingsScope {
 				role: "user",
 				content,
 				attribution,
+				...(options?.clientMessageId ? { clientMessageId: options.clientMessageId } : {}),
 				timestamp: timestamp ?? Date.now(),
 			};
 			this.#queuedMessageRawText.set(userMessage, rawText);
@@ -9683,6 +9701,7 @@ export class AgentSession implements SettingsScope {
 				content,
 				steering: true,
 				attribution,
+				...(options?.clientMessageId ? { clientMessageId: options.clientMessageId } : {}),
 				timestamp: timestamp ?? Date.now(),
 			};
 			this.#queuedMessageRawText.set(userMessage, rawText);
@@ -9898,7 +9917,12 @@ export class AgentSession implements SettingsScope {
 	 * Gate for idle-path queued-message auto-continue (see `#scheduleQueuedMessageDrain`).
 	 */
 	#canAutoContinueForFollowUp(): boolean {
-		if (this.#userStopped || this.#abortInProgress) return false;
+		return !this.#abortInProgress && this.#canResumeQueuedMessages();
+	}
+
+	/** Queue eligibility after the current abort barrier unwinds; also classifies agent_end. */
+	#canResumeQueuedMessages(): boolean {
+		if (this.#userStopped) return false;
 		if (this.isRetrying) return false;
 		// An ACP client that defers agent-initiated turns owns turn
 		// lifecycle, and a queued steer/follow-up may only resume while a
@@ -14368,17 +14392,25 @@ export class AgentSession implements SettingsScope {
 	/**
 	 * Get all user messages from session for branch selector.
 	 */
-	getUserMessagesForBranching(): Array<{ entryId: string; text: string }> {
-		const entries = this.sessionManager.getEntries();
-		const result: Array<{ entryId: string; text: string }> = [];
+	getUserMessagesForBranching(options?: {
+		activeBranchOnly?: boolean;
+	}): Array<{ entryId: string; text: string; clientMessageId?: string }> {
+		const entries = options?.activeBranchOnly
+			? this.sessionManager.getBranchView()
+			: this.sessionManager.getEntries();
+		const result: Array<{ entryId: string; text: string; clientMessageId?: string }> = [];
 
 		for (const entry of entries) {
 			if (entry.type !== "message") continue;
 			if (entry.message.role !== "user") continue;
 
 			const text = this.#extractUserMessageText(entry.message.content);
-			if (text) {
-				result.push({ entryId: entry.id, text });
+			if (text || entry.message.clientMessageId) {
+				result.push({
+					entryId: entry.id,
+					text,
+					...(entry.message.clientMessageId ? { clientMessageId: entry.message.clientMessageId } : {}),
+				});
 			}
 		}
 

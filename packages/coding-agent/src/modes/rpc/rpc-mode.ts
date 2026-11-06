@@ -759,8 +759,14 @@ export function fitAbortAndRestoreQueueResponse(
 	const imagesDropped = [...restored.steering, ...restored.followUp].some(entry => entry.images?.length);
 	const flags = imagesDropped ? { imagesDropped: true as const } : {};
 	const textOnly = {
-		steering: restored.steering.map(({ text }) => ({ text })),
-		followUp: restored.followUp.map(({ text }) => ({ text })),
+		steering: restored.steering.map(({ text, clientMessageId }) => ({
+			text,
+			...(clientMessageId ? { clientMessageId } : {}),
+		})),
+		followUp: restored.followUp.map(({ text, clientMessageId }) => ({
+			text,
+			...(clientMessageId ? { clientMessageId } : {}),
+		})),
 	};
 	if (imagesDropped) {
 		const withoutImages = response({ ...textOnly, ...flags });
@@ -1950,11 +1956,11 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 			if (!isCurrent()) return "cancelled";
 			if (!text.trim() && !images?.length) return "local";
 			if (command.type === "steer") {
-				await session.steer(text, images);
+				await session.steer(text, images, { clientMessageId: command.clientMessageId });
 				return "admitted";
 			}
 			if (command.type === "follow_up") {
-				await session.followUp(text, images);
+				await session.followUp(text, images, { clientMessageId: command.clientMessageId });
 				return "admitted";
 			}
 			if (command.type === "prompt") {
@@ -2039,6 +2045,7 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 				startPrompt: onPromptAdmitted =>
 					session.prompt(text, {
 						images,
+						clientMessageId: command.clientMessageId,
 						...(command.type === "prompt" ? { streamingBehavior: command.streamingBehavior } : {}),
 						onPromptAdmitted,
 					}),
@@ -2733,7 +2740,7 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 			}
 
 			case "get_branch_messages": {
-				const messages = session.getUserMessagesForBranching();
+				const messages = session.getUserMessagesForBranching({ activeBranchOnly: command.activeBranchOnly });
 				return success(id, "get_branch_messages", { messages });
 			}
 

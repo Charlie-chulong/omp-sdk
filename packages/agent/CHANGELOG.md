@@ -5,6 +5,7 @@
 ### Fixed
 
 - Cancellation now waits for accepted execution and provider cleanup to finish before acknowledging Stop, without allowing queued input to restart the cancelled run.
+- Kept host-assigned user-message correlation identifiers out of model input.
 
 ## [18.14.0] - 2026-10-29
 

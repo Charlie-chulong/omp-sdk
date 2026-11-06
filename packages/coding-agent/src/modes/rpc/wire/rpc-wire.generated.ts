@@ -100,6 +100,7 @@ export interface UserMessage {
 	liveSteered?: boolean;
 	historyRewriteAt?: number;
 	attribution?: Attribution;
+	clientMessageId?: string;
 	providerPayload?: Record<string, unknown>;
 }
 
@@ -605,6 +606,7 @@ export interface PromoteQueuedMessageResult {
 export interface RestoredQueuedMessage {
 	text: string;
 	images?: ImageContent[];
+	clientMessageId?: string;
 }
 
 /** User-authored queued input withdrawn before the abort, oldest first. */
@@ -620,6 +622,7 @@ export interface AbortAndRestoreQueueResult {
 export interface BranchMessage {
 	entryId: string;
 	text: string;
+	clientMessageId?: string;
 }
 
 export interface BranchResult {
@@ -1541,18 +1544,21 @@ export interface PromptParams {
 	/** Images attached to the message. */
 	images?: ImageContent[];
 	streamingBehavior?: StreamingBehavior;
+	clientMessageId?: string;
 }
 
 export interface SteerParams {
 	message: string;
 	/** Images attached to the message. */
 	images?: ImageContent[];
+	clientMessageId?: string;
 }
 
 export interface FollowUpParams {
 	message: string;
 	/** Images attached to the message. */
 	images?: ImageContent[];
+	clientMessageId?: string;
 }
 
 export interface RemoveQueuedMessageParams {
@@ -1568,6 +1574,7 @@ export interface AbortAndPromptParams {
 	message: string;
 	/** Images attached to the message. */
 	images?: ImageContent[];
+	clientMessageId?: string;
 }
 
 export interface NewSessionParams {
@@ -1832,6 +1839,10 @@ export interface SetLabelParams {
 	label?: string;
 }
 
+export interface GetBranchMessagesParams {
+	activeBranchOnly?: boolean;
+}
+
 export interface GetBranchMessagesResult {
 	messages: BranchMessage[];
 }
@@ -1987,7 +1998,7 @@ export interface RpcWireCommands {
 	navigate_tree: { params: NavigateTreeParams; result: NavigateTreeResult };
 	abort_branch_summary: { params: undefined; result: undefined };
 	set_label: { params: SetLabelParams; result: undefined };
-	get_branch_messages: { params: undefined; result: GetBranchMessagesResult };
+	get_branch_messages: { params: GetBranchMessagesParams; result: GetBranchMessagesResult };
 	get_last_assistant_text: { params: undefined; result: GetLastAssistantTextResult };
 	set_session_name: { params: SetSessionNameParams; result: undefined };
 	handoff: { params: HandoffParams; result: HandoffResult | null };

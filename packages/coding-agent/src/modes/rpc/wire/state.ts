@@ -201,7 +201,7 @@ export const stateDefs = {
 	},
 	PromoteQueuedMessageResult: { promoted: "boolean" },
 	RestoredQueuedMessage: doc(
-		{ text: "string", "images?": "ImageContent[]" },
+		{ text: "string", "images?": "ImageContent[]", "clientMessageId?": "string" },
 		"Queued user content withdrawn from the queue, as the editor would restore it.",
 	),
 	AbortAndRestoreQueueResult: doc(
@@ -219,7 +219,7 @@ export const stateDefs = {
 		},
 		"User-authored queued input withdrawn before the abort, oldest first.",
 	),
-	BranchMessage: { entryId: "string", text: "string" },
+	BranchMessage: { entryId: "string", text: "string", "clientMessageId?": "string" },
 	BranchResult: { text: "string", cancelled: "boolean" },
 	NavigateTreeResult: {
 		cancelled: "boolean",

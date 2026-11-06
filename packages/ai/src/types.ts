@@ -1198,6 +1198,8 @@ export interface UserMessage {
 	historyRewriteAt?: number;
 	/** Who initiated this message for billing/attribution semantics. */
 	attribution?: MessageAttribution;
+	/** Host-assigned identity for correlating a user submission; never model content. */
+	clientMessageId?: string;
 	/** Provider-specific opaque payload used to reconstruct transport-native history. */
 	providerPayload?: ProviderPayload;
 	timestamp: number; // Unix timestamp in milliseconds

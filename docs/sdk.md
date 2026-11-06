@@ -588,12 +588,16 @@ Behavior:
 Related APIs:
 
 - `sendUserMessage(content, { deliverAs?, attribution? })`
-- `steer(text, images?, { attribution? })`
-- `followUp(text, images?, { synthetic?, attribution? })`
+- `steer(text, images?, { attribution?, clientMessageId? })`
+- `followUp(text, images?, { synthetic?, attribution?, clientMessageId? })`
 - `sendCustomMessage({ customType, content, ... }, { deliverAs?, triggerTurn? })`
 - `abort()`
 
 `deliverAs: "aside"` (both APIs) delivers at the next agent step boundary without interrupting the current tool batch, instead of steering (which skips remaining tools) or waiting for the run to finish. The one exception is a running interruptible `wait` or `vibe_wait`, which an aside ends so the message is not delayed behind it. When the session is idle both start a turn instead (in plan mode the custom message is folded into context without a turn).
+
+Hosts can pass a distinct `clientMessageId` in `prompt` options or the third options argument of `steer`/`followUp`. The identifier survives prompt expansion, queues, user-message events, and persisted history; it is kept out of model input. Correlate native echoes by this identifier rather than transformed or repeated text.
+
+`getUserMessagesForBranching({ activeBranchOnly: true })` returns user-message targets on the current branch, including their optional `clientMessageId`. Omitting the option retains the default query over all stored entries in the current session. Branching to a prompt creates a transcript containing its preceding history.
 
 ## Idle maintenance
 

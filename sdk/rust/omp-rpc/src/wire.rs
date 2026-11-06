@@ -785,6 +785,7 @@ pub struct UserMessage {
 	pub live_steered: Option<bool>,
 	pub history_rewrite_at: Option<f64>,
 	pub attribution: Option<Attribution>,
+	pub client_message_id: Option<String>,
 	pub provider_payload: Option<Map<String, Value>>,
 	/// Every key not decoded into a declared field.
 	pub extra: Map<String, Value>,
@@ -814,6 +815,9 @@ impl Serialize for UserMessage {
 		if let Some(value) = &self.attribution {
 			map.serialize_entry("attribution", value)?;
 		}
+		if let Some(value) = &self.client_message_id {
+			map.serialize_entry("clientMessageId", value)?;
+		}
 		if let Some(value) = &self.provider_payload {
 			map.serialize_entry("providerPayload", value)?;
 		}
@@ -826,6 +830,7 @@ impl Serialize for UserMessage {
 				"liveSteered" if self.live_steered.is_some() => continue,
 				"historyRewriteAt" if self.history_rewrite_at.is_some() => continue,
 				"attribution" if self.attribution.is_some() => continue,
+				"clientMessageId" if self.client_message_id.is_some() => continue,
 				"providerPayload" if self.provider_payload.is_some() => continue,
 				_ => {}
 			}
@@ -846,6 +851,7 @@ impl<'de> Deserialize<'de> for UserMessage {
 			live_steered: take(&mut extra, "liveSteered"),
 			history_rewrite_at: take(&mut extra, "historyRewriteAt"),
 			attribution: take(&mut extra, "attribution"),
+			client_message_id: take(&mut extra, "clientMessageId"),
 			provider_payload: take(&mut extra, "providerPayload"),
 			extra,
 		})
@@ -3260,6 +3266,8 @@ pub struct RestoredQueuedMessage {
 	pub text: String,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub images: Option<Vec<ImageContent>>,
+	#[serde(rename = "clientMessageId", default, skip_serializing_if = "Option::is_none")]
+	pub client_message_id: Option<String>,
 }
 
 /// User-authored queued input withdrawn before the abort, oldest first.
@@ -3281,6 +3289,8 @@ pub struct BranchMessage {
 	#[serde(rename = "entryId")]
 	pub entry_id: String,
 	pub text: String,
+	#[serde(rename = "clientMessageId", default, skip_serializing_if = "Option::is_none")]
+	pub client_message_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5194,6 +5204,8 @@ pub struct PromptParams {
 	pub images: Option<Vec<ImageContent>>,
 	#[serde(rename = "streamingBehavior", default, skip_serializing_if = "Option::is_none")]
 	pub streaming_behavior: Option<StreamingBehavior>,
+	#[serde(rename = "clientMessageId", default, skip_serializing_if = "Option::is_none")]
+	pub client_message_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5202,6 +5214,8 @@ pub struct SteerParams {
 	/// Images attached to the message.
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub images: Option<Vec<ImageContent>>,
+	#[serde(rename = "clientMessageId", default, skip_serializing_if = "Option::is_none")]
+	pub client_message_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5210,6 +5224,8 @@ pub struct FollowUpParams {
 	/// Images attached to the message.
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub images: Option<Vec<ImageContent>>,
+	#[serde(rename = "clientMessageId", default, skip_serializing_if = "Option::is_none")]
+	pub client_message_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5229,6 +5245,8 @@ pub struct AbortAndPromptParams {
 	/// Images attached to the message.
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub images: Option<Vec<ImageContent>>,
+	#[serde(rename = "clientMessageId", default, skip_serializing_if = "Option::is_none")]
+	pub client_message_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5592,6 +5610,12 @@ pub struct SetLabelParams {
 	pub entry_id: String,
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GetBranchMessagesParams {
+	#[serde(rename = "activeBranchOnly", default, skip_serializing_if = "Option::is_none")]
+	pub active_branch_only: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -6227,6 +6251,8 @@ pub struct PromptCommand {
 	pub images: Option<Vec<ImageContent>>,
 	#[serde(rename = "streamingBehavior", default, skip_serializing_if = "Option::is_none")]
 	pub streaming_behavior: Option<StreamingBehavior>,
+	#[serde(rename = "clientMessageId", default, skip_serializing_if = "Option::is_none")]
+	pub client_message_id: Option<String>,
 }
 
 impl Command for PromptCommand {
@@ -6246,6 +6272,8 @@ pub struct SteerCommand {
 	/// Images attached to the message.
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub images: Option<Vec<ImageContent>>,
+	#[serde(rename = "clientMessageId", default, skip_serializing_if = "Option::is_none")]
+	pub client_message_id: Option<String>,
 }
 
 impl Command for SteerCommand {
@@ -6266,6 +6294,8 @@ pub struct FollowUpCommand {
 	/// Images attached to the message.
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub images: Option<Vec<ImageContent>>,
+	#[serde(rename = "clientMessageId", default, skip_serializing_if = "Option::is_none")]
+	pub client_message_id: Option<String>,
 }
 
 impl Command for FollowUpCommand {
@@ -6337,6 +6367,8 @@ pub struct AbortAndPromptCommand {
 	/// Images attached to the message.
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub images: Option<Vec<ImageContent>>,
+	#[serde(rename = "clientMessageId", default, skip_serializing_if = "Option::is_none")]
+	pub client_message_id: Option<String>,
 }
 
 impl Command for AbortAndPromptCommand {
@@ -7257,7 +7289,10 @@ impl Command for SetLabelCommand {
 
 /// List user messages that can be branched from.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
-pub struct GetBranchMessagesCommand {}
+pub struct GetBranchMessagesCommand {
+	#[serde(rename = "activeBranchOnly", default, skip_serializing_if = "Option::is_none")]
+	pub active_branch_only: Option<bool>,
+}
 
 impl Command for GetBranchMessagesCommand {
 	const NAME: &'static str = "get_branch_messages";

@@ -696,7 +696,7 @@
 			{
 				"name": "get_branch_messages",
 				"doc": "List user messages that can be branched from.",
-				"params": null,
+				"params": "GetBranchMessagesParams",
 				"result": "GetBranchMessagesResult",
 				"nullable": false,
 				"unwrap": "messages",
@@ -1229,6 +1229,9 @@
 				},
 				"attribution": {
 					"$ref": "#/$defs/Attribution"
+				},
+				"clientMessageId": {
+					"type": "string"
 				},
 				"providerPayload": {
 					"type": "object",
@@ -3070,6 +3073,9 @@
 					"items": {
 						"$ref": "#/$defs/ImageContent"
 					}
+				},
+				"clientMessageId": {
+					"type": "string"
 				}
 			},
 			"required": [
@@ -3114,6 +3120,9 @@
 					"type": "string"
 				},
 				"text": {
+					"type": "string"
+				},
+				"clientMessageId": {
 					"type": "string"
 				}
 			},
@@ -6183,6 +6192,9 @@
 				},
 				"streamingBehavior": {
 					"$ref": "#/$defs/StreamingBehavior"
+				},
+				"clientMessageId": {
+					"type": "string"
 				}
 			},
 			"required": [
@@ -6201,6 +6213,9 @@
 						"$ref": "#/$defs/ImageContent"
 					},
 					"description": "Images attached to the message."
+				},
+				"clientMessageId": {
+					"type": "string"
 				}
 			},
 			"required": [
@@ -6219,6 +6234,9 @@
 						"$ref": "#/$defs/ImageContent"
 					},
 					"description": "Images attached to the message."
+				},
+				"clientMessageId": {
+					"type": "string"
 				}
 			},
 			"required": [
@@ -6263,6 +6281,9 @@
 						"$ref": "#/$defs/ImageContent"
 					},
 					"description": "Images attached to the message."
+				},
+				"clientMessageId": {
+					"type": "string"
 				}
 			},
 			"required": [
@@ -7022,6 +7043,14 @@
 			"required": [
 				"entryId"
 			]
+		},
+		"GetBranchMessagesParams": {
+			"type": "object",
+			"properties": {
+				"activeBranchOnly": {
+					"type": "boolean"
+				}
+			}
 		},
 		"GetBranchMessagesResult": {
 			"type": "object",

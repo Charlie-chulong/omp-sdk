@@ -242,6 +242,77 @@ describe("AgentSession queued steer delivery", () => {
 		expect(steer.steering).toBe(true);
 	});
 
+	it("retains structured client identities through transformed prompts, queues, events, and branch history", async () => {
+		const { session, sessionManager, mock } = await createSession(
+			[{ content: ["initial"] }, { content: ["steered"] }, { content: ["followed"] }],
+			[{ name: "review", description: "Review", content: "Review $1", source: "(test)" }],
+		);
+		const accepted: AgentMessage[] = [];
+		session.subscribe(event => {
+			if (event.type === "message_end" && event.message.role === "user") accepted.push(event.message);
+		});
+		let queued = false;
+		session.agent.setOnBeforeYield(async () => {
+			if (queued) return;
+			queued = true;
+			await session.steer("/review repeated", undefined, { clientMessageId: "steer-client" });
+			await session.followUp("/review repeated", undefined, { clientMessageId: "follow-client" });
+		});
+		await session.prompt("/review repeated", { clientMessageId: "prompt-client" });
+		await session.waitForIdle();
+		expect(accepted).toMatchObject([
+			{ clientMessageId: "prompt-client", content: [{ type: "text", text: "Review repeated" }] },
+			{ clientMessageId: "steer-client", content: [{ type: "text", text: "Review repeated" }] },
+			{ clientMessageId: "follow-client", content: [{ type: "text", text: "Review repeated" }] },
+		]);
+		const persisted = sessionManager
+			.getEntries()
+			.filter(entry => entry.type === "message" && entry.message.role === "user");
+		expect(persisted).toHaveLength(3);
+		for (const call of mock.calls) {
+			for (const message of call.context.messages) expect(message).not.toHaveProperty("clientMessageId");
+		}
+		const branchable = session.getUserMessagesForBranching();
+		expect(branchable.map(message => message.clientMessageId)).toEqual([
+			"prompt-client",
+			"steer-client",
+			"follow-client",
+		]);
+		expect(branchable.map(message => message.text)).toEqual([
+			"Review repeated",
+			"Review repeated",
+			"Review repeated",
+		]);
+		const offBranchEntryId = sessionManager.appendMessageToBranch(
+			{
+				role: "user",
+				content: "Review repeated",
+				clientMessageId: "off-branch-client",
+				timestamp: Date.now(),
+			},
+			branchable[0]!.entryId,
+		);
+		expect(session.getUserMessagesForBranching()).toEqual([
+			...branchable,
+			{ entryId: offBranchEntryId, text: "Review repeated", clientMessageId: "off-branch-client" },
+		]);
+		expect(session.getUserMessagesForBranching({ activeBranchOnly: true })).toEqual(branchable);
+		await session.branch(branchable[1]!.entryId);
+		expect(session.getUserMessagesForBranching()).toEqual([branchable[0]]);
+		expect(session.getUserMessagesForBranching({ activeBranchOnly: true })).toEqual([branchable[0]]);
+	});
+
+	it("withdraws queued client identities without persisting an unconsumed prompt", async () => {
+		const { session } = await createSession([]);
+		await session.steer("identical", undefined, { clientMessageId: "queued-one" });
+		await session.followUp("identical", undefined, { clientMessageId: "queued-two" });
+		expect(session.clearQueue({ forInterrupt: true })).toMatchObject({
+			steering: [{ text: "identical", clientMessageId: "queued-one" }],
+			followUp: [{ text: "identical", clientMessageId: "queued-two" }],
+		});
+		expect(session.getUserMessagesForBranching({ activeBranchOnly: true })).toEqual([]);
+	});
+
 	it("preserves explicit agent attribution across queued text-message APIs", async () => {
 		const { session } = await createSession([]);
 
@@ -334,15 +405,21 @@ describe("AgentSession queued steer delivery", () => {
 	// resumes the run, so its settle must not read as a stop — otherwise the UI
 	// flips to idle (title, OSC 7501, loader) for one frame before the steer runs.
 	it("settles an interrupt non-terminally when a queued steer resumes the run", async () => {
+		const streaming = Promise.withResolvers<void>();
 		const { session } = await createSession([
-			{ content: ["slow response"], delayMs: 1_000 },
+			async (_context, options) => {
+				if (!options?.signal) throw new Error("Expected an abortable model request");
+				const aborted = Promise.withResolvers<void>();
+				options.signal.addEventListener("abort", () => aborted.resolve(), { once: true });
+				streaming.resolve();
+				await aborted.promise;
+				return { content: [], stopReason: "aborted" };
+			},
 			{ content: ["steered response"] },
 		]);
 		const settles: Array<boolean | undefined> = [];
-		const streaming = Promise.withResolvers<void>();
 		const steered = Promise.withResolvers<void>();
 		session.subscribe(event => {
-			if (event.type === "message_start" && event.message.role === "assistant") streaming.resolve();
 			if (event.type !== "agent_end") return;
 			settles.push(event.isTerminal);
 			if (settles.length === 2) steered.resolve();
@@ -356,6 +433,34 @@ describe("AgentSession queued steer delivery", () => {
 		await run;
 
 		expect(settles).toEqual([false, true]);
+	});
+
+	it("explicit host Stop stays terminal and leaves queued input unconsumed", async () => {
+		const started = Promise.withResolvers<void>();
+		const { session, mock } = await createSession([
+			async (_context, options) => {
+				if (!options?.signal) throw new Error("Expected an abortable model request");
+				const aborted = Promise.withResolvers<void>();
+				options.signal.addEventListener("abort", () => aborted.resolve(), { once: true });
+				started.resolve();
+				await aborted.promise;
+				return { content: [], stopReason: "aborted" };
+			},
+			{ content: ["must not auto-resume"] },
+		]);
+		const settles: Array<boolean | undefined> = [];
+		session.subscribe(event => {
+			if (event.type === "agent_end") settles.push(event.isTerminal);
+		});
+		const run = session.prompt("hello");
+		await started.promise;
+		await session.steer("change course");
+		await session.abort({ reason: USER_INTERRUPT_LABEL, stopOwnedWork: true });
+		await run;
+		await session.waitForIdle();
+		expect(settles).toEqual([true]);
+		expect(mock.calls).toHaveLength(1);
+		expect(session.getQueuedMessages().steering).toContain("change course");
 	});
 
 	// A host driving the session to a result (the subagent executor) awaits the

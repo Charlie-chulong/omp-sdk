@@ -459,6 +459,8 @@ export interface PromptOptions {
 	userInitiated?: boolean;
 	/** Explicit billing/initiator attribution. */
 	attribution?: MessageAttribution;
+	/** Host-assigned identity retained on the native user message. */
+	clientMessageId?: string;
 	/** Skip pre-send compaction checks for this prompt. */
 	skipCompactionCheck?: boolean;
 	/** Delegator's open-endedness description (task tool `solutionSpace`); replaces the prompt as `auto` thinking classification input. */
@@ -504,6 +506,8 @@ export interface FollowUpOptions {
 	expandPromptTemplates?: boolean;
 	/** Explicit billing/initiator attribution. */
 	attribution?: MessageAttribution;
+	/** Host-assigned identity retained on the native user message. */
+	clientMessageId?: string;
 	/** Called synchronously with the messages pushed onto the follow-up queue. See {@link PromptOptions.onPromptQueued}. */
 	onPromptQueued?: PromptOptions["onPromptQueued"];
 }
@@ -512,6 +516,8 @@ export interface FollowUpOptions {
 export interface SteerOptions {
 	/** Explicit billing/initiator attribution. */
 	attribution?: MessageAttribution;
+	/** Host-assigned identity retained on the native user message. */
+	clientMessageId?: string;
 	/** Called synchronously with the messages pushed onto the steering queue. See {@link PromptOptions.onPromptQueued}. */
 	onPromptQueued?: PromptOptions["onPromptQueued"];
 }
@@ -623,7 +629,7 @@ export interface ResetSessionContextResult {
 }
 
 /** Queued user content restored to the editor. */
-export type RestoredQueuedMessage = { text: string; images?: ImageContent[] };
+export type RestoredQueuedMessage = { text: string; images?: ImageContent[]; clientMessageId?: string };
 
 /** Options for the same ephemeral side turn used by /btw. */
 export interface EphemeralTurnOptions {

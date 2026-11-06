@@ -736,8 +736,13 @@ export class RpcClient {
 	 * use onEvent() to receive streaming events and onPromptResult() to observe its
 	 * completion under that id.
 	 */
-	async prompt(message: string, images?: ImageContent[], streamingBehavior?: "steer" | "followUp"): Promise<string> {
-		const response = await this.#send({ type: "prompt", message, images, streamingBehavior });
+	async prompt(
+		message: string,
+		images?: ImageContent[],
+		streamingBehavior?: "steer" | "followUp",
+		options?: { clientMessageId?: string },
+	): Promise<string> {
+		const response = await this.#send({ type: "prompt", message, images, streamingBehavior, ...options });
 		this.#getData(response);
 		return response.id ?? "";
 	}
@@ -745,15 +750,15 @@ export class RpcClient {
 	/**
 	 * Queue a steering message to interrupt the agent mid-run.
 	 */
-	async steer(message: string, images?: ImageContent[]): Promise<void> {
-		await this.#send({ type: "steer", message, images });
+	async steer(message: string, images?: ImageContent[], options?: { clientMessageId?: string }): Promise<void> {
+		await this.#send({ type: "steer", message, images, ...options });
 	}
 
 	/**
 	 * Queue a follow-up message to be processed after the agent finishes.
 	 */
-	async followUp(message: string, images?: ImageContent[]): Promise<void> {
-		await this.#send({ type: "follow_up", message, images });
+	async followUp(message: string, images?: ImageContent[], options?: { clientMessageId?: string }): Promise<void> {
+		await this.#send({ type: "follow_up", message, images, ...options });
 	}
 
 	/**
@@ -1260,9 +1265,12 @@ export class RpcClient {
 	/**
 	 * Get messages available for branching.
 	 */
-	async getBranchMessages(): Promise<Array<{ entryId: string; text: string }>> {
-		const response = await this.#send({ type: "get_branch_messages" });
-		return this.#getData<{ messages: Array<{ entryId: string; text: string }> }>(response).messages;
+	async getBranchMessages(options?: {
+		activeBranchOnly?: boolean;
+	}): Promise<Array<{ entryId: string; text: string; clientMessageId?: string }>> {
+		const response = await this.#send({ type: "get_branch_messages", ...options });
+		return this.#getData<{ messages: Array<{ entryId: string; text: string; clientMessageId?: string }> }>(response)
+			.messages;
 	}
 
 	/**
@@ -1519,7 +1527,12 @@ export class RpcClient {
 	 * streamed meanwhile. A local-only prompt answered synchronously resolves with
 	 * the events seen so far.
 	 */
-	async promptAndWait(message: string, images?: ImageContent[], timeout = 60000): Promise<AgentEvent[]> {
+	async promptAndWait(
+		message: string,
+		images?: ImageContent[],
+		timeout = 60000,
+		options?: { clientMessageId?: string },
+	): Promise<AgentEvent[]> {
 		const id = `req_${++this.#requestId}`;
 		const events: AgentEvent[] = [];
 		const { promise, resolve, reject } = Promise.withResolvers<AgentEvent[]>();
@@ -1534,7 +1547,7 @@ export class RpcClient {
 		this.#promptErrorWaiters.set(id, reject);
 		let timeoutId: NodeJS.Timeout | undefined;
 		try {
-			const response = await this.#send({ type: "prompt", message, images }, 30_000, id);
+			const response = await this.#send({ type: "prompt", message, images, ...options }, 30_000, id);
 			const data = this.#getData<{ agentInvoked?: boolean } | undefined>(response);
 			if (data?.agentInvoked === false) return events;
 			timeoutId = this.#startTimeout(timeout, () => {

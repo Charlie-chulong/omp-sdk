@@ -543,6 +543,7 @@ type UserMessage struct {
 	LiveSteered      *bool                      `json:"liveSteered,omitempty"`
 	HistoryRewriteAt *float64                   `json:"historyRewriteAt,omitempty"`
 	Attribution      *Attribution               `json:"attribution,omitempty"`
+	ClientMessageID  *string                    `json:"clientMessageId,omitempty"`
 	ProviderPayload  map[string]json.RawMessage `json:"providerPayload,omitempty"`
 	// Extra holds undeclared keys and declared keys whose value did not decode (that field stays zero).
 	// Encoding writes them back, over a declared field with the same key.
@@ -564,6 +565,7 @@ func (v *UserMessage) decodeFrom(raw map[string]json.RawMessage) error {
 	d.optional("liveSteered", &out.LiveSteered)
 	d.optional("historyRewriteAt", &out.HistoryRewriteAt)
 	d.optional("attribution", &out.Attribution)
+	d.optional("clientMessageId", &out.ClientMessageID)
 	d.optional("providerPayload", &out.ProviderPayload)
 	out.Extra = d.rest()
 	if d.err != nil {
@@ -2914,8 +2916,9 @@ func (v *PromoteQueuedMessageResult) decodeFrom(raw map[string]json.RawMessage) 
 
 // Queued user content withdrawn from the queue, as the editor would restore it.
 type RestoredQueuedMessage struct {
-	Text   string         `json:"text"`
-	Images []ImageContent `json:"images,omitempty"`
+	Text            string         `json:"text"`
+	Images          []ImageContent `json:"images,omitempty"`
+	ClientMessageID *string        `json:"clientMessageId,omitempty"`
 }
 
 func (v *RestoredQueuedMessage) UnmarshalJSON(data []byte) error {
@@ -2927,6 +2930,7 @@ func (v *RestoredQueuedMessage) decodeFrom(raw map[string]json.RawMessage) error
 	d := fieldDecoder{raw: raw, owner: "RestoredQueuedMessage"}
 	d.required("text", &out.Text)
 	d.optional("images", &out.Images)
+	d.optional("clientMessageId", &out.ClientMessageID)
 	if d.err != nil {
 		return d.err
 	}
@@ -2963,8 +2967,9 @@ func (v *AbortAndRestoreQueueResult) decodeFrom(raw map[string]json.RawMessage) 
 }
 
 type BranchMessage struct {
-	EntryID string `json:"entryId"`
-	Text    string `json:"text"`
+	EntryID         string  `json:"entryId"`
+	Text            string  `json:"text"`
+	ClientMessageID *string `json:"clientMessageId,omitempty"`
 }
 
 func (v *BranchMessage) UnmarshalJSON(data []byte) error {
@@ -2976,6 +2981,7 @@ func (v *BranchMessage) decodeFrom(raw map[string]json.RawMessage) error {
 	d := fieldDecoder{raw: raw, owner: "BranchMessage"}
 	d.required("entryId", &out.EntryID)
 	d.required("text", &out.Text)
+	d.optional("clientMessageId", &out.ClientMessageID)
 	if d.err != nil {
 		return d.err
 	}
@@ -7847,6 +7853,7 @@ type PromptCommand struct {
 	// Images attached to the message.
 	Images            []ImageContent     `json:"images,omitempty"`
 	StreamingBehavior *StreamingBehavior `json:"streamingBehavior,omitempty"`
+	ClientMessageID   *string            `json:"clientMessageId,omitempty"`
 }
 
 // Prompt sends "prompt": Submit a prompt; acknowledged once admitted, completed by its `prompt_result`.
@@ -7861,7 +7868,8 @@ func (c Commands) Prompt(ctx context.Context, p PromptCommand) (PromptAck, error
 type SteerCommand struct {
 	Message string `json:"message"`
 	// Images attached to the message.
-	Images []ImageContent `json:"images,omitempty"`
+	Images          []ImageContent `json:"images,omitempty"`
+	ClientMessageID *string        `json:"clientMessageId,omitempty"`
 }
 
 // Steer sends "steer": Queue a steering message.
@@ -7873,7 +7881,8 @@ func (c Commands) Steer(ctx context.Context, p SteerCommand) error {
 type FollowUpCommand struct {
 	Message string `json:"message"`
 	// Images attached to the message.
-	Images []ImageContent `json:"images,omitempty"`
+	Images          []ImageContent `json:"images,omitempty"`
+	ClientMessageID *string        `json:"clientMessageId,omitempty"`
 }
 
 // FollowUp sends "follow_up": Queue a follow-up message.
@@ -7915,7 +7924,8 @@ func (c Commands) Abort(ctx context.Context) error {
 type AbortAndPromptCommand struct {
 	Message string `json:"message"`
 	// Images attached to the message.
-	Images []ImageContent `json:"images,omitempty"`
+	Images          []ImageContent `json:"images,omitempty"`
+	ClientMessageID *string        `json:"clientMessageId,omitempty"`
 }
 
 // AbortAndPrompt sends "abort_and_prompt": Abort the current run and submit a prompt; completed by its `prompt_result`.
@@ -8485,10 +8495,15 @@ func (c Commands) SetLabel(ctx context.Context, p SetLabelCommand) error {
 	return c.call(ctx, "set_label", p, 0, nil)
 }
 
+// GetBranchMessagesCommand holds the parameters of "get_branch_messages".
+type GetBranchMessagesCommand struct {
+	ActiveBranchOnly *bool `json:"activeBranchOnly,omitempty"`
+}
+
 // GetBranchMessages sends "get_branch_messages": List user messages that can be branched from.
-func (c Commands) GetBranchMessages(ctx context.Context) ([]BranchMessage, error) {
+func (c Commands) GetBranchMessages(ctx context.Context, p GetBranchMessagesCommand) ([]BranchMessage, error) {
 	var out GetBranchMessagesResult
-	err := c.call(ctx, "get_branch_messages", nil, 0, &out)
+	err := c.call(ctx, "get_branch_messages", p, 0, &out)
 	return out.Messages, err
 }
 

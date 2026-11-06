@@ -49,8 +49,8 @@ export function copyPersistedSessionEntryId(target: AgentMessage, source: AgentM
  *   disambiguate when it is not, e.g. local/dev models).
  * - `toolResult` — timestamp + toolCallId + toolName (toolCallId is unique
  *   per execution; toolName guards against synthetic reuse).
- * - `user` / `developer` — timestamp + attribution (attribution distinguishes
- *   user-typed vs hook-injected at the same wall-clock millisecond).
+ * - `user` — host clientMessageId when present; legacy users and `developer`
+ *   use timestamp + attribution.
  * - `fileMention` — timestamp.
  *
  * Returns `undefined` for message roles that are not persisted through this
@@ -71,6 +71,8 @@ export function sessionMessagePersistenceKey(message: AgentMessage): string | un
 		case "toolResult":
 			return `toolResult:${message.timestamp}:${message.toolCallId}:${message.toolName}`;
 		case "user":
+			if (message.clientMessageId) return `user-client:${message.clientMessageId}`;
+			return `user:${message.timestamp}:${message.attribution ?? ""}`;
 		case "developer":
 			return `${message.role}:${message.timestamp}:${message.attribution ?? ""}`;
 		case "fileMention":

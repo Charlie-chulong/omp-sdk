@@ -265,8 +265,12 @@ export function convertMessageToLlm(message: AgentMessage): Message | undefined 
 	}
 
 	switch (message.role) {
-		case "user":
-			return { ...message, attribution: message.attribution ?? "user" };
+		case "user": {
+			// Host correlation belongs to records/events, never provider input.
+			const { clientMessageId: _clientMessageId, ...llmMessage } = message;
+			llmMessage.attribution ??= "user";
+			return llmMessage;
+		}
 		case "developer":
 			return { ...message, attribution: message.attribution ?? "agent" };
 		case "assistant":

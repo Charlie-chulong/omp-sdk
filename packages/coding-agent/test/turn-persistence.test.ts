@@ -106,6 +106,15 @@ describe("sessionMessagePersistenceKey", () => {
 		expect(sessionMessagePersistenceKey({ ...typed })).toBe(sessionMessagePersistenceKey(typed));
 	});
 
+	test("distinct client submissions at the same instant retain independent persistence slots", () => {
+		const first: AgentMessage = { role: "user", content: "same", timestamp: 1, clientMessageId: "one" };
+		const second: AgentMessage = { ...first, clientMessageId: "two" };
+		const firstKey = sessionMessagePersistenceKey(first)!;
+		const secondKey = sessionMessagePersistenceKey(second)!;
+		expect(planTurnPersistence([firstKey, secondKey], new Set([firstKey]))).toEqual({ kind: "ok", toPersist: [1] });
+		expect(sessionMessagePersistenceKey({ ...first, content: "transformed", timestamp: 2 })).toBe(firstKey);
+	});
+
 	test("returns undefined for non-persistent roles, signaling 'skip the persistence slot path'", () => {
 		// The persistence path (slot chain, pending Map, persistTurnMessages...) is
 		// gated on a defined key — non-persistent message kinds (custom, hook,

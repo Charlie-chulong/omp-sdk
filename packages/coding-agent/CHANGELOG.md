@@ -14,6 +14,7 @@
 - Added explicit runtime resource inventory and release through `AgentSession.getRuntimeResources()` / `releaseRuntimeResource(resourceId)` and RPC `get_runtime_resources` / `release_runtime_resource`, reporting ownership, live handles, retention reasons and releasability; busy/shared resources and background dependencies refuse destructive release.
 - Added `setToolEnabled(name, enabled)` for queued single-tool selection changes that retain concurrently registered tools and unrelated presentation ([#122](https://github.com/iris-cat-dev/omp/issues/122)).
 - Added command-only RPC execution for registered extension commands, with explicit missing-command failure instead of submitting model input ([#129](https://github.com/iris-cat-dev/omp/issues/129)).
+- Added stable client message identities for prompt, steer, follow-up, and branch history so hosts can reconcile transformed or repeated submissions without matching their text.
 - Added queueable compaction: `/compact` sent with the follow-up key (Ctrl+Q) while the agent works now runs when it yields instead of interrupting it ([#17397](https://github.com/can1357/oh-my-pi/pull/17397) by [@H4vC](https://github.com/H4vC))
 
 ### Changed
@@ -35,6 +36,7 @@
 - Fixed and re-enabled `debug` in Node SDK/Desktop sessions, including adapter launch, terminal execution, socket transports, and process cleanup without Bun.
 - Fixed unavailable Mnemopi configurations in the Desktop/core SDK advertising working memory tools; startup now reports all configuration blockers without changing storage, retrieval mode, or remote-service choices ([#125](https://github.com/iris-cat-dev/omp/issues/125)).
 - Fixed conversation rewind leaving retained Python/JavaScript kernels in inventory but routing the next eval to empty replacement kernels; executor identity now follows the stable runtime owner and cwd rather than the branched transcript path.
+- Fixed retained queued steering emitting a terminal completion before the same run resumed; explicit owned-work Stop still clears the queue and finishes terminally.
 - Fixed active shell inventory blocking behind the native run lock until work finished; running shells now report their live execution/PIDs immediately and remain nonreleasable.
 
 - Fixed asynchronous subprocess stdin-close rejections during MCP cleanup and Python kernel shutdown terminating session RPC processes; teardown observes failures without waiting for stalled input.
