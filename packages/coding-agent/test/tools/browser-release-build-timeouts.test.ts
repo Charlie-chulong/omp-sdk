@@ -1,4 +1,5 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, spyOn, test } from "bun:test";
+import * as workerThreads from "node:worker_threads";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { disposeAllVmContexts } from "@oh-my-pi/pi-coding-agent/eval/js/context-manager";
 import { createBrowserPrelude } from "@oh-my-pi/pi-coding-agent/tools/browser";
@@ -81,18 +82,14 @@ describe.skipIf(!CHROMIUM_AVAILABLE)("browser timeouts with release-build class 
 		// The tab worker must share this process's renamed class: worker threads failing to start
 		// puts a tab on the inline worker. bun runs a file's tests one at a time, so no other browser
 		// call is in flight while `Worker` or the class name is replaced.
-		const workerDescriptor = Object.getOwnPropertyDescriptor(globalThis, "Worker")!;
-		Object.defineProperty(globalThis, "Worker", {
-			...workerDescriptor,
-			value: function UnavailableWorker(): never {
-				throw new Error("Worker threads unavailable");
-			},
-		});
+		const unavailable = spyOn(workerThreads, "Worker").mockImplementation((() => {
+			throw new Error("Worker threads unavailable");
+		}) as never);
 		const invoke = createHost();
 		try {
 			await invoke({ action: "open", name: "minified-timeout", url: `${baseUrl}/start` });
 		} finally {
-			Object.defineProperty(globalThis, "Worker", workerDescriptor);
+			unavailable.mockRestore();
 		}
 		expect(getTab("minified-timeout")).toMatchObject({ worker: { mode: "inline" } });
 		const nameDescriptor = Object.getOwnPropertyDescriptor(TimeoutError, "name")!;

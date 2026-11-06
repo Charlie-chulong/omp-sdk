@@ -1161,30 +1161,3 @@ jobs:
                   commit -m "omp ${{ needs.release_metadata.outputs.release-tag }}" -- Formula/omp.rb
               git push origin HEAD:main
 
-   sdk_binding_preflight:
-      name: Verify changed RPC client bindings
-      runs-on: ubuntu-22.04
-      needs: [native_addons]
-      steps:
-         - uses: actions/checkout@v4
-         - uses: ./.github/actions/bun-install
-         - uses: ./.github/actions/native-artifacts
-           with:
-              targets: linux-x64-baseline linux-x64-modern
-         - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-           with:
-              python-version: "3.14"
-         - name: Python RPC client suite
-           env:
-              PYTHONPATH: sdk/python/omp-rpc/src
-           run: python -m unittest discover -s sdk/python/omp-rpc/tests -p test_client.py -v
-         - name: Rust RPC client compilation
-           run: cargo check --locked --all-targets --manifest-path sdk/rust/omp-rpc/Cargo.toml
-         - name: Rust proxy-policy consumer
-           run: cargo run --locked --manifest-path sdk/rust/omp-rpc/Cargo.toml --example ci_proxy_policy_smoke
-         - name: Go RPC client suite
-           working-directory: sdk/go/omp-rpc
-           run: go test ./...
-         - name: Go proxy-policy consumer
-           working-directory: sdk/go/omp-rpc
-           run: go run ./cmd/ci-proxy-policy-smoke

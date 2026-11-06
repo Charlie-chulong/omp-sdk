@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, spyOn } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
@@ -6,10 +6,20 @@ import * as path from "node:path";
 import { IndexedSessionJournal } from "@oh-my-pi/pi-coding-agent/session/indexed-session-journal";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import { FileSessionStorage, type WriteTextAtomicOptions } from "@oh-my-pi/pi-coding-agent/session/session-storage";
+import { getAgentDir, setAgentDir, TempDir } from "@oh-my-pi/pi-utils";
 import { makeAssistantMessage } from "./helpers";
 
+let agentDirectory: TempDir;
+let previousAgentDir: string;
+beforeEach(() => {
+	previousAgentDir = getAgentDir();
+	agentDirectory = TempDir.createSync("@omp-indexed-history-agent-");
+	setAgentDir(agentDirectory.path());
+});
 const directories: string[] = [];
 afterEach(async () => {
+	setAgentDir(previousAgentDir);
+	await agentDirectory.remove();
 	await Promise.all(directories.splice(0).map(directory => fs.rm(directory, { recursive: true, force: true })));
 });
 async function fixture(): Promise<{ directory: string; file: string }> {
@@ -69,11 +79,11 @@ class PausedRewriteStorage extends FileSessionStorage {
 
 describe("indexed historical bodies", () => {
 	it("reads only selected bodies after reopening the durable index", async () => {
-		const { file } = await fixture();
-		await IndexedSessionJournal.open(file);
+		const { directory, file } = await fixture();
+		const originalOwner = await IndexedSessionJournal.open(file);
 		const journal = await IndexedSessionJournal.open(file);
 		expect(journal.getStats().bytesRead).toBe(0);
-		const reference = journal.get("old-19")!;
+		const reference = originalOwner.get("old-19")!;
 		const entry = await journal.readEntry(reference);
 		if (entry.type !== "message" || entry.message.role !== "user") throw new Error("Expected historical user prompt");
 		expect(entry.message.content).toBe(`原始-19-${"x".repeat(400 * 1024)}`);
@@ -83,6 +93,138 @@ describe("indexed historical bodies", () => {
 		expect(journal.getStats().entryBytesRead).toBe(reference.length);
 		expect(journal.getStats().entryEntriesParsed).toBe(1);
 		expect(journal.getStats().residentBodyBytes).toBe(0);
+		expect(await fs.readdir(directory)).toEqual(["history.jsonl"]);
+	});
+
+	it("rebuilds an index with a malformed checksum instead of trusting it as a snapshot address", async () => {
+		const directory = await fs.mkdtemp(path.join(os.tmpdir(), "omp-invalid-journal-digest-"));
+		directories.push(directory);
+		const file = path.join(directory, "history.jsonl");
+		const header = { type: "session", version: 3, id: "digest", timestamp: "2026-01-01T00:00:00Z", cwd: directory };
+		const entry = {
+			type: "message",
+			id: "body",
+			parentId: null,
+			timestamp: "2026-01-01T00:00:01Z",
+			message: { role: "user", timestamp: 1, content: "trusted source body" },
+		} as const;
+		await fs.writeFile(file, `${JSON.stringify(header)}\n${JSON.stringify(entry)}\n`);
+		await IndexedSessionJournal.open(file);
+		const cacheRoot = path.join(getAgentDir(), "cache", "session-journals");
+		const [cacheName] = await fs.readdir(cacheRoot);
+		if (!cacheName) throw new Error("Expected the generated index cache");
+		const cachePath = path.join(cacheRoot, cacheName);
+		const cached: { entries: { checksum: string }[] } = JSON.parse(await fs.readFile(cachePath, "utf8"));
+		cached.entries[0]!.checksum = "../not-a-digest";
+		await fs.writeFile(cachePath, JSON.stringify(cached));
+		const reopened = await IndexedSessionJournal.open(file);
+		expect(await reopened.readEntry(reopened.get("body")!)).toEqual(entry);
+	});
+
+	it("keeps the opening profile's cache root while rekeying a relocated journal", async () => {
+		const { directory, file } = await fixture();
+		const previousAgentDir = getAgentDir();
+		const openingAgentDir = path.join(directory, "opening-profile");
+		const otherAgentDir = path.join(directory, "other-profile");
+		try {
+			setAgentDir(openingAgentDir);
+			const journal = await IndexedSessionJournal.open(file);
+			const cacheRoot = path.join(openingAgentDir, "cache", "session-journals");
+			const originalCacheFiles = await fs.readdir(cacheRoot);
+			expect(originalCacheFiles).toHaveLength(1);
+			setAgentDir(otherAgentDir);
+			journal.setProjection("profile-test", "retained");
+			await journal.save();
+			expect(await fs.readdir(cacheRoot)).toEqual(originalCacheFiles);
+			await expect(fs.stat(otherAgentDir)).rejects.toMatchObject({ code: "ENOENT" });
+
+			const relocated = path.join(directory, "relocated.jsonl");
+			await fs.rename(file, relocated);
+			journal.invalidate(relocated);
+			await journal.refresh();
+			expect(await fs.readdir(cacheRoot)).toHaveLength(2);
+			await expect(fs.stat(otherAgentDir)).rejects.toMatchObject({ code: "ENOENT" });
+
+			setAgentDir(openingAgentDir);
+			const reopened = await IndexedSessionJournal.open(relocated);
+			expect(reopened.getStats().bytesRead).toBe(0);
+			expect(reopened.getProjection("profile-test")).toBeUndefined();
+		} finally {
+			setAgentDir(previousAgentDir);
+		}
+	});
+
+	it("cleans process-owned source snapshots on a cold reader's natural exit", async () => {
+		const { directory, file } = await fixture();
+		const childAgentDir = path.join(directory, "child-agent");
+		const openingAgentDir = getAgentDir();
+		let primed: IndexedSessionJournal;
+		try {
+			setAgentDir(childAgentDir);
+			primed = await IndexedSessionJournal.open(file);
+		} finally {
+			setAgentDir(openingAgentDir);
+		}
+		const expectedSnapshotReads =
+			process.platform === "win32" ? primed.entries.reduce((bytes, entry) => bytes + entry.length, 0) : 0;
+		const script = path.join(directory, "cold-reader.cjs");
+		const journalModule = path.resolve(import.meta.dir, "../../src/session/indexed-session-journal.ts");
+		const dirsModule = path.resolve(import.meta.dir, "../../../utils/src/dirs.ts");
+		await fs.writeFile(
+			script,
+			[
+				"const fs = require('node:fs');",
+				"const path = require('node:path');",
+				`const { IndexedSessionJournal } = require(${JSON.stringify(journalModule)});`,
+				`const { setAgentDir } = require(${JSON.stringify(dirsModule)});`,
+				`setAgentDir(${JSON.stringify(childAgentDir)});`,
+				"const watched = ['uncaughtException', 'unhandledRejection', 'SIGTERM', 'SIGHUP'];",
+				"const before = watched.map(event => process.listenerCount(event));",
+				`const root = path.join(${JSON.stringify(childAgentDir)}, 'cache', 'session-source-snapshots');`,
+				"const existing = new Set(fs.existsSync(root) ? fs.readdirSync(root) : []);",
+				"(async () => {",
+				`  const journal = await IndexedSessionJournal.open(${JSON.stringify(file)});`,
+				"  const stats = journal.getStats();",
+				"  const entry = journal.readEntrySync(journal.get('old-19'));",
+				"  if (entry.type !== 'message' || entry.message.role !== 'user') throw new Error('Missing cold history');",
+				"  const snapshots = fs.existsSync(root) ? fs.readdirSync(root).filter(name => !existing.has(name)).map(name => path.join(root, name)) : [];",
+				"  const after = watched.map(event => process.listenerCount(event));",
+				"  process.stdout.write(JSON.stringify({ before, after, snapshots, stats }));",
+				"})().catch(error => { console.error(error); process.exitCode = 1; });",
+			].join("\n"),
+		);
+		const child = Bun.spawn([process.execPath, script], {
+			stdout: "pipe",
+			stderr: "pipe",
+			env: process.env,
+		});
+		const [stdout, stderr, exitCode] = await Promise.all([
+			new Response(child.stdout).text(),
+			new Response(child.stderr).text(),
+			child.exited,
+		]);
+		expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
+		const result = JSON.parse(stdout) as {
+			before: number[];
+			after: number[];
+			snapshots: string[];
+			stats: { bytesRead: number; entryBytesRead: number; indexBytesRead: number; entriesParsed: number };
+		};
+		expect(result.stats.bytesRead).toBe(expectedSnapshotReads);
+		expect(result.stats.entryBytesRead).toBe(expectedSnapshotReads);
+		expect(result.stats.indexBytesRead).toBe(0);
+		expect(result.stats.entriesParsed).toBe(0);
+		expect(result.after).toEqual(result.before);
+		expect(result.snapshots).toHaveLength(process.platform === "win32" ? 1 : 0);
+		for (const snapshot of result.snapshots) {
+			await expect(fs.stat(snapshot)).rejects.toMatchObject({ code: "ENOENT" });
+		}
+		expect(primed.get("old-19")).toBeDefined();
+		if (process.platform === "win32") {
+			const remainingOwners = await fs.readdir(path.join(childAgentDir, "cache", "session-source-snapshots"));
+			expect(remainingOwners).toHaveLength(1);
+		}
+		expect((await fs.readFile(file, "utf8")).includes("原始-19-")).toBe(true);
 	});
 
 	it("keeps tree/navigation cheap while model context hydrates only the kept tail", async () => {
@@ -168,9 +310,9 @@ describe("indexed historical bodies", () => {
 	it("does not mint an empty owner when an auxiliary index operation reports ENOENT", async () => {
 		const { directory, file } = await fixture();
 		const before = await fs.readFile(file);
-		const indexError = Object.assign(new Error("offset sidecar disappeared before publish"), {
+		const indexError = Object.assign(new Error("offset cache disappeared before publish"), {
 			code: "ENOENT",
-			path: `${file}.index.json.tmp`,
+			path: path.join(directory, "index-cache.tmp"),
 		});
 		const open = spyOn(IndexedSessionJournal, "open").mockRejectedValueOnce(indexError);
 		try {

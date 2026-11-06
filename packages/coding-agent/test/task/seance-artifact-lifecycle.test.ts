@@ -88,19 +88,26 @@ async function waitForWake(session: AgentSession, eventBus: EventBus, id: string
 	expect(await settled).toBe("completed");
 	await session.waitForIdle();
 }
+let agentDirectory: TempDir;
+let previousAgentDir: string;
 
 beforeEach(() => {
+	previousAgentDir = getAgentDir();
+	agentDirectory = TempDir.createSync("@omp-seance-cache-agent-");
+	setAgentDir(agentDirectory.path());
 	AgentLifecycleManager.resetGlobalForTests();
 	AgentRegistry.resetGlobalForTests();
 	IrcBus.resetGlobalForTests();
 });
 
-afterEach(() => {
+afterEach(async () => {
 	AgentLifecycleManager.resetGlobalForTests();
 	AgentRegistry.resetGlobalForTests();
 	IrcBus.resetGlobalForTests();
 	unregisterCustomApis(MOCK_API_SOURCE);
 	vi.restoreAllMocks();
+	setAgentDir(previousAgentDir);
+	await agentDirectory.remove();
 });
 
 describe("seance artifact lifecycle", () => {

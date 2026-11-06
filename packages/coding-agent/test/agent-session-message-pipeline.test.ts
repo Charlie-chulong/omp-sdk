@@ -100,6 +100,7 @@ async function withNativeDialectEnv<T>(fn: () => Promise<T>): Promise<T> {
 
 describe("AgentSession message pipeline", () => {
 	const sessions: AgentSession[] = [];
+	const tempDirs: TempDir[] = [];
 
 	afterEach(async () => {
 		vi.restoreAllMocks();
@@ -107,6 +108,7 @@ describe("AgentSession message pipeline", () => {
 		for (const session of sessions.splice(0)) {
 			await session.dispose();
 		}
+		for (const tempDir of tempDirs.splice(0)) tempDir.removeSync();
 	});
 
 	function sideSession(chunks: string[], finalFlush = false): AgentSession {
@@ -2991,7 +2993,8 @@ describe("AgentSession message pipeline", () => {
 	});
 
 	it("clears promoted memory from the base prompt when switching sessions", async () => {
-		using tempDir = TempDir.createSync("@pi-injected-memory-switch-");
+		const tempDir = TempDir.createSync("@pi-injected-memory-switch-");
+		tempDirs.push(tempDir);
 		const sessionManager = SessionManager.create(tempDir.path(), tempDir.join("sessions"));
 		const firstSessionFile = sessionManager.getSessionFile();
 		expect(firstSessionFile).toBeString();
@@ -3189,7 +3192,8 @@ describe("AgentSession message pipeline", () => {
 	});
 
 	it("does not duplicate promoted memory in the base prompt when forking", async () => {
-		using tempDir = TempDir.createSync("@pi-injected-memory-fork-");
+		const tempDir = TempDir.createSync("@pi-injected-memory-fork-");
+		tempDirs.push(tempDir);
 		const sessionManager = SessionManager.create(tempDir.path(), tempDir.join("sessions"));
 		expect(sessionManager.getSessionFile()).toBeString();
 		await sessionManager.flush();

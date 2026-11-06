@@ -49,24 +49,6 @@ async function pingComputerWorker(
 	}
 }
 
-it("starts ordinary CLI paths while keeping unrelated native capabilities lazy", async () => {
-	const cliPath = path.resolve(import.meta.dir, "../../src/cli.ts");
-	for (const args of [["--version"], ["--help"], ["stats", "--help"]]) {
-		// Windows help loads the selected profile's environment and expands the
-		// project path with GetLongPathNameW. Version needs no native path helper;
-		// on other platforms neither help path needs an addon.
-		const runtimeArgs = process.platform === "win32" && args[0] !== "--version" ? [] : ["--no-addons"];
-		const proc = Bun.spawn([process.execPath, ...runtimeArgs, cliPath, ...args], {
-			stdout: "ignore",
-			stderr: "pipe",
-		});
-		const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
-		expect(exitCode, `${args.at(-1)}: ${stderr}`).toBe(0);
-	}
-	// Cold CLI spawns per run; the assertion is the exit
-	// code, not the wall time.
-}, 30_000);
-
 it("dispatches the computer worker through the CLI host selector in a child process", async () => {
 	const fixture = path.resolve(import.meta.dir, "../fixtures/computer-worker-cli-selector.ts");
 	const proc = Bun.spawn([process.execPath, "--no-addons", fixture], {

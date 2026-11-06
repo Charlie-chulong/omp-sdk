@@ -598,6 +598,8 @@ export interface ExecutorOptions {
 	onCleanupDeferred?: (completion: Promise<void>) => void;
 	/** Releases resources retained for a kept-alive agent when its lifecycle ends. */
 	onRelease?: () => Promise<void>;
+	/** Receipt that the lifecycle manager has adopted this exact agent and its release callback. */
+	onLifecycleAdopted?: () => void;
 	/**
 	 * Takes over releasing the run's IRC wake hold (see `AgentSession.holdIrcWakes`),
 	 * for a caller that must finish with the agent's workspace before a held
@@ -3557,6 +3559,7 @@ export async function finalizeSubagentLifecycle(args: {
 	cleanupDeadlineAt?: number;
 	onCleanupDeferred?: (completion: Promise<void>) => void;
 	onRelease?: () => Promise<void>;
+	onLifecycleAdopted?: () => void;
 }): Promise<void> {
 	const registry = AgentRegistry.global();
 	const ref = registry.get(args.id);
@@ -3660,6 +3663,7 @@ export async function finalizeSubagentLifecycle(args: {
 		},
 		ref,
 	);
+	if (AgentLifecycleManager.global().has(args.id, ref)) args.onLifecycleAdopted?.();
 }
 
 /** Options for {@link runSubagentFollowUpTurn}. */
@@ -5135,6 +5139,7 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 					reviveSession,
 					cleanupDeadlineAt,
 					onRelease: options.onRelease,
+					onLifecycleAdopted: options.onLifecycleAdopted,
 					onCleanupDeferred: completion => {
 						deferredSessionShutdown = completion;
 						deferCleanup(completion);

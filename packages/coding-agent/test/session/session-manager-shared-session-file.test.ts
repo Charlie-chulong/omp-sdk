@@ -1,12 +1,24 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { readSessionHeaderId } from "@oh-my-pi/pi-coding-agent/session/session-loader";
 import { SessionManager, type SessionPersistenceNotice } from "@oh-my-pi/pi-coding-agent/session/session-manager";
 import { FileSessionStorage, tryAcquireSessionLease } from "@oh-my-pi/pi-coding-agent/session/session-storage";
-import { TempDir } from "@oh-my-pi/pi-utils";
+import { getAgentDir, setAgentDir, TempDir } from "@oh-my-pi/pi-utils";
 
 const SESSION_MANAGER_MODULE = path.join(import.meta.dir, "../../src/session/session-manager.ts");
+
+let agentDirectory: TempDir;
+let previousAgentDir: string;
+beforeEach(() => {
+	previousAgentDir = getAgentDir();
+	agentDirectory = TempDir.createSync("@omp-shared-session-agent-");
+	setAgentDir(agentDirectory.path());
+});
+afterEach(async () => {
+	setAgentDir(previousAgentDir);
+	await agentDirectory.remove();
+});
 
 /** What the other process reports after each command. */
 interface OtherProcessState {
@@ -378,6 +390,11 @@ describe("SessionManager on a session file another omp process writes", () => {
 	it("does not append into another session that was moved onto the path after this manager opened it", async () => {
 		using tempDir = TempDir.createSync("@omp-shared-session-file-");
 		const original = await createSession(tempDir);
+		const seed = await SessionManager.open(original, tempDir.path(), new FileSessionStorage(), {
+			suppressBreadcrumb: true,
+		});
+		seed.appendMessage(userTurn("original-only"));
+		await seed.close();
 		// Opened, not yet written: this manager holds no lease.
 		const ours = await SessionManager.open(original, tempDir.path(), new FileSessionStorage(), {
 			suppressBreadcrumb: true,
@@ -392,7 +409,12 @@ describe("SessionManager on a session file another omp process writes", () => {
 			ours.appendMessage(userTurn("ours"));
 			await ours.flush();
 			expect(notices.map(n => n.reason)).toEqual(["open-elsewhere"]);
-			expect(await userTurnsIn(original, tempDir.path())).not.toContain("ours");
+			expect(await userTurnsIn(original, tempDir.path())).toEqual(["before", "theirs"]);
+			const sibling = ours.getSessionFile();
+			if (!sibling || sibling === original) throw new Error("Expected a separate durable sibling");
+			expect(await userTurnsIn(sibling, tempDir.path())).toEqual(["before", "original-only", "ours"]);
+			const stats = ours.getHistoryRetentionStats();
+			expect(stats.residentBodyBytes).toBeLessThanOrEqual(stats.maxBytes);
 		} finally {
 			await ours.close();
 			await other.close();

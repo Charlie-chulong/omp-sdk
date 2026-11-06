@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { getAgentDir, logger, TempDir } from "@oh-my-pi/pi-utils";
+import { BLOB_HASH_RE, BlobStore } from "./blob-store";
 import type { FileEntry, SessionHeader } from "./session-entries";
 import { parseTitleSlotLine, titleUpdateFromSlot, type SessionTitleUpdate } from "./session-title-slot";
 
@@ -46,6 +48,131 @@ interface JournalIndex {
 	projections: Record<string, unknown>;
 	prefixHash: string;
 	prefixBytes: number;
+}
+
+const journalSourceRegistry = new FinalizationRegistry<number>(fd => {
+	fs.closeSync(fd);
+});
+
+function unavailableCache(error: unknown): error is NodeJS.ErrnoException {
+	return ["EACCES", "EPERM", "EROFS", "ENOSPC", "EDQUOT", "ENOTDIR"].includes(
+		(error as NodeJS.ErrnoException).code ?? "",
+	);
+}
+
+const snapshotStores = new Map<string, WeakRef<JournalSnapshots>>();
+const snapshotExitDirectories = new Set<TempDir>();
+function removeSnapshotsAtExit(): void {
+	for (const directory of snapshotExitDirectories) {
+		try {
+			directory.removeSync();
+		} catch (error) {
+			logger.warn("Session source snapshot exit cleanup failed", { error });
+		}
+	}
+	snapshotExitDirectories.clear();
+}
+function ownSnapshotDirectory(directory: TempDir): () => void {
+	if (snapshotExitDirectories.size === 0) process.once("exit", removeSnapshotsAtExit);
+	snapshotExitDirectories.add(directory);
+	return () => {
+		snapshotExitDirectories.delete(directory);
+		if (snapshotExitDirectories.size === 0) process.off("exit", removeSnapshotsAtExit);
+	};
+}
+const snapshotRegistry = new FinalizationRegistry<{
+	root: string;
+	ref: WeakRef<JournalSnapshots>;
+	directory: TempDir;
+	cancelExit: () => void;
+}>(owned => {
+	owned.cancelExit();
+	if (snapshotStores.get(owned.root) === owned.ref) snapshotStores.delete(owned.root);
+	void owned.directory.remove().catch(error => logger.warn("Session source snapshot cleanup failed", { error }));
+});
+
+/** Process-owned immutable record copies; never user artifacts or globally collected image blobs. */
+class JournalSnapshots {
+	readonly #stored = new Set<string>();
+	readonly #blobs: BlobStore | undefined;
+	error: Error | undefined;
+
+	constructor(root: string) {
+		try {
+			fs.mkdirSync(root, { recursive: true });
+			const directory = TempDir.createSync(path.join(root, "source-snapshots-"));
+			this.#blobs = new BlobStore(directory.path());
+			const cancelExit = ownSnapshotDirectory(directory);
+			const ref = new WeakRef(this);
+			snapshotStores.set(root, ref);
+			snapshotRegistry.register(this, { root, ref, directory, cancelExit });
+		} catch (error) {
+			if (!unavailableCache(error)) throw error;
+			this.error = error;
+		}
+	}
+	has(checksum: string): boolean {
+		return this.#stored.has(checksum);
+	}
+	capture(bytes: Buffer, checksum: string): void {
+		if (this.error || this.has(checksum)) return;
+		try {
+			this.#blobs!.putSync(bytes, { hash: checksum });
+			this.#stored.add(checksum);
+		} catch (error) {
+			if (!unavailableCache(error)) throw error;
+			this.error = error;
+		}
+	}
+	read(ref: IndexedSessionEntry): Buffer {
+		let bytes: Buffer | null | undefined;
+		try {
+			bytes = this.#blobs?.getSync(ref.checksum);
+		} catch (error) {
+			if (!unavailableCache(error)) throw error;
+			this.error = error;
+		}
+		if (!bytes)
+			throw new Error(`Session entry ${ref.id} source was replaced and its protected snapshot is unavailable`, {
+				cause: this.error,
+			});
+		if (bytes.length !== ref.length && bytes.length + 1 !== ref.length)
+			throw new Error(`Session entry ${ref.id} protected snapshot was truncated`);
+		return bytes;
+	}
+}
+
+function windowsSnapshots(root: string): JournalSnapshots | undefined {
+	if (process.platform !== "win32") return undefined;
+	const snapshotRoot = path.join(path.dirname(root), "session-source-snapshots");
+	return snapshotStores.get(snapshotRoot)?.deref() ?? new JournalSnapshots(snapshotRoot);
+}
+
+/** POSIX retains an inode; Windows retains immutable records without blocking standard rename. */
+class JournalSource {
+	readonly fd: number | undefined;
+	readonly identity: JournalStamp;
+	sessionId: string | undefined;
+
+	constructor(
+		readonly filePath: string,
+		readonly snapshots: JournalSnapshots | undefined,
+		windowsFd?: number,
+	) {
+		if (process.platform === "win32") {
+			if (windowsFd === undefined) throw new Error("Windows journal source requires an open identity probe");
+			this.identity = stamp(fs.fstatSync(windowsFd));
+			return;
+		}
+		this.fd = fs.openSync(filePath, "r");
+		try {
+			this.identity = stamp(fs.fstatSync(this.fd));
+		} catch (error) {
+			fs.closeSync(this.fd);
+			throw error;
+		}
+		journalSourceRegistry.register(this, this.fd);
+	}
 }
 const PAYLOAD_KEYS: Record<string, true> = {
 	message: true,
@@ -128,9 +255,12 @@ function reference(
 	};
 }
 
-/** Shared SDK/daemon byte-offset journal. Sidecars are disposable, atomically replaced metadata. */
+/** Shared SDK/daemon byte-offset journal with disposable, atomically replaced cache metadata. */
 export class IndexedSessionJournal {
 	filePath: string;
+	readonly #cacheRoot = path.join(getAgentDir(), "cache", "session-journals");
+	readonly #snapshots = windowsSnapshots(this.#cacheRoot);
+	#source: JournalSource | undefined;
 	#index!: JournalIndex;
 	#byId = new Map<string, IndexedSessionEntry>();
 	#bytesRead = 0;
@@ -156,6 +286,10 @@ export class IndexedSessionJournal {
 	}
 	get entries(): readonly IndexedSessionEntry[] {
 		return this.#index.entries;
+	}
+	get source(): JournalSource {
+		if (!this.#source) throw new Error("Session journal has not been opened");
+		return this.#source;
 	}
 	get header(): SessionHeader | undefined {
 		return this.#index.header;
@@ -217,20 +351,29 @@ export class IndexedSessionJournal {
 		this.#dirty = true;
 		this.#revision++;
 	}
+	#indexPath(): string {
+		const key = createHash("sha256").update(this.filePath).digest("hex");
+		return path.join(this.#cacheRoot, `${key}.json`);
+	}
 	save(): Promise<void> {
 		const operation = this.#saveTail.then(async () => {
 			if (!this.#dirty) return;
 			const revision = this.#revision;
-			const destination = `${this.filePath}.index.json`;
+			const destination = this.#indexPath();
 			const temp = `${destination}.${process.pid}.${revision}.${randomUUID()}.tmp`;
 			const content = JSON.stringify(this.#index);
 			try {
+				await fs.promises.mkdir(path.dirname(destination), { recursive: true });
 				await fs.promises.writeFile(temp, content);
 				await fs.promises.rename(temp, destination);
 				if (revision === this.#revision) this.#dirty = false;
 			} catch (error) {
-				await fs.promises.rm(temp, { force: true });
-				if (!["EACCES", "EROFS", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+				try {
+					await fs.promises.rm(temp, { force: true });
+				} catch (cleanupError) {
+					if ((cleanupError as NodeJS.ErrnoException).code !== "ENOTDIR") throw cleanupError;
+				}
+				if (!unavailableCache(error)) throw error;
 			}
 		});
 		this.#saveTail = operation.catch(() => {});
@@ -239,7 +382,7 @@ export class IndexedSessionJournal {
 	async refresh(): Promise<void> {
 		if (!this.#index) {
 			try {
-				const cached: unknown = JSON.parse(await fs.promises.readFile(`${this.filePath}.index.json`, "utf8"));
+				const cached: unknown = JSON.parse(await fs.promises.readFile(this.#indexPath(), "utf8"));
 				if (
 					record(cached) &&
 					cached.version === 1 &&
@@ -255,6 +398,7 @@ export class IndexedSessionJournal {
 							typeof entry.id === "string" &&
 							typeof entry.type === "string" &&
 							typeof entry.checksum === "string" &&
+							BLOB_HASH_RE.test(entry.checksum) &&
 							Number.isSafeInteger(entry.offset) &&
 							Number.isSafeInteger(entry.length) &&
 							(entry.offset as number) >= 0 &&
@@ -268,7 +412,7 @@ export class IndexedSessionJournal {
 			} catch (error) {
 				if (
 					!(error instanceof SyntaxError) &&
-					!["ENOENT", "EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")
+					!["ENOENT", "EACCES", "EPERM", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")
 				)
 					throw error;
 			}
@@ -277,77 +421,99 @@ export class IndexedSessionJournal {
 		await this.save();
 	}
 	refreshSync(): void {
-		const current = stamp(fs.statSync(this.filePath));
-		if (this.#index && same(this.#index.stamp, current)) {
-			if (this.#byId.size === 0) this.#rebuildLookup();
-			return;
-		}
-		const previous = this.#index;
-		// A size increase is append-only only if the old final record is unchanged.
-		// Atomic replacement, truncation, title-slot edit, and in-place rewrite rebuild.
-		const append =
-			previous &&
-			previous.stamp.dev === current.dev &&
-			previous.stamp.ino === current.ino &&
-			current.size > previous.stamp.size &&
-			this.#prefixUnchanged(previous);
-		if (!append)
-			this.#index = {
-				version: 1,
-				stamp: current,
-				completeBytes: 0,
-				entries: [],
-				malformedRecords: 0,
-				generation: `${current.dev}:${current.ino}:${current.ctimeMs}`,
-				projections: {},
-				prefixHash: "",
-				prefixBytes: 0,
-			};
-		const start = this.#index.completeBytes;
-		const fd = fs.openSync(this.filePath, "r");
+		const windowsFd = process.platform === "win32" ? fs.openSync(this.filePath, "r") : undefined;
 		try {
-			const buffer = Buffer.allocUnsafe(CHUNK_BYTES);
-			let pending: Buffer[] = [];
-			let pendingBytes = 0;
-			let position = start;
-			let recordStart = start;
-			while (position < current.size) {
-				const bytes = fs.readSync(fd, buffer, 0, Math.min(buffer.length, current.size - position), position);
-				if (!bytes) break;
-				this.#bytesRead += bytes;
-				let from = 0;
-				for (let index = 0; index < bytes; index++) {
-					if (buffer[index] !== 10) continue;
-					const part = buffer.subarray(from, index);
-					const line = pendingBytes ? Buffer.concat([...pending, part], pendingBytes + part.length) : part;
-					this.#consume(line, recordStart, position + index + 1 - recordStart);
-					recordStart = position + index + 1;
-					pending = [];
-					pendingBytes = 0;
-					from = index + 1;
-				}
-				if (from < bytes) {
-					const rest = Buffer.from(buffer.subarray(from, bytes));
-					pending.push(rest);
-					pendingBytes += rest.length;
-				}
-				position += bytes;
+			let current = stamp(windowsFd === undefined ? fs.statSync(this.filePath) : fs.fstatSync(windowsFd));
+			if (!this.#source || this.#source.identity.dev !== current.dev || this.#source.identity.ino !== current.ino) {
+				this.#source = new JournalSource(this.filePath, this.#snapshots, windowsFd);
+				current = this.#source.identity;
 			}
-			this.#index.completeBytes = recordStart;
-			// A valid final record without LF is visible, but must be replaced on append.
-			if (pendingBytes) this.#consume(Buffer.concat(pending, pendingBytes), recordStart, pendingBytes);
-			const prefix = Buffer.allocUnsafe(Math.min(4096, current.size));
-			const prefixBytes = fs.readSync(fd, prefix, 0, prefix.length, 0);
-			this.#bytesRead += prefixBytes;
-			this.#index.prefixHash = createHash("sha256").update(prefix.subarray(0, prefixBytes)).digest("hex");
-			this.#index.prefixBytes = prefixBytes;
+			if (this.#index && same(this.#index.stamp, current)) {
+				if (this.#byId.size === 0) this.#rebuildLookup();
+				this.source.sessionId ??= this.#index.header?.id;
+				this.#captureMissingSnapshots(windowsFd);
+				return;
+			}
+			const previous = this.#index;
+			// A size increase is append-only only if the old final record is unchanged.
+			// Atomic replacement, truncation, title-slot edit, and in-place rewrite rebuild.
+			const append =
+				previous &&
+				previous.stamp.dev === current.dev &&
+				previous.stamp.ino === current.ino &&
+				current.size > previous.stamp.size &&
+				this.#prefixUnchanged(previous);
+			if (!append)
+				this.#index = {
+					version: 1,
+					stamp: current,
+					completeBytes: 0,
+					entries: [],
+					malformedRecords: 0,
+					generation: `${current.dev}:${current.ino}:${current.ctimeMs}`,
+					projections: {},
+					prefixHash: "",
+					prefixBytes: 0,
+				};
+			const start = this.#index.completeBytes;
+			const fd = windowsFd ?? this.source.fd!;
+			{
+				const buffer = Buffer.allocUnsafe(CHUNK_BYTES);
+				let pending: Buffer[] = [];
+				let pendingBytes = 0;
+				let position = start;
+				let recordStart = start;
+				while (position < current.size) {
+					const bytes = fs.readSync(fd, buffer, 0, Math.min(buffer.length, current.size - position), position);
+					if (!bytes) break;
+					this.#bytesRead += bytes;
+					let from = 0;
+					for (let index = 0; index < bytes; index++) {
+						if (buffer[index] !== 10) continue;
+						const part = buffer.subarray(from, index);
+						const line = pendingBytes ? Buffer.concat([...pending, part], pendingBytes + part.length) : part;
+						this.#consume(line, recordStart, position + index + 1 - recordStart);
+						recordStart = position + index + 1;
+						pending = [];
+						pendingBytes = 0;
+						from = index + 1;
+					}
+					if (from < bytes) {
+						const rest = Buffer.from(buffer.subarray(from, bytes));
+						pending.push(rest);
+						pendingBytes += rest.length;
+					}
+					position += bytes;
+				}
+				this.#index.completeBytes = recordStart;
+				// A valid final record without LF is visible, but must be replaced on append.
+				if (pendingBytes) this.#consume(Buffer.concat(pending, pendingBytes), recordStart, pendingBytes);
+				const prefix = Buffer.allocUnsafe(Math.min(4096, current.size));
+				const prefixBytes = fs.readSync(fd, prefix, 0, prefix.length, 0);
+				this.#bytesRead += prefixBytes;
+				this.#index.prefixHash = createHash("sha256").update(prefix.subarray(0, prefixBytes)).digest("hex");
+				this.#index.prefixBytes = prefixBytes;
+			}
+			this.#index.stamp = current;
+			this.#dirty = true;
+			this.#revision++;
+			this.#rebuildLookup();
+			this.source.sessionId ??= this.#index.header?.id;
 		} finally {
-			fs.closeSync(fd);
+			if (windowsFd !== undefined) fs.closeSync(windowsFd);
 		}
-		this.#index.stamp = current;
-		this.#dirty = true;
-		this.#revision++;
-		this.#rebuildLookup();
+	}
+	#captureMissingSnapshots(fd: number | undefined): void {
+		if (fd === undefined || !this.#snapshots || this.#snapshots.error) return;
+		for (const ref of this.entries) {
+			if (this.#snapshots.has(ref.checksum)) continue;
+			const bytes = this.#readFdBytes(ref, fd);
+			const payload = bytes[bytes.length - 1] === 10 ? bytes.subarray(0, -1) : bytes;
+			if (createHash("sha256").update(payload).digest("hex") !== ref.checksum)
+				throw new Error(`Session entry ${ref.id} source version is stale`);
+			this.#snapshots.capture(payload, ref.checksum);
+			if (this.#snapshots.error) break;
+		}
 	}
 	#prefixUnchanged(previous: JournalIndex): boolean {
 		if (previous.completeBytes !== previous.stamp.size) return false;
@@ -378,70 +544,98 @@ export class IndexedSessionJournal {
 		}
 	}
 	#consume(bytes: Uint8Array, offset: number, length: number): void {
-		const line = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("utf8");
+		const payload = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+		const line = payload.toString("utf8");
 		if (!line.trim()) return;
 		const title = offset === 0 ? titleUpdateFromSlot(parseTitleSlotLine(line)) : undefined;
 		if (title) {
 			this.#index.titleSlot = title;
 			return;
 		}
+		let entry: unknown;
 		try {
-			const entry: unknown = JSON.parse(line);
-			this.#entriesParsed++;
-			if (!record(entry) || typeof entry.id !== "string" || typeof entry.type !== "string") {
-				this.#index.malformedRecords++;
-				return;
-			}
-			if (!this.#index.header && this.#index.entries.length === 0 && entry.type === "session") {
-				this.#index.header = entry as unknown as SessionHeader;
-				const slot = this.#index.titleSlot;
-				if (slot) {
-					if (slot.title) this.#index.header.title = slot.title;
-					else delete this.#index.header.title;
-					if (slot.source) this.#index.header.titleSource = slot.source;
-					else delete this.#index.header.titleSource;
-				}
-			} else
-				this.#index.entries.push(
-					reference(entry, offset, length, createHash("sha256").update(bytes).digest("hex")),
-				);
+			entry = JSON.parse(line);
 		} catch {
 			this.#index.malformedRecords++;
+			return;
+		}
+		this.#entriesParsed++;
+		if (!record(entry) || typeof entry.id !== "string" || typeof entry.type !== "string") {
+			this.#index.malformedRecords++;
+			return;
+		}
+		if (!this.#index.header && this.#index.entries.length === 0 && entry.type === "session") {
+			this.#index.header = entry as unknown as SessionHeader;
+			const slot = this.#index.titleSlot;
+			if (slot) {
+				if (slot.title) this.#index.header.title = slot.title;
+				else delete this.#index.header.title;
+				if (slot.source) this.#index.header.titleSource = slot.source;
+				else delete this.#index.header.titleSource;
+			}
+		} else {
+			const checksum = createHash("sha256").update(bytes).digest("hex");
+			this.#index.entries.push(reference(entry, offset, length, checksum));
+			this.#snapshots?.capture(payload, checksum);
 		}
 	}
 	#rebuildLookup(): void {
 		this.#byId.clear();
 		for (const entry of this.entries) this.#byId.set(entry.id, entry);
 	}
-	readEntrySync(ref: IndexedSessionEntry, filePath = this.filePath): FileEntry {
-		// Another writer can atomically replace the source (including inserting a
-		// title slot) before a lazy rewrite consumer reaches this record. Resolve
-		// its ID against the current source before using any old byte offset.
-		if (filePath === this.filePath) this.refreshSync();
-		const current = filePath === this.filePath ? this.#byId.get(ref.id) : ref;
+	readEntrySync(ref: IndexedSessionEntry): FileEntry {
+		// Resolve current offsets after another writer's atomic replacement.
+		this.refreshSync();
+		const current = this.#byId.get(ref.id);
 		if (!current) throw new Error(`Session entry ${ref.id} is no longer present in its source`);
-		const fd = fs.openSync(filePath, "r");
+		return this.readSourceEntrySync(current, this.source);
+	}
+	readSourceEntrySync(ref: IndexedSessionEntry, source: JournalSource): FileEntry {
+		if (source.fd !== undefined) return this.#parseEntry(ref, this.#readFdBytes(ref, source.fd));
+		let fd: number;
 		try {
-			const bytes = Buffer.allocUnsafe(current.length);
-			let read = 0;
-			while (read < bytes.length) {
-				const count = fs.readSync(fd, bytes, read, bytes.length - read, current.offset + read);
-				if (!count) throw new Error(`Session entry ${ref.id} was truncated`);
-				read += count;
-				this.#bytesRead += count;
-				this.#entryBytesRead += count;
-			}
-			this.#entriesParsed++;
-			this.#entryEntriesParsed++;
-			const entry = JSON.parse(bytes.toString("utf8")) as FileEntry;
-			if (entry.id !== ref.id) throw new Error(`Session entry ${ref.id} index is stale`);
-			const payload = bytes[bytes.length - 1] === 10 ? bytes.subarray(0, -1) : bytes;
-			if (createHash("sha256").update(payload).digest("hex") !== current.checksum)
-				throw new Error(`Session entry ${ref.id} source version is stale`);
-			return entry;
+			fd = fs.openSync(source.filePath, "r");
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+			return this.#readProtectedSnapshot(ref, source);
+		}
+		try {
+			const identity = stamp(fs.fstatSync(fd));
+			if (identity.dev !== source.identity.dev || identity.ino !== source.identity.ino)
+				return this.#readProtectedSnapshot(ref, source);
+			return this.#parseEntry(ref, this.#readFdBytes(ref, fd));
 		} finally {
 			fs.closeSync(fd);
 		}
+	}
+	#readProtectedSnapshot(ref: IndexedSessionEntry, source: JournalSource): FileEntry {
+		if (!source.snapshots) throw new Error(`Session entry ${ref.id} has no protected source snapshot`);
+		const bytes = source.snapshots.read(ref);
+		this.#bytesRead += bytes.length;
+		this.#entryBytesRead += bytes.length;
+		return this.#parseEntry(ref, bytes);
+	}
+	#readFdBytes(ref: IndexedSessionEntry, fd: number): Buffer {
+		const bytes = Buffer.allocUnsafe(ref.length);
+		let read = 0;
+		while (read < bytes.length) {
+			const count = fs.readSync(fd, bytes, read, bytes.length - read, ref.offset + read);
+			if (!count) throw new Error(`Session entry ${ref.id} was truncated`);
+			read += count;
+			this.#bytesRead += count;
+			this.#entryBytesRead += count;
+		}
+		return bytes;
+	}
+	#parseEntry(ref: IndexedSessionEntry, bytes: Buffer): FileEntry {
+		this.#entriesParsed++;
+		this.#entryEntriesParsed++;
+		const entry = JSON.parse(bytes.toString("utf8")) as FileEntry;
+		if (entry.id !== ref.id) throw new Error(`Session entry ${ref.id} index is stale`);
+		const payload = bytes[bytes.length - 1] === 10 ? bytes.subarray(0, -1) : bytes;
+		if (createHash("sha256").update(payload).digest("hex") !== ref.checksum)
+			throw new Error(`Session entry ${ref.id} source version is stale`);
+		return entry;
 	}
 	async readEntry(ref: IndexedSessionEntry): Promise<FileEntry> {
 		this.refreshSync();
@@ -498,7 +692,7 @@ interface ColdPath {
 }
 interface ColdHandle {
 	ref: IndexedSessionEntry;
-	sourceFilePath: string;
+	source: JournalSource;
 	pinned?: ColdBody;
 	message?: object;
 }
@@ -588,12 +782,18 @@ export class SessionEntryBodyCache {
 		return true;
 	}
 	#read(handle: ColdHandle): FileEntry {
-		// A full fork can drop a branch while callers still hold its entry/tree.
-		// Its original durable journal remains the source for those path views.
-		this.journal.refreshSync();
-		const current = this.journal.get(handle.ref.id);
-		if (current) return this.journal.readEntrySync(current);
-		return this.journal.readEntrySync(handle.ref, handle.sourceFilePath);
+		// Retained POSIX sources or Windows record snapshots preserve dropped
+		// branches and replaced paths without keeping unbounded history in memory.
+		try {
+			this.journal.refreshSync();
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+			return this.journal.readSourceEntrySync(handle.ref, handle.source);
+		}
+		const current = this.journal.header?.id === handle.source.sessionId ? this.journal.get(handle.ref.id) : undefined;
+		return current
+			? this.journal.readSourceEntrySync(current, this.journal.source)
+			: this.journal.readSourceEntrySync(handle.ref, handle.source);
 	}
 	#body(handle: ColdHandle): ColdBody {
 		if (handle.pinned) return handle.pinned;
@@ -738,10 +938,10 @@ export class SessionEntryBodyCache {
 		const existing = this.#handles.get(entry);
 		if (existing && this.isCold(entry)) {
 			existing.ref = ref;
-			existing.sourceFilePath = this.journal.filePath;
+			existing.source = this.journal.source;
 			return entry;
 		}
-		const handle: ColdHandle = { ref, sourceFilePath: this.journal.filePath };
+		const handle: ColdHandle = { ref, source: this.journal.source };
 		this.#handles.set(entry, handle);
 		const target = entry as unknown as Record<string, unknown>;
 		const messagePath: ColdPath = { key: "message" };

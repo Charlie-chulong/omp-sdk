@@ -1,4 +1,4 @@
-import { expect, it } from "bun:test";
+import { afterEach, beforeEach, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -9,6 +9,19 @@ import {
 	SessionEntryBodyCache,
 } from "@oh-my-pi/pi-coding-agent/session/indexed-session-journal";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
+import { getAgentDir, setAgentDir, TempDir } from "@oh-my-pi/pi-utils";
+
+let agentDirectory: TempDir;
+let previousAgentDir: string;
+beforeEach(() => {
+	previousAgentDir = getAgentDir();
+	agentDirectory = TempDir.createSync("@omp-indexed-sync-agent-");
+	setAgentDir(agentDirectory.path());
+});
+afterEach(async () => {
+	setAgentDir(previousAgentDir);
+	await agentDirectory.remove();
+});
 
 const ENTRY_COUNT = 1520;
 const BODY_BYTES = 400 * 1024;
@@ -121,7 +134,7 @@ it("bounds a consuming synchronous job and keeps evicted nested views coherent t
 	}
 }, 120_000);
 
-it("keeps a dropped fork view readable but rejects rewritten, misidentified, or truncated source bytes", async () => {
+it("retains a dropped view's file identity and rejects mutations of those original source bytes", async () => {
 	const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "omp-indexed-source-version-"));
 	const file = path.join(directory, "source.jsonl");
 	const fork = path.join(directory, "fork.jsonl");
@@ -146,9 +159,7 @@ it("keeps a dropped fork view readable but rejects rewritten, misidentified, or 
 		expect(journal.getStats().entryEntriesParsed - beforeFallback.entryEntriesParsed).toBe(1);
 		expect(cache.getStats().residentBodyBytes).toBe(0);
 
-		const replacement = path.join(directory, "replacement.jsonl");
-		await fs.promises.writeFile(replacement, header + line.replace("original", "replaced"));
-		await fs.promises.rename(replacement, file);
+		await fs.promises.writeFile(file, header + line.replace("original", "replaced"));
 		const beforeRewrite = journal.getStats();
 		expect(() => held.text).toThrow("source version is stale");
 		expect(journal.getStats().entryBytesRead - beforeRewrite.entryBytesRead).toBe(reference.length);
@@ -162,7 +173,70 @@ it("keeps a dropped fork view readable but rejects rewritten, misidentified, or 
 		expect(() => held.text).toThrow("was truncated");
 		expect(journal.getStats().entryBytesRead - beforeTruncate.entryBytesRead).toBe(remainingBytes);
 		expect(journal.getStats().entryEntriesParsed).toBe(beforeTruncate.entryEntriesParsed);
+
+		await fs.promises.writeFile(file, header + line);
+		let protectedBacking: string;
+		if (process.platform === "win32") {
+			const root = path.join(agentDirectory.path(), "cache", "session-source-snapshots");
+			const [ownedDirectory] = await fs.promises.readdir(root);
+			if (!ownedDirectory) throw new Error("Expected an owned source snapshot directory");
+			protectedBacking = path.join(root, ownedDirectory, reference.checksum);
+		} else {
+			protectedBacking = path.join(directory, "original-inode.jsonl");
+			await fs.promises.link(file, protectedBacking);
+		}
+		const replacement = path.join(directory, "replacement.jsonl");
+		await fs.promises.writeFile(replacement, header + line.replace("original", "replaced"));
+		await fs.promises.rename(replacement, file);
+		expect(held.text).toBe("original");
+		expect(cache.getStats().residentBodyBytes).toBe(0);
+		const protectedRecordPrefix = process.platform === "win32" ? "" : header;
+		const protectedRecord = process.platform === "win32" ? line.trimEnd() : line;
+		await fs.promises.writeFile(
+			protectedBacking,
+			protectedRecordPrefix + protectedRecord.replace("original", "replaced"),
+		);
+		expect(() => held.text).toThrow("source version is stale");
+		await fs.promises.writeFile(protectedBacking, protectedRecordPrefix + protectedRecord.replace("old-0", "bad-0"));
+		expect(() => held.text).toThrow("index is stale");
+		await fs.promises.truncate(
+			protectedBacking,
+			(process.platform === "win32" ? 0 : reference.offset) + remainingBytes,
+		);
+		expect(() => held.text).toThrow("was truncated");
 	} finally {
 		await fs.promises.rm(directory, { recursive: true, force: true });
 	}
+});
+
+it("reads an original source without a writable cache and fails closed if Windows loses that source", async () => {
+	const directory = agentDirectory.path();
+	const file = path.join(directory, "uncached.jsonl");
+	const fork = path.join(directory, "uncached-fork.jsonl");
+	const blockedAgentDir = path.join(directory, "blocked-agent");
+	await fs.promises.writeFile(blockedAgentDir, "not a writable cache directory");
+	setAgentDir(blockedAgentDir);
+	const header = `${JSON.stringify({ type: "session", version: 3, id: "uncached-source", timestamp: "2026-01-01T00:00:00Z", cwd: directory })}\n`;
+	const line = `${JSON.stringify({ type: "message", id: "uncached-entry", parentId: null, timestamp: "2026-01-01T00:00:01Z", message: { role: "user", timestamp: 0, content: [{ type: "text", text: "original" }] } })}\n`;
+	await fs.promises.writeFile(file, header + line);
+	await fs.promises.writeFile(fork, header + line.replace("uncached-entry", "forked-entry"));
+	const journal = await IndexedSessionJournal.open(file);
+	const reference = journal.get("uncached-entry")!;
+	const cache = new SessionEntryBodyCache(journal, () => {}, 0);
+	const entry = cache.makeCold(journal.readEntrySync(reference), reference);
+	if (entry.type !== "message") throw new Error("Expected historical message");
+	const held = content(entry)[0];
+	if (held?.type !== "text") throw new Error("Expected historical text");
+	expect(held.text).toBe("original");
+	journal.invalidate(fork);
+	journal.refreshSync();
+	const replacement = path.join(directory, "foreign.jsonl");
+	await fs.promises.writeFile(replacement, header + line.replace("original", "replaced"));
+	await fs.promises.rename(replacement, file);
+	if (process.platform === "win32") {
+		expect(() => held.text).toThrow("source was replaced and its protected snapshot is unavailable");
+	} else {
+		expect(held.text).toBe("original");
+	}
+	expect(cache.getStats().residentBodyBytes).toBe(0);
 });

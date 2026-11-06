@@ -16,7 +16,7 @@
  */
 import * as fs from "node:fs";
 import * as tls from "node:tls";
-import { $env } from "./env";
+import type * as Environment from "./env";
 import { isEnoent } from "./fs-error";
 
 /**
@@ -63,6 +63,16 @@ type ExtraCaFetch = FetchImpl & { [EXTRA_CA_FETCH_MARKER]?: true };
  */
 let cacheKey: string | undefined;
 let cacheValue: string | undefined;
+let environment: typeof Environment.$env | undefined;
+
+function extraCaEnvironment(): typeof Environment.$env {
+	if (environment) return environment;
+	// Loading dotenv belongs to transport use, after CLI profile selection,
+	// not to importing a worker or its otherwise side-effect-free helpers.
+	const loaded: typeof Environment = require("./env");
+	environment = loaded.$env;
+	return environment;
+}
 
 /**
  * Returns the PEM bytes referenced by `NODE_EXTRA_CA_CERTS`, or `undefined`
@@ -77,7 +87,7 @@ let cacheValue: string | undefined;
  *   `ENOENT` becomes {@link ExtraCaError}; other I/O errors bubble.
  */
 export function resolveExtraCa(): string | undefined {
-	const raw = $env.NODE_EXTRA_CA_CERTS?.trim();
+	const raw = extraCaEnvironment().NODE_EXTRA_CA_CERTS?.trim();
 	if (!raw) return undefined;
 
 	let key: string;
@@ -150,7 +160,7 @@ export function wrapFetchForExtraCa(fetchImpl: FetchImpl): FetchImpl {
 	// entirely so the hot fetch path stays a single function call. The env
 	// is evaluated again per request below to catch in-process updates from
 	// tests (`__resetExtraCaCache` + env mutation).
-	if (!$env.NODE_EXTRA_CA_CERTS?.trim()) return fetchImpl;
+	if (!extraCaEnvironment().NODE_EXTRA_CA_CERTS?.trim()) return fetchImpl;
 
 	const wrapped = Object.assign(
 		async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {

@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, it, spyOn } from "bun:test";
+import { Worker as NodeWorker } from "node:worker_threads";
 import type { ImageContent, TextContent } from "@oh-my-pi/pi-ai";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { disposeAllVmContexts } from "@oh-my-pi/pi-coding-agent/eval/js/context-manager";
@@ -159,22 +160,24 @@ describe.skipIf(!CHROMIUM_AVAILABLE)("browser tab worker exit", () => {
 
 	it("does not name an earlier message error as the cause of a later exit", async () => {
 		const name = "worker-exit-stale-cause";
-		// Capture the tab's Bun worker to raise a `messageerror` on it, which leaves the worker running.
-		const RealWorker = globalThis.Worker;
-		let spawned: Worker | undefined;
-		globalThis.Worker = class extends RealWorker {
-			constructor(...args: ConstructorParameters<typeof Worker>) {
-				super(...args);
-				spawned = this;
-			}
-		};
+		// Capture the supervisor's actual Node worker without replacing its constructor.
+		const postMessage = NodeWorker.prototype.postMessage;
+		let spawned: NodeWorker | undefined;
+		const capture = spyOn(NodeWorker.prototype, "postMessage").mockImplementation(function (
+			this: NodeWorker,
+			...args
+		) {
+			const message: unknown = args[0];
+			if (message && typeof message === "object" && Reflect.get(message, "type") === "init") spawned = this;
+			return postMessage.apply(this, args);
+		});
 		try {
 			await open(name, "alive");
 		} finally {
-			globalThis.Worker = RealWorker;
+			capture.mockRestore();
 		}
 		if (!spawned) throw new Error("expected the tab's worker");
-		spawned.dispatchEvent(new MessageEvent("messageerror", { data: "stale" }));
+		spawned.emit("messageerror", new Error("stale"));
 		expect(await run(name, "return 1;")).toBe(1);
 
 		const crash = await messageOf(run(name, "process.exit(3);"));
