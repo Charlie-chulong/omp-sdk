@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
-import { generateHostedImage } from "../src/images/openai-hosted";
+import { generateImage } from "../src/images";
 import { portableFetch } from "../src/utils/node-fetch";
 
 const PNG_DATA = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
@@ -49,37 +49,83 @@ test("portable fetch uploads host FormData as binary multipart instead of text/p
 	}
 });
 
-test("Codex subscription image edits keep JSON references and decode the hosted SSE image", async () => {
+test("Codex image edits preserve subscription routing, account headers, and streamed images", async () => {
+	const sessionId = "fixture-session";
+	const apiKey = `fixture.${Buffer.from(
+		JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "fixture-account" } }),
+	).toString("base64url")}.signature`;
+	const inputImages = [
+		{ data: PNG_DATA, mimeType: "image/png" },
+		{
+			data: Buffer.concat([Buffer.from(PNG_DATA, "base64"), Buffer.from([42])]).toString("base64"),
+			mimeType: "image/png",
+		},
+	];
 	const server = Bun.serve({
 		hostname: "127.0.0.1",
 		port: 0,
 		async fetch(request) {
+			if (request.method !== "POST" || new URL(request.url).pathname !== "/backend-api/codex/responses") {
+				return Response.json({ error: "Invalid subscription route" }, { status: 404 });
+			}
+			if (
+				request.headers.get("authorization") !== `Bearer ${apiKey}` ||
+				request.headers.get("chatgpt-account-id") !== "fixture-account" ||
+				request.headers.get("session_id") !== sessionId ||
+				request.headers.get("conversation_id") !== sessionId ||
+				request.headers.get("openai-beta") !== "responses=experimental"
+			) {
+				return Response.json({ error: "Missing subscription request headers" }, { status: 401 });
+			}
 			if (!request.headers.get("content-type")?.startsWith("application/json")) {
 				return Response.json({ error: "Subscription requests require JSON" }, { status: 415 });
 			}
 			const body = (await request.json()) as {
 				model?: string;
-				tools?: Array<{ type?: string; model?: string }>;
+				stream?: boolean;
+				store?: boolean;
+				tool_choice?: { type?: string };
+				tools?: Array<{ type?: string; action?: string; model?: string }>;
 				input?: Array<{ content?: Array<{ type?: string; image_url?: string }> }>;
 			};
 			const references = body.input?.[0]?.content?.filter(part => part.type === "input_image");
 			if (
 				body.model !== "gpt-6.1-sol" ||
+				body.stream !== true ||
+				body.store !== false ||
+				body.tool_choice?.type !== "image_generation" ||
 				body.tools?.[0]?.type !== "image_generation" ||
+				body.tools[0].action !== "edit" ||
 				body.tools[0].model !== undefined ||
-				references?.length !== 1 ||
-				references[0]?.image_url !== `data:image/png;base64,${PNG_DATA}`
+				references?.length !== inputImages.length ||
+				references.some(
+					(reference, index) => reference.image_url !== `data:image/png;base64,${inputImages[index]!.data}`,
+				)
 			) {
 				return Response.json({ error: "Invalid hosted subscription edit" }, { status: 400 });
 			}
-			const event = {
-				type: "response.completed",
-				response: {
-					output: [{ type: "image_generation_call", result: PNG_DATA, size: "1024x1536", quality: "high" }],
-					tools: [{ type: "image_generation", model: "host-selected-image" }],
+			const events = [
+				{
+					type: "response.output_item.done",
+					item: { type: "image_generation_call", result: PNG_DATA, size: "1024x1536", quality: "high" },
 				},
-			};
-			return new Response(`data: ${JSON.stringify(event)}\n\n`, {
+				{
+					type: "response.completed",
+					response: {
+						output: [],
+						tools: [{ type: "image_generation", model: "host-selected-image" }],
+					},
+				},
+			];
+			const data = new TextEncoder().encode(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(""));
+			const bodyStream = new ReadableStream<Uint8Array>({
+				start(controller) {
+					controller.enqueue(data.subarray(0, 17));
+					controller.enqueue(data.subarray(17));
+					controller.close();
+				},
+			});
+			return new Response(bodyStream, {
 				headers: { "content-type": "text/event-stream" },
 			});
 		},
@@ -90,7 +136,7 @@ test("Codex subscription image edits keep JSON references and decode the hosted 
 			id: "gpt-6.1-sol",
 			name: "fixture subscription carrier",
 			api: "openai-codex-responses",
-			baseUrl: server.url.href,
+			baseUrl: `${server.url.href}backend-api`,
 			kind: "chat",
 			reasoning: false,
 			input: ["text", "image"],
@@ -98,14 +144,15 @@ test("Codex subscription image edits keep JSON references and decode the hosted 
 			contextWindow: 128_000,
 			maxTokens: 8192,
 		});
-		const result = await generateHostedImage(
-			carrier,
+		const imageModel = buildModel({ ...carrier, id: "gpt-image-2", name: "fixture image model", kind: "image" });
+		const result = await generateImage(
+			imageModel,
 			{
 				prompt: "Refine the reference image",
 				imageSize: "1024x1536",
-				inputImages: [{ data: PNG_DATA, mimeType: "image/png" }],
+				inputImages,
 			},
-			{ apiKey: "fixture-key", carrier, signal: AbortSignal.timeout(5000) },
+			{ apiKey, carrier, sessionId, signal: AbortSignal.timeout(5000) },
 		);
 		expect(result.images).toEqual([{ data: PNG_DATA, mimeType: "image/png", size: "1024x1536", quality: "high" }]);
 		expect(result.model).toBe("host-selected-image");
