@@ -504,6 +504,103 @@ describe.skipIf(!CHROMIUM_AVAILABLE)("browser navigation, frames, dialogs, and t
 		}
 	}, 30_000);
 
+	test("stops a streaming main document when its navigating run is cancelled", async () => {
+		const parsed = Promise.withResolvers<void>();
+		const stopped = Promise.withResolvers<string>();
+		const slow = Bun.serve({
+			port: 0,
+			idleTimeout: 0,
+			fetch(request) {
+				const url = new URL(request.url);
+				if (url.pathname === "/parsed") {
+					parsed.resolve();
+					return new Response("ready");
+				}
+				return new Response(
+					new ReadableStream({
+						start(controller) {
+							// The renderer asks for /parsed only after the response has committed.
+							const marker = JSON.stringify(new URL("/parsed", url).href);
+							controller.enqueue(
+								new TextEncoder().encode(`<!doctype html><body><script>fetch(${marker})</script>`),
+							);
+						},
+						cancel() {
+							stopped.resolve(request.url);
+						},
+					}),
+					{ headers: { "content-type": "text/html" } },
+				);
+			},
+		});
+		try {
+			const invoke = createHost();
+			await invoke({ action: "open", name: "cancelled-stream", url: `${baseUrl}/one` });
+			const streamUrl = `http://127.0.0.1:${slow.port}/stream`;
+			const cancel = new AbortController();
+			const run = invoke(
+				{
+					action: "run",
+					name: "cancelled-stream",
+					code: `await tab.goto(${JSON.stringify(streamUrl)});`,
+				},
+				cancel.signal,
+			);
+			await parsed.promise;
+			cancel.abort();
+			await expect(run).rejects.toBeInstanceOf(Error);
+			// Await the real disconnect; the integration test timeout bounds failure.
+			expect(await stopped.promise).toBe(streamUrl);
+		} finally {
+			slow.stop(true);
+		}
+	}, 30_000);
+
+	test("keeps an unawaited streaming navigation after its run ends normally", async () => {
+		const body = Promise.withResolvers<ReadableStreamDefaultController<Uint8Array>>();
+		const slow = Bun.serve({
+			port: 0,
+			idleTimeout: 0,
+			fetch() {
+				return new Response(
+					new ReadableStream<Uint8Array>({
+						start(controller) {
+							body.resolve(controller);
+							controller.enqueue(new TextEncoder().encode("<!doctype html><body>"));
+						},
+					}),
+					{ headers: { "content-type": "text/html" } },
+				);
+			},
+		});
+		try {
+			const invoke = createHost();
+			await invoke({ action: "open", name: "completed-stream", url: `${baseUrl}/one` });
+			const url = `http://127.0.0.1:${slow.port}/stream`;
+			const result = await invoke({
+				action: "run",
+				name: "completed-stream",
+				code: `const response = tab.waitForResponse(${JSON.stringify(url)});
+					void tab.goto(${JSON.stringify(url)});
+					await response;
+					return "started";`,
+			});
+			expect(valueOf(result)).toBe("started");
+			const controller = await body.promise;
+			controller.enqueue(new TextEncoder().encode('<p id="finished">kept loading</p></body>'));
+			controller.close();
+			const after = await invoke({
+				action: "run",
+				name: "completed-stream",
+				code: `await page.waitForSelector("#finished");
+					return await page.$eval("#finished", element => element.textContent);`,
+			});
+			expect(valueOf(after)).toBe("kept loading");
+		} finally {
+			slow.stop(true);
+		}
+	}, 30_000);
+
 	test("does not call a cancelled run's page listeners for the requests the cancel stops", async () => {
 		const requested = Promise.withResolvers<void>();
 		const slow = Bun.serve({

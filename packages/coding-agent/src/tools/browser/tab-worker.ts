@@ -1492,6 +1492,8 @@ interface ActiveRun {
 	/** Helper invocations currently awaiting the page/network, keyed by op id. */
 	inflight: Map<number, InflightOp>;
 	opCounter: number;
+	/** Own main-frame helpers awaiting document load, retained when their run aborts. */
+	pendingMainFrameNavigations: number;
 	/** The run's code started, so input it sent may have reached the page. */
 	codeStarted: boolean;
 }
@@ -2005,6 +2007,7 @@ export class WorkerCore {
 			floatingFailure,
 			inflight: new Map(),
 			opCounter: 0,
+			pendingMainFrameNavigations: 0,
 			codeStarted: false,
 		};
 		this.#active = active;
@@ -2109,11 +2112,15 @@ export class WorkerCore {
 			// Detach first: the stop below fails the cancelled requests, and run handlers that see
 			// those events would touch the aborted run's facade.
 			runPage?.detach();
-			// A cancelled run abandons its main-frame navigation: left loading, it still replaces the
-			// page later and holds up any interception restore below. Stopping is gated on
-			// that navigation because Page.stopLoading also cancels every fetch and subresource
-			// load in flight. A run that merely ended keeps an unawaited goto going.
-			if (ac.signal.aborted && this.#network?.hasPendingMainFrameNavigation()) await this.#stopLoading();
+			// A response clears the network observer's pending request before the document
+			// finishes loading. Keep our own navigation ownership through that whole wait.
+			// Page.stopLoading also cancels fetches and subresources, so stop only a known
+			// navigation on cancellation; a normally ended run keeps an unawaited goto going.
+			if (
+				ac.signal.aborted &&
+				(active.pendingMainFrameNavigations > 0 || this.#network?.hasPendingMainFrameNavigation())
+			)
+				await this.#stopLoading();
 			try {
 				await runPage?.restoreInterception();
 			} catch (error) {
@@ -2401,6 +2408,17 @@ export class WorkerCore {
 			fn: (sig: AbortSignal) => Promise<T>,
 			selectorOpts?: OpOptions,
 		): Promise<T> => markHandled(this.#runOp(active, label, signal, perOpMs, fn, selectorOpts));
+		const navigate = <T>(label: string, fn: (sig: AbortSignal) => Promise<T>): Promise<T> =>
+			op(label, INF, async sig => {
+				this.#clearElementCache();
+				active.pendingMainFrameNavigations++;
+				try {
+					return await fn(sig);
+				} finally {
+					// An aborted await does not cancel Chrome's underlying document load.
+					if (!sig.aborted) active.pendingMainFrameNavigations--;
+				}
+			});
 		// Calls on the document (reads, actions, waits for its content) reach the page a navigation the page requested
 		// brings, not the one it leaves; `read` also reruns once when a navigation takes its context mid-call. Waits for
 		// events (navigation, response, download), dialogs and network setup run at once: they may be what the
@@ -2447,8 +2465,7 @@ export class WorkerCore {
 			url: () => page.url(),
 			title: () => read("tab.title()", INF, sig => untilAborted(sig, () => page.title())),
 			goto: (url, opts) =>
-				op(`tab.goto(${JSON.stringify(url)})`, INF, async sig => {
-					this.#clearElementCache();
+				navigate(`tab.goto(${JSON.stringify(url)})`, async sig => {
 					try {
 						// Default to "load" because dev servers with HMR/WS never reach networkidle.
 						// budgetBound (not the full cell) so a hung navigation fails named and
@@ -2782,20 +2799,12 @@ export class WorkerCore {
 			reactRenders: opts => op("tab.reactRenders()", quickOpMs, sig => collectReactRenders(page, opts, sig)),
 			reactSuspense: opts => op("tab.reactSuspense()", quickOpMs, sig => readReactSuspense(page, opts, sig)),
 			back: opts =>
-				op("tab.back()", INF, async sig => {
-					this.#clearElementCache();
-					return await traverseHistory(page, "back", opts?.waitUntil ?? "load", budgetBound, sig);
-				}),
+				navigate("tab.back()", sig => traverseHistory(page, "back", opts?.waitUntil ?? "load", budgetBound, sig)),
 			forward: opts =>
-				op("tab.forward()", INF, async sig => {
-					this.#clearElementCache();
-					return await traverseHistory(page, "forward", opts?.waitUntil ?? "load", budgetBound, sig);
-				}),
-			reload: opts =>
-				op("tab.reload()", INF, async sig => {
-					this.#clearElementCache();
-					return await reloadPage(page, opts?.waitUntil ?? "load", budgetBound, sig);
-				}),
+				navigate("tab.forward()", sig =>
+					traverseHistory(page, "forward", opts?.waitUntil ?? "load", budgetBound, sig),
+				),
+			reload: opts => navigate("tab.reload()", sig => reloadPage(page, opts?.waitUntil ?? "load", budgetBound, sig)),
 			pushState: url =>
 				op(`tab.pushState(${JSON.stringify(url)})`, actionOpMs, async sig => {
 					this.#clearElementCache();
